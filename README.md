@@ -33,6 +33,8 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 
 ### Build And Run
 
+In Xcode, open `AppShot.xcodeproj`, select the `AppShot` scheme, and run the app target. Do not run `install.sh` from Xcode; it is a Terminal/curl installer and is not a build target.
+
 ```sh
 swift build
 swift scripts/generate_app_icon.swift
@@ -96,6 +98,8 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - 面向 Mac 用户的 release 包：`.app`、`.zip`、`.dmg`。
 
 ### 构建和运行
+
+在 Xcode 里打开 `AppShot.xcodeproj`，选择 `AppShot` scheme，然后运行 App target。不要在 Xcode 里运行 `install.sh`；它是给 Terminal/curl 使用的安装脚本，不是构建 target。
 
 ```sh
 swift build

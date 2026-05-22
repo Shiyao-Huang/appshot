@@ -18,6 +18,9 @@
 		A10000000000000000000012 /* AppShotCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShotCore/AppShotCore.swift; sourceTree = "<group>"; };
 		A10000000000000000000013 /* AppShot-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/AppShot-Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A10000000000000000000015 /* install.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = install.sh; sourceTree = "<group>"; };
+		A10000000000000000000016 /* build_release.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = scripts/build_release.sh; sourceTree = "<group>"; };
+		A10000000000000000000017 /* generate_app_icon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = scripts/generate_app_icon.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -26,6 +29,7 @@
 			children = (
 				A10000000000000000000030 /* Sources */,
 				A10000000000000000000040 /* Resources */,
+				A10000000000000000000041 /* Scripts */,
 				A10000000000000000000050 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -59,6 +63,16 @@
 				A10000000000000000000014 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000041 /* Scripts */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000015 /* install.sh */,
+				A10000000000000000000016 /* build_release.sh */,
+				A10000000000000000000017 /* generate_app_icon.swift */,
+			);
+			name = Scripts;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000050 /* Products */ = {
