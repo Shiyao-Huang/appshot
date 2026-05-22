@@ -1,11 +1,28 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
-const appshot = process.env.APPSHOT_BIN || resolve(root, ".build", "debug", "appshot");
+const appshot = resolveAppShotBinary();
+
+function resolveAppShotBinary() {
+  if (process.env.APPSHOT_BIN) return process.env.APPSHOT_BIN;
+
+  const which = spawnSync("/usr/bin/env", ["sh", "-lc", "command -v appshot"], {
+    encoding: "utf8"
+  });
+  const fromPath = which.stdout?.trim();
+  if (fromPath) return fromPath;
+
+  if (process.env.HOME) {
+    const installed = resolve(process.env.HOME, ".local", "bin", "appshot");
+    if (existsSync(installed)) return installed;
+  }
+  return resolve(root, ".build", "debug", "appshot");
+}
 
 let buffer = "";
 process.stdin.setEncoding("utf8");
@@ -41,7 +58,7 @@ function handleLine(line) {
       respond(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "appshot", version: "0.1.0" }
+        serverInfo: { name: "appshot", version: "0.1.1" }
       });
     } else if (method === "tools/list") {
       respond(id, { tools: tools() });
@@ -61,14 +78,19 @@ function tools() {
   return [
     {
       name: "appshot_capture",
-      description: "Capture the frontmost macOS app as JSON with app/window metadata, accessibility text tree, and optional screenshot.",
+      description: "Capture the frontmost macOS app as JSON with app/window metadata, accessibility text tree, optional screenshot, and optional OCR fallback.",
       inputSchema: {
         type: "object",
         properties: {
           includeScreenshot: { type: "boolean", default: false },
+          includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
-          maxDepth: { type: "number", default: 6 },
-          maxChildren: { type: "number", default: 120 }
+          windowID: { type: "number" },
+          pid: { type: "number" },
+          bundleID: { type: "string" },
+          maxDepth: { type: "number", default: 10 },
+          maxChildren: { type: "number", default: 120 },
+          maxOCRObservations: { type: "number", default: 240 }
         }
       }
     },
@@ -94,7 +116,7 @@ function tools() {
     },
     {
       name: "appshot_list_windows",
-      description: "List regular running apps and their visible windows.",
+      description: "List regular running apps and visible windows, including exact capture parameters for follow-up appshot_capture calls.",
       inputSchema: { type: "object", properties: {} }
     }
   ];
@@ -108,9 +130,14 @@ function callTool(params = {}) {
   if (name === "appshot_capture") {
     cliArgs.push("capture", "--pretty");
     if (args.includeScreenshot) cliArgs.push("--include-screenshot");
+    if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
+    if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
+    if (args.pid != null) cliArgs.push("--pid", String(args.pid));
+    if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
     if (args.maxDepth != null) cliArgs.push("--max-depth", String(args.maxDepth));
     if (args.maxChildren != null) cliArgs.push("--max-children", String(args.maxChildren));
+    if (args.maxOCRObservations != null) cliArgs.push("--max-ocr-observations", String(args.maxOCRObservations));
   } else if (name === "appshot_permissions") {
     cliArgs.push("permissions", "--pretty");
     if (args.prompt) cliArgs.push("--prompt");

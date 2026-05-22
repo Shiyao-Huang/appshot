@@ -62,7 +62,22 @@ final class AppShotModel: ObservableObject {
     @Published var lastError: String?
     @Published var isCapturing = false
     @Published var isRefreshing = false
-    private var requestSerial = 0
+    @Published var isAutoRefreshEnabled = false
+    @Published var lastSampleAt: Date?
+    @Published var samplingIntervalSeconds: Double = 2.0 {
+        didSet {
+            guard samplingIntervalSeconds != oldValue, isAutoRefreshEnabled else {
+                return
+            }
+            startAutoRefreshTimer()
+        }
+    }
+    @Published var frontAppTrail: [FrontAppTrailEntry] = []
+    private var statusRequestSerial = 0
+    private var captureRequestSerial = 0
+    private var sampleRequestSerial = 0
+    private var sampleInFlight = false
+    private var autoRefreshTimer: Timer?
 
     var menuBarSymbol: String {
         if isCapturing || isRefreshing {
@@ -97,8 +112,8 @@ final class AppShotModel: ObservableObject {
     }
 
     func refreshStatus(prompt: Bool = false) {
-        requestSerial += 1
-        let requestID = requestSerial
+        statusRequestSerial += 1
+        let requestID = statusRequestSerial
         isRefreshing = true
         lastError = nil
 
@@ -112,7 +127,7 @@ final class AppShotModel: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                guard requestID == self.requestSerial else {
+                guard requestID == self.statusRequestSerial else {
                     return
                 }
                 self.isRefreshing = false
@@ -120,7 +135,7 @@ final class AppShotModel: ObservableObject {
                 case .success(let json):
                     self.lastJSON = json
                     if let payload = Self.payload(from: json) {
-                        self.applyStatus(payload)
+                        self.applyStatus(payload, recordTrail: true)
                     }
                 case .failure(let error):
                     self.lastError = String(describing: error)
@@ -133,12 +148,61 @@ final class AppShotModel: ObservableObject {
         refreshStatus(prompt: true)
     }
 
-    func capture(includeScreenshot: Bool = true) {
+    func setAutoRefreshEnabled(_ enabled: Bool) {
+        guard enabled != isAutoRefreshEnabled else {
+            return
+        }
+        isAutoRefreshEnabled = enabled
+        if enabled {
+            sampleFrontApp()
+            startAutoRefreshTimer()
+        } else {
+            autoRefreshTimer?.invalidate()
+            autoRefreshTimer = nil
+            sampleInFlight = false
+        }
+    }
+
+    func clearFrontAppTrail() {
+        frontAppTrail.removeAll()
+    }
+
+    private func startAutoRefreshTimer() {
+        autoRefreshTimer?.invalidate()
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: samplingIntervalSeconds, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.sampleFrontApp()
+            }
+        }
+    }
+
+    private func sampleFrontApp() {
+        guard !isCapturing, !sampleInFlight else {
+            return
+        }
+        sampleRequestSerial += 1
+        let requestID = sampleRequestSerial
+        sampleInFlight = true
+
+        DispatchQueue.global(qos: .utility).async {
+            let payload = AppShotCore.status(prompt: false)
+
+            DispatchQueue.main.async {
+                guard requestID == self.sampleRequestSerial else {
+                    return
+                }
+                self.sampleInFlight = false
+                self.applySample(payload)
+            }
+        }
+    }
+
+    func capture(includeScreenshot: Bool = true, includeOCR: Bool = false) {
         guard !isCapturing else {
             return
         }
-        requestSerial += 1
-        let requestID = requestSerial
+        captureRequestSerial += 1
+        let requestID = captureRequestSerial
         isCapturing = true
         lastError = nil
 
@@ -147,8 +211,9 @@ final class AppShotModel: ObservableObject {
             do {
                 let payload = try AppShotCore.capture(options: AppShotCaptureOptions(
                     includeScreenshot: includeScreenshot,
-                    maxDepth: 6,
+                    maxDepth: 10,
                     maxChildren: 120,
+                    includeOCR: includeOCR,
                     accessibilityTimeoutSeconds: 2.0,
                     screenshotTimeoutSeconds: 3.0
                 ))
@@ -158,7 +223,7 @@ final class AppShotModel: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                guard requestID == self.requestSerial else {
+                guard requestID == self.captureRequestSerial else {
                     return
                 }
                 self.isCapturing = false
@@ -185,23 +250,53 @@ final class AppShotModel: ObservableObject {
         return payload
     }
 
-    private func applyStatus(_ payload: JSONObject) {
-        state = payload["state"] as? String ?? "unknown"
-        blockers = payload["blockers"] as? [String] ?? []
-        windowCount = payload["windowCount"] as? Int ?? 0
+    private func applyStatus(_ payload: JSONObject, recordTrail: Bool) {
+        assignIfChanged(&state, payload["state"] as? String ?? "unknown")
+        assignIfChanged(&blockers, payload["blockers"] as? [String] ?? [])
+        assignIfChanged(&windowCount, payload["windowCount"] as? Int ?? 0)
 
         if let permissions = payload["permissions"] as? JSONObject {
-            accessibility = permissions["accessibility"] as? Bool ?? false
-            screenRecording = permissions["screenRecording"] as? Bool ?? false
+            assignIfChanged(&accessibility, permissions["accessibility"] as? Bool ?? false)
+            assignIfChanged(&screenRecording, permissions["screenRecording"] as? Bool ?? false)
         }
         if let app = payload["frontmostApplication"] as? JSONObject {
-            frontmostName = app["localizedName"] as? String ?? "-"
-            bundleIdentifier = app["bundleIdentifier"] as? String ?? "-"
+            assignIfChanged(&frontmostName, app["localizedName"] as? String ?? "-")
+            assignIfChanged(&bundleIdentifier, app["bundleIdentifier"] as? String ?? "-")
+        } else {
+            assignIfChanged(&frontmostName, "-")
+            assignIfChanged(&bundleIdentifier, "-")
         }
         if let window = payload["primaryWindow"] as? JSONObject {
             let title = window["title"] as? String ?? ""
-            primaryWindowTitle = title.isEmpty ? "(untitled window)" : title
+            assignIfChanged(&primaryWindowTitle, title.isEmpty ? "(untitled window)" : title)
+        } else {
+            assignIfChanged(&primaryWindowTitle, "(no visible window)")
         }
+        if recordTrail {
+            appendFrontAppSample(from: payload)
+        }
+    }
+
+    private func applySample(_ payload: JSONObject) {
+        assignIfChanged(&windowCount, payload["windowCount"] as? Int ?? 0)
+
+        if let app = payload["frontmostApplication"] as? JSONObject {
+            assignIfChanged(&frontmostName, app["localizedName"] as? String ?? "-")
+            assignIfChanged(&bundleIdentifier, app["bundleIdentifier"] as? String ?? "-")
+        } else {
+            assignIfChanged(&frontmostName, "-")
+            assignIfChanged(&bundleIdentifier, "-")
+        }
+
+        if let window = payload["primaryWindow"] as? JSONObject {
+            let title = window["title"] as? String ?? ""
+            assignIfChanged(&primaryWindowTitle, title.isEmpty ? "(untitled window)" : title)
+        } else {
+            assignIfChanged(&primaryWindowTitle, "(no visible window)")
+        }
+
+        appendFrontAppSample(from: payload)
+        lastSampleAt = Date()
     }
 
     private func applyCapture(_ payload: JSONObject) {
@@ -212,22 +307,99 @@ final class AppShotModel: ObservableObject {
         if let app = payload["frontmostApplication"] as? JSONObject {
             frontmostName = app["localizedName"] as? String ?? "-"
             bundleIdentifier = app["bundleIdentifier"] as? String ?? "-"
+        } else {
+            frontmostName = "-"
+            bundleIdentifier = "-"
         }
         let windows = payload["windows"] as? [JSONObject] ?? []
         windowCount = windows.count
         if let window = payload["primaryWindow"] as? JSONObject {
             let title = window["title"] as? String ?? ""
             primaryWindowTitle = title.isEmpty ? "(untitled window)" : title
+        } else {
+            primaryWindowTitle = "(no visible window)"
         }
+        let accessibilityPayload = payload["accessibility"] as? JSONObject
+        let axLineCount = accessibilityPayload?["textLineCount"] as? Int
+        let axSuffix = axLineCount.map { " with Accessibility text: \($0) lines" } ?? ""
         if let screenshot = payload["screenshot"] as? JSONObject,
            let captured = screenshot["captured"] as? Bool,
            let path = screenshot["path"] as? String {
-            lastCaptureSummary = captured ? "Captured screenshot: \(path)" : "Capture ran but screenshot failed"
+            lastCaptureSummary = captured ? "Captured screenshot: \(path)\(axSuffix)" : "Capture ran but screenshot failed"
         } else {
             lastCaptureSummary = "Captured app context without screenshot"
         }
         blockers = []
         state = accessibility && screenRecording ? "ready" : "needsAttention"
+        appendFrontAppSample(from: payload)
+    }
+
+    private func appendFrontAppSample(from payload: JSONObject) {
+        guard let app = payload["frontmostApplication"] as? JSONObject else {
+            return
+        }
+        let window = payload["primaryWindow"] as? JSONObject
+        let entry = FrontAppTrailEntry(
+            firstSeen: Date(),
+            lastSeen: Date(),
+            sampleCount: 1,
+            appName: app["localizedName"] as? String ?? "-",
+            bundleIdentifier: app["bundleIdentifier"] as? String ?? "-",
+            processIdentifier: app["processIdentifier"] as? Int ?? 0,
+            windowTitle: {
+                let title = window?["title"] as? String ?? ""
+                return title.isEmpty ? "(no visible window)" : title
+            }(),
+            windowID: window?["windowID"] as? Int
+        )
+
+        if let first = frontAppTrail.first, first.dedupeKey == entry.dedupeKey {
+            frontAppTrail[0].lastSeen = entry.lastSeen
+            frontAppTrail[0].sampleCount += 1
+        } else {
+            frontAppTrail.insert(entry, at: 0)
+            if frontAppTrail.count > 80 {
+                frontAppTrail.removeLast(frontAppTrail.count - 80)
+            }
+        }
+    }
+
+    private func assignIfChanged<T: Equatable>(_ value: inout T, _ nextValue: T) {
+        guard value != nextValue else {
+            return
+        }
+        value = nextValue
+    }
+}
+
+struct FrontAppTrailEntry: Identifiable {
+    let id = UUID()
+    var firstSeen: Date
+    var lastSeen: Date
+    var sampleCount: Int
+    var appName: String
+    var bundleIdentifier: String
+    var processIdentifier: Int
+    var windowTitle: String
+    var windowID: Int?
+
+    var dedupeKey: String {
+        [
+            bundleIdentifier,
+            String(processIdentifier),
+            String(windowID ?? 0),
+            windowTitle
+        ].joined(separator: "|")
+    }
+
+    var timeRange: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .medium
+        formatter.dateStyle = .none
+        if Calendar.current.isDate(firstSeen, equalTo: lastSeen, toGranularity: .second) {
+            return formatter.string(from: firstSeen)
+        }
+        return "\(formatter.string(from: firstSeen)) - \(formatter.string(from: lastSeen))"
     }
 }
 
@@ -242,6 +414,8 @@ struct AppShotDashboardView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     statusGrid
                     actions
+                    samplerControls
+                    frontAppTrail
                     blockers
                     jsonPreview
                 }
@@ -309,11 +483,73 @@ struct AppShotDashboardView: View {
             .disabled(model.isCapturing)
 
             Button {
-                model.capture(includeScreenshot: false)
+                model.capture(includeScreenshot: false, includeOCR: false)
             } label: {
                 Label("Capture JSON", systemImage: "curlybraces")
             }
             .disabled(model.isCapturing)
+        }
+    }
+
+    private var samplerControls: some View {
+        HStack(spacing: 12) {
+            Toggle(isOn: Binding(
+                get: { model.isAutoRefreshEnabled },
+                set: { model.setAutoRefreshEnabled($0) }
+            )) {
+                Label("Auto Refresh", systemImage: "clock.arrow.circlepath")
+            }
+            .toggleStyle(.switch)
+
+            Picker("Sample", selection: $model.samplingIntervalSeconds) {
+                Text("1s").tag(1.0)
+                Text("2s").tag(2.0)
+                Text("5s").tag(5.0)
+                Text("10s").tag(10.0)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 220)
+
+            Spacer()
+
+            Text("\(model.frontAppTrail.reduce(0) { $0 + $1.sampleCount }) samples")
+                .foregroundStyle(.secondary)
+
+            Button {
+                model.clearFrontAppTrail()
+            } label: {
+                Label("Clear", systemImage: "trash")
+            }
+            .disabled(model.frontAppTrail.isEmpty)
+        }
+    }
+
+    private var frontAppTrail: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Front App Trail")
+                    .font(.headline)
+                Spacer()
+                Text(model.isAutoRefreshEnabled ? "Live" : "Paused")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(model.isAutoRefreshEnabled ? .green : .secondary)
+            }
+
+            if model.frontAppTrail.isEmpty {
+                Text("No samples yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(model.frontAppTrail.prefix(12)) { entry in
+                        FrontAppTrailRow(entry: entry)
+                    }
+                }
+            }
         }
     }
 
@@ -363,6 +599,7 @@ struct MenuBarView: View {
             StatusLine(label: "Accessibility", value: model.accessibility ? "On" : "Off", good: model.accessibility)
             StatusLine(label: "Screen Recording", value: model.screenRecording ? "On" : "Off", good: model.screenRecording)
             StatusLine(label: "Front App", value: model.frontmostName, good: model.frontmostName != "-")
+            StatusLine(label: "Auto Refresh", value: model.isAutoRefreshEnabled ? "\(Int(model.samplingIntervalSeconds))s" : "Off", good: model.isAutoRefreshEnabled)
             HStack {
                 Button("Refresh") {
                     model.refreshStatus()
@@ -376,6 +613,9 @@ struct MenuBarView: View {
                     model.capture(includeScreenshot: true)
                 }
                 .disabled(model.isCapturing)
+                Button(model.isAutoRefreshEnabled ? "Pause" : "Auto") {
+                    model.setAutoRefreshEnabled(!model.isAutoRefreshEnabled)
+                }
             }
         }
         .padding(14)
@@ -383,6 +623,43 @@ struct MenuBarView: View {
         .onAppear {
             model.refreshStatus()
         }
+    }
+}
+
+struct FrontAppTrailRow: View {
+    let entry: FrontAppTrailEntry
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "app.badge")
+                .frame(width: 22)
+                .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(entry.appName)
+                        .font(.callout.weight(.medium))
+                    Text("x\(entry.sampleCount)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                Text(entry.windowTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Text(entry.bundleIdentifier)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(entry.timeRange)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

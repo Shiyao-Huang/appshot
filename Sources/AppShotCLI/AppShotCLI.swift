@@ -6,10 +6,15 @@ struct CLIOptions {
     var outputPath: String?
     var screenshotPath: String?
     var includeScreenshot = false
+    var includeOCR = false
     var pretty = false
-    var maxDepth = 6
+    var maxDepth = 10
     var maxChildren = 120
+    var maxOCRObservations = 240
     var promptPermissions = false
+    var windowID: UInt32?
+    var pid: pid_t?
+    var bundleID: String?
 }
 
 // @sm:node appshot.cli
@@ -30,7 +35,12 @@ struct AppShotCLI {
                     screenshotPath: options.screenshotPath,
                     includeScreenshot: options.includeScreenshot,
                     maxDepth: options.maxDepth,
-                    maxChildren: options.maxChildren
+                    maxChildren: options.maxChildren,
+                    includeOCR: options.includeOCR,
+                    maxOCRObservations: options.maxOCRObservations,
+                    targetWindowID: options.windowID,
+                    targetProcessIdentifier: options.pid,
+                    targetBundleIdentifier: options.bundleID
                 ))
             case "permissions":
                 payload = AppShotCore.permissions(prompt: options.promptPermissions)
@@ -78,12 +88,22 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.screenshotPath = try nextValue()
         case "--include-screenshot":
             options.includeScreenshot = true
+        case "--include-ocr":
+            options.includeOCR = true
         case "--pretty":
             options.pretty = true
         case "--max-depth":
             options.maxDepth = Int(try nextValue()) ?? options.maxDepth
         case "--max-children":
             options.maxChildren = Int(try nextValue()) ?? options.maxChildren
+        case "--max-ocr-observations":
+            options.maxOCRObservations = Int(try nextValue()) ?? options.maxOCRObservations
+        case "--window-id":
+            options.windowID = UInt32(try nextValue())
+        case "--pid":
+            options.pid = pid_t(Int32(try nextValue()) ?? 0)
+        case "--bundle-id":
+            options.bundleID = try nextValue()
         case "--prompt":
             options.promptPermissions = true
         case "--help", "-h":
@@ -119,13 +139,15 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--include-screenshot] [--screenshot path.png] [--output path.json] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--include-ocr] [--screenshot path.png] [--output path.json] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
     Notes:
+      Use list-windows first. Then pass the chosen windowID, pid, or bundleID to capture.
       Accessibility permission is required for rich text/UI trees.
       Screen Recording permission is required for screenshots.
+      OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
     """)
 }
