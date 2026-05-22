@@ -6,6 +6,22 @@ AppShot gives any AI a Codex-style app screenshot capability on macOS.
 
 It captures the frontmost Mac application as structured context: app metadata, visible windows, primary window geometry/title, Accessibility text/UI tree, and optional screenshots. The project ships as a native macOS app first, with CLI, MCP, Codex skill, and plugin support as secondary integration layers.
 
+### Install
+
+```sh
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | bash
+```
+
+By default this installs `AppShot.app` to `~/Applications/AppShot.app` and installs the Codex skill to `~/.codex/skills/appshot`.
+
+Options:
+
+```sh
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_DIR=/Applications bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_SKILL_ONLY=1 bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_NO_OPEN=1 bash
+```
+
 ### What Is Included
 
 - Native macOS app: status dashboard, permission state, capture actions, and menu bar entry.
@@ -54,6 +70,22 @@ AppShot 让任何 AI 都拥有 Codex 样式的应用截图能力。
 
 它会把当前前台 Mac 应用捕捉成结构化上下文：App 元数据、可见窗口、主窗口几何信息和标题、Accessibility 文本/UI 树，以及可选截图。项目以原生 macOS App 为核心发布，同时支持 CLI、MCP、Codex skill 和 plugin。
 
+### 安装
+
+```sh
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | bash
+```
+
+默认会把 `AppShot.app` 安装到 `~/Applications/AppShot.app`，并把 Codex skill 安装到 `~/.codex/skills/appshot`。
+
+可选参数：
+
+```sh
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_DIR=/Applications bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_SKILL_ONLY=1 bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_NO_OPEN=1 bash
+```
+
 ### 包含内容
 
 - 原生 macOS App：状态面板、权限状态、捕捉操作、菜单栏入口。
@@ -95,4 +127,3 @@ CLI 示例：
 ### 实现说明
 
 首个版本使用公开 macOS API。后续窗口解析会严格对照本地 diff 出来的 Codex Mac App 证据继续补齐，不凭空猜实现。
-
