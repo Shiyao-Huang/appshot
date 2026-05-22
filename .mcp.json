@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "appshot": {
+      "command": "node",
+      "args": ["./mcp/server.js"],
+      "env": {
+        "APPSHOT_BIN": "./.build/debug/appshot"
+      }
+    }
+  }
+}

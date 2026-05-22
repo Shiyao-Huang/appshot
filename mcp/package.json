@@ -1,0 +1,12 @@
+{
+  "name": "@local/appshot-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "appshot-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT"
+}

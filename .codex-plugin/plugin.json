@@ -1,0 +1,26 @@
+{
+  "name": "appshot",
+  "version": "0.1.0",
+  "description": "Capture frontmost macOS app context as AppShot JSON with optional screenshots.",
+  "author": {
+    "name": "copizzah"
+  },
+  "license": "MIT",
+  "keywords": ["macos", "appshot", "accessibility", "mcp", "cli"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "AppShot",
+    "shortDescription": "Capture macOS app context for Codex.",
+    "longDescription": "AppShot provides a native Swift CLI and MCP server for capturing the frontmost macOS app, visible windows, accessibility text/UI trees, and optional screenshots.",
+    "developerName": "copizzah",
+    "category": "Productivity",
+    "capabilities": ["Read", "MCP", "CLI"],
+    "defaultPrompt": [
+      "Capture the current Mac app context.",
+      "Check AppShot permissions.",
+      "List visible Mac app windows."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

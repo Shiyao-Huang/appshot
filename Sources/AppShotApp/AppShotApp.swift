@@ -1,0 +1,456 @@
+import AppKit
+#if canImport(AppShotCore)
+import AppShotCore
+#endif
+import SwiftUI
+
+@main
+struct AppShotDesktopApp: App {
+    @NSApplicationDelegateAdaptor(AppShotAppDelegate.self) private var appDelegate
+    @StateObject private var model = AppShotModel()
+
+    var body: some Scene {
+        WindowGroup("AppShot") {
+            AppShotDashboardView()
+                .environmentObject(model)
+                .frame(minWidth: 760, minHeight: 540)
+                .onAppear {
+                    model.refreshStatus()
+                }
+        }
+        .commands {
+            CommandGroup(replacing: .newItem) {}
+        }
+
+        MenuBarExtra("AppShot", systemImage: model.menuBarSymbol) {
+            MenuBarView()
+                .environmentObject(model)
+        }
+        .menuBarExtraStyle(.window)
+    }
+}
+
+final class AppShotAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+}
+
+// @sm:node appshot.app.status
+// @sm:feature appshot.status-ui
+// @sm:prev macos.menu-bar-extra
+// @sm:next appshot.core.capture
+// @sm:deps SwiftUI,AppShotCore,NSWorkspace
+// @sm:evidence swift build && .build/debug/AppShotApp
+@MainActor
+final class AppShotModel: ObservableObject {
+    @Published var state: String = "checking"
+    @Published var accessibility = false
+    @Published var screenRecording = false
+    @Published var frontmostName = "-"
+    @Published var bundleIdentifier = "-"
+    @Published var primaryWindowTitle = "-"
+    @Published var windowCount = 0
+    @Published var blockers: [String] = []
+    @Published var lastCaptureSummary = "No capture yet"
+    @Published var lastJSON = "{}"
+    @Published var lastError: String?
+    @Published var isCapturing = false
+    @Published var isRefreshing = false
+    private var requestSerial = 0
+
+    var menuBarSymbol: String {
+        if isCapturing || isRefreshing {
+            return "hourglass"
+        }
+        if lastError != nil {
+            return "app.badge"
+        }
+        if accessibility && screenRecording {
+            return "app.connected.to.app.below.fill"
+        }
+        return "app.dashed"
+    }
+
+    var statusTitle: String {
+        if isCapturing {
+            return "Capturing"
+        }
+        if isRefreshing {
+            return "Refreshing"
+        }
+        if lastError != nil {
+            return "Error"
+        }
+        if state == "ready" {
+            return "Ready"
+        }
+        if state == "checking" {
+            return "Checking"
+        }
+        return "Needs Attention"
+    }
+
+    func refreshStatus(prompt: Bool = false) {
+        requestSerial += 1
+        let requestID = requestSerial
+        isRefreshing = true
+        lastError = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: Result<String, Error>
+            do {
+                let payload = AppShotCore.status(prompt: prompt)
+                result = .success(try AppShotCore.jsonString(payload, pretty: true))
+            } catch {
+                result = .failure(error)
+            }
+
+            DispatchQueue.main.async {
+                guard requestID == self.requestSerial else {
+                    return
+                }
+                self.isRefreshing = false
+                switch result {
+                case .success(let json):
+                    self.lastJSON = json
+                    if let payload = Self.payload(from: json) {
+                        self.applyStatus(payload)
+                    }
+                case .failure(let error):
+                    self.lastError = String(describing: error)
+                }
+            }
+        }
+    }
+
+    func requestPermissions() {
+        refreshStatus(prompt: true)
+    }
+
+    func capture(includeScreenshot: Bool = true) {
+        guard !isCapturing else {
+            return
+        }
+        requestSerial += 1
+        let requestID = requestSerial
+        isCapturing = true
+        lastError = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: Result<String, Error>
+            do {
+                let payload = try AppShotCore.capture(options: AppShotCaptureOptions(
+                    includeScreenshot: includeScreenshot,
+                    maxDepth: 6,
+                    maxChildren: 120,
+                    accessibilityTimeoutSeconds: 2.0,
+                    screenshotTimeoutSeconds: 3.0
+                ))
+                result = .success(try AppShotCore.jsonString(payload, pretty: true))
+            } catch {
+                result = .failure(error)
+            }
+
+            DispatchQueue.main.async {
+                guard requestID == self.requestSerial else {
+                    return
+                }
+                self.isCapturing = false
+                switch result {
+                case .success(let json):
+                    self.lastJSON = json
+                    if let payload = Self.payload(from: json) {
+                        self.applyCapture(payload)
+                    }
+                case .failure(let error):
+                    self.lastError = String(describing: error)
+                    self.refreshStatus()
+                }
+            }
+        }
+    }
+
+    private static func payload(from json: String) -> JSONObject? {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let payload = object as? JSONObject else {
+            return nil
+        }
+        return payload
+    }
+
+    private func applyStatus(_ payload: JSONObject) {
+        state = payload["state"] as? String ?? "unknown"
+        blockers = payload["blockers"] as? [String] ?? []
+        windowCount = payload["windowCount"] as? Int ?? 0
+
+        if let permissions = payload["permissions"] as? JSONObject {
+            accessibility = permissions["accessibility"] as? Bool ?? false
+            screenRecording = permissions["screenRecording"] as? Bool ?? false
+        }
+        if let app = payload["frontmostApplication"] as? JSONObject {
+            frontmostName = app["localizedName"] as? String ?? "-"
+            bundleIdentifier = app["bundleIdentifier"] as? String ?? "-"
+        }
+        if let window = payload["primaryWindow"] as? JSONObject {
+            let title = window["title"] as? String ?? ""
+            primaryWindowTitle = title.isEmpty ? "(untitled window)" : title
+        }
+    }
+
+    private func applyCapture(_ payload: JSONObject) {
+        if let permissions = payload["permissions"] as? JSONObject {
+            accessibility = permissions["accessibility"] as? Bool ?? false
+            screenRecording = permissions["screenRecording"] as? Bool ?? false
+        }
+        if let app = payload["frontmostApplication"] as? JSONObject {
+            frontmostName = app["localizedName"] as? String ?? "-"
+            bundleIdentifier = app["bundleIdentifier"] as? String ?? "-"
+        }
+        let windows = payload["windows"] as? [JSONObject] ?? []
+        windowCount = windows.count
+        if let window = payload["primaryWindow"] as? JSONObject {
+            let title = window["title"] as? String ?? ""
+            primaryWindowTitle = title.isEmpty ? "(untitled window)" : title
+        }
+        if let screenshot = payload["screenshot"] as? JSONObject,
+           let captured = screenshot["captured"] as? Bool,
+           let path = screenshot["path"] as? String {
+            lastCaptureSummary = captured ? "Captured screenshot: \(path)" : "Capture ran but screenshot failed"
+        } else {
+            lastCaptureSummary = "Captured app context without screenshot"
+        }
+        blockers = []
+        state = accessibility && screenRecording ? "ready" : "needsAttention"
+    }
+}
+
+struct AppShotDashboardView: View {
+    @EnvironmentObject private var model: AppShotModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    statusGrid
+                    actions
+                    blockers
+                    jsonPreview
+                }
+                .padding(22)
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            Image(systemName: model.menuBarSymbol)
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(model.state == "ready" ? .green : .orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("AppShot")
+                    .font(.title2.weight(.semibold))
+                Text(model.statusTitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                model.refreshStatus()
+            } label: {
+                Label(model.isRefreshing ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(model.isRefreshing || model.isCapturing)
+        }
+        .padding(22)
+    }
+
+    private var statusGrid: some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
+            GridRow {
+                StatusTile(title: "Accessibility", value: model.accessibility ? "On" : "Off", symbol: "accessibility", good: model.accessibility)
+                StatusTile(title: "Screen Recording", value: model.screenRecording ? "On" : "Off", symbol: "rectangle.on.rectangle", good: model.screenRecording)
+            }
+            GridRow {
+                StatusTile(title: "Front App", value: model.frontmostName, symbol: "macwindow", good: model.frontmostName != "-")
+                StatusTile(title: "Windows", value: String(model.windowCount), symbol: "rectangle.stack", good: model.windowCount > 0)
+            }
+            GridRow {
+                StatusTile(title: "Bundle", value: model.bundleIdentifier, symbol: "shippingbox", good: model.bundleIdentifier != "-")
+                StatusTile(title: "Primary Window", value: model.primaryWindowTitle, symbol: "rectangle.inset.filled", good: model.primaryWindowTitle != "-")
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 10) {
+            Button {
+                model.requestPermissions()
+            } label: {
+                Label("Request Permissions", systemImage: "lock.open")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isRefreshing || model.isCapturing)
+
+            Button {
+                model.capture(includeScreenshot: true)
+            } label: {
+                Label(model.isCapturing ? "Capturing" : "Capture AppShot", systemImage: "camera.viewfinder")
+            }
+            .disabled(model.isCapturing)
+
+            Button {
+                model.capture(includeScreenshot: false)
+            } label: {
+                Label("Capture JSON", systemImage: "curlybraces")
+            }
+            .disabled(model.isCapturing)
+        }
+    }
+
+    @ViewBuilder
+    private var blockers: some View {
+        if let error = model.lastError {
+            InfoPanel(title: "Error", symbol: "exclamationmark.triangle", color: .red, lines: [error])
+        } else if !model.blockers.isEmpty {
+            InfoPanel(title: "Needs Attention", symbol: "info.circle", color: .orange, lines: model.blockers)
+        } else {
+            InfoPanel(title: "Last Capture", symbol: "checkmark.circle", color: .green, lines: [model.lastCaptureSummary])
+        }
+    }
+
+    private var jsonPreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Current State JSON")
+                .font(.headline)
+            ScrollView(.horizontal) {
+                Text(model.lastJSON)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(minHeight: 180, maxHeight: 260)
+            .background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+struct MenuBarView: View {
+    @EnvironmentObject private var model: AppShotModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: model.menuBarSymbol)
+                Text("AppShot")
+                    .font(.headline)
+                Spacer()
+                Text(model.statusTitle)
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+            StatusLine(label: "Accessibility", value: model.accessibility ? "On" : "Off", good: model.accessibility)
+            StatusLine(label: "Screen Recording", value: model.screenRecording ? "On" : "Off", good: model.screenRecording)
+            StatusLine(label: "Front App", value: model.frontmostName, good: model.frontmostName != "-")
+            HStack {
+                Button("Refresh") {
+                    model.refreshStatus()
+                }
+                .disabled(model.isRefreshing || model.isCapturing)
+                Button("Permissions") {
+                    model.requestPermissions()
+                }
+                .disabled(model.isRefreshing || model.isCapturing)
+                Button("Capture") {
+                    model.capture(includeScreenshot: true)
+                }
+                .disabled(model.isCapturing)
+            }
+        }
+        .padding(14)
+        .frame(width: 360)
+        .onAppear {
+            model.refreshStatus()
+        }
+    }
+}
+
+struct StatusTile: View {
+    let title: String
+    let value: String
+    let symbol: String
+    let good: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .frame(width: 24)
+                .foregroundStyle(good ? .green : .orange)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct StatusLine: View {
+    let label: String
+    let value: String
+    let good: Bool
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Image(systemName: good ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundStyle(good ? .green : .orange)
+            Text(value)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct InfoPanel: View {
+    let title: String
+    let symbol: String
+    let color: Color
+    let lines: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .foregroundStyle(color)
+            ForEach(lines, id: \.self) { line in
+                Text(line)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
