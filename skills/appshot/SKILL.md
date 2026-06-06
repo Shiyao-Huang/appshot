@@ -32,8 +32,12 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```sh
    "$APPSHOT_BIN" permissions --prompt --pretty
    ```
-5. Inspect both the booleans and the identity fields: `permissions.accessibility`, `permissions.screenRecording`, `permissions.identity`, and `permissions.stability`.
-6. If either `accessibility` or `screenRecording` is `false`, treat that as the blocker to solve first. Prompt/open the macOS permission pane as needed, then re-run the permission check until both are `true`.
+5. Check Codex-accessible app readiness:
+   ```sh
+   "$APPSHOT_BIN" codex-apps-status --pretty
+   ```
+6. Inspect both the booleans and the identity/readiness fields: `permissions.accessibility`, `permissions.screenRecording`, `permissions.identity`, `permissions.stability`, `codexAppsStatus.codexAppsReady`, `codexAppsStatus.blockers`, and `codexAppsStatus.tools`.
+7. If either `accessibility` or `screenRecording` is `false`, or `codexAppsStatus.codexAppsReady` is `false`, treat that as the blocker to solve first. Prompt/open the macOS permission pane as needed, then re-run the permission/readiness check until both permissions are `true` and `codexAppsReady` is `true`.
    If macOS already shows AppShot as enabled but the CLI/App still reports missing permission, diagnose app identity drift before asking the user to re-authorize:
    ```sh
    scripts/diagnose_tcc_identity.sh
@@ -45,8 +49,8 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    tccutil reset ScreenCapture com.qppshot.AppShot
    open ~/Applications/AppShot.app
    ```
-7. If AppShot.app is running and the user can trigger the window they mean, have them press both left and right Option keys together. That writes the current capture into the shared shortcut cache. CLI and MCP capture calls use this recent cache by default when no explicit `windowID`, `pid`, `bundleID`, or screenshot path is passed. Add `--ignore-cache`, `--no-cache`, or `--fresh` when you need a fresh direct capture.
-8. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex, Claude Code, or the user:
+8. If AppShot.app is running and the user can trigger the window they mean, have them press both left and right Option keys together. That writes the current capture into the shared shortcut cache. CLI and MCP capture calls use this recent cache by default when no explicit `windowID`, `pid`, `bundleID`, or screenshot path is passed. Add `--ignore-cache`, `--no-cache`, or `--fresh` when you need a fresh direct capture.
+9. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex, Claude Code, or the user:
    ```sh
    "$APPSHOT_BIN" capture --format codex --max-depth 60 --accessibility-timeout 20
    ```
@@ -58,22 +62,22 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```sh
    "$APPSHOT_BIN" capture --pretty --browser-annotation-screenshots-mode always --max-depth 60 --accessibility-timeout 20
    ```
-9. For complex apps such as Xcode, raise the Accessibility timeout instead of treating a slow AX tree as missing data:
+10. For complex apps such as Xcode, raise the Accessibility timeout instead of treating a slow AX tree as missing data:
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 60 --accessibility-timeout 30
    ```
-10. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`.
-11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, `accessibility.electronAccessibility`, and `accessibility.documentReferences[].textPreview`.
+11. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`.
+12. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `codexAppsStatus.codexAppsReady`, `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, `accessibility.electronAccessibility`, and `accessibility.documentReferences[].textPreview`.
     When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`. For browser DOM captures, inspect exact Codex-shaped values such as `localBrowserContext.pageUrl`, `frameUrl`, `targetSelector`, `targetImmediateText`, `targetPath`, `localBrowserCommentMetadata.markerViewportPoint`, and `localBrowserDesignChange.group`.
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
     Read `codexBrowserDOMIntegration.remoteDebuggingTarget` when the page might be a Codex/Electron remote-debugging surface such as `content shell remote debugging`, `inspectable webcontents`, or localhost ports `9222` / `9229`.
     When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
-12. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
-13. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
-14. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
-15. For parity QA against a real app/window, use the repo QA script when available:
+13. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
+14. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
+15. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
+16. For parity QA against a real app/window, use the repo QA script when available:
    ```sh
    scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot —' --accessibility-timeout 20 --expect-hierarchy 'Source Editor'
    ```
@@ -93,6 +97,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
 - `appshot_capture`: frontmost app metadata, windows, accessibility tree/text, optional screenshot, optional OCR fallback, and optional recent shortcut-cache reuse.
 - `appshot_permissions`: Accessibility and Screen Recording permission state.
 - `appshot_status`: frontmost app metadata, current window, and permission state.
+- `appshot_codex_apps_status`: Codex accessible-connector readiness, including `codexAppsReady`, blockers, MCP tool surface, and force-refetch guidance.
 - `appshot_list_windows`: visible windows grouped by running app.
 
 ## Output
@@ -104,6 +109,12 @@ The CLI returns JSON with:
 - `targetApplication` for capture output
 - `permissions.identity`
 - `permissions.stability`
+- `codexAppsStatus`
+- `codexAppsStatus.codexAppsReady`
+- `codexAppsStatus.forceRefetchSupported`
+- `codexAppsStatus.retryWhenNotReady`
+- `codexAppsStatus.tools`
+- `codexAppsStatus.blockers`
 - `primaryWindow`
 - `frontmostWindow`
 - `currentWindow`

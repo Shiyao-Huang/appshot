@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE_ROOT="$(cd "$ROOT/.." && pwd)"
 CODEX_EVIDENCE_ROOT="${CODEX_EVIDENCE_ROOT:-$WORKSPACE_ROOT/codex-522/mac-app}"
+CODEX_FOCUSED_DIFF="${CODEX_FOCUSED_DIFF:-$WORKSPACE_ROOT/codex-522/artifacts/appshots-focused-diff-v0.132.0..v0.133.0.patch}"
 APP_BIN="${APPSHOT_BIN:-$ROOT/.build/debug/appshot}"
 PYTHON="${PYTHON:-/usr/bin/python3}"
 XCODE_DERIVED_DATA="${APPSHOT_XCODE_DERIVED_DATA:-$ROOT/.xcode-build/ParityDerivedData}"
@@ -59,6 +60,7 @@ log "checking Codex Mac app evidence"
 require_file "$EVENTS"
 require_file "$APP_SESSION_SNIPPETS"
 require_file "$PRELOAD_SNIPPETS"
+require_file "$CODEX_FOCUSED_DIFF"
 require_file "$PARITY_MATRIX"
 require_file "$QA_SCRIPT"
 require_file "$TCC_SCRIPT"
@@ -111,6 +113,15 @@ do
   require_contains "$PRELOAD_SNIPPETS" "$key"
 done
 
+for key in \
+  AccessibleConnectorsStatus \
+  codex_apps_ready \
+  force_refetch \
+  ConnectorsSnapshot
+do
+  require_contains "$CODEX_FOCUSED_DIFF" "$key"
+done
+
 log "checking parity matrix anchors"
 for anchor in \
   "Implemented And Verified" \
@@ -158,6 +169,9 @@ for anchor in \
   "window-bound image dimensions" \
   "TCC identity diagnosis" \
   "Permission identity JSON" \
+  "Codex apps readiness surface" \
+  "codexAppsReady" \
+  "AccessibleConnectorsStatus" \
   "Deep VS Code panels" \
   "maxDepth" \
   "Shortcut capture cache" \
@@ -254,6 +268,7 @@ for name, text, needles in [
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
     ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
+    ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
     ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
@@ -269,6 +284,7 @@ for name, text, needles in [
 PY
 
 STATUS_JSON="$(mktemp)"
+CODEX_APPS_JSON="$(mktemp)"
 CAPTURE_JSON="$(mktemp)"
 POLICY_JSON="$(mktemp)"
 RUNTIME_JSON="$(mktemp)"
@@ -280,10 +296,11 @@ RUN_DIR="$(mktemp -d)"
 POLICY_SCREENSHOT="$RUN_DIR/policy.png"
 MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
 MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
-trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
 
 log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" codex-apps-status --pretty >"$CODEX_APPS_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
@@ -291,17 +308,18 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"http://127.0.0.1:9222/json","title":"Inspectable WebContents","viewportSize":{"width":900,"height":700},"designTargets":[{"selector":"body","role":"document","text":"Inspectable WebContents","rect":{"x":0,"y":0,"width":900,"height":700}}]}' --pretty >"$DEBUG_DOM_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
 
-"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
 status = json.load(open(sys.argv[1]))
-capture = json.load(open(sys.argv[2]))
-policy = json.load(open(sys.argv[3]))
-runtime = json.load(open(sys.argv[4]))
-dom = json.load(open(sys.argv[5]))
-debug_dom = json.load(open(sys.argv[6]))
-codex_text = open(sys.argv[7]).read()
+codex_apps = json.load(open(sys.argv[2]))
+capture = json.load(open(sys.argv[3]))
+policy = json.load(open(sys.argv[4]))
+runtime = json.load(open(sys.argv[5]))
+dom = json.load(open(sys.argv[6]))
+debug_dom = json.load(open(sys.argv[7]))
+codex_text = open(sys.argv[8]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -311,13 +329,44 @@ def require_keys(name, payload, keys):
 require_keys(
     "status",
     status,
-    ["schemaVersion", "permissions", "captureCache", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"],
+    ["schemaVersion", "permissions", "codexAppsStatus", "captureCache", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"],
 )
 require_keys(
     "capture",
     capture,
-    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
+    ["schemaVersion", "permissions", "codexAppsStatus", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
 )
+
+require_keys(
+    "CLI codex apps status",
+    codex_apps,
+    ["format", "source", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "connectors", "connectorCount", "accessibleConnectors", "accessibleConnectorCount", "tools", "toolCount", "blockers", "evidence"],
+)
+if codex_apps.get("format") != "codex-accessible-connectors-status":
+    raise SystemExit("codex-apps-status returned unexpected format")
+for required_tool in ["appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows", "appshot_codex_apps_status"]:
+    if required_tool not in codex_apps.get("tools", []):
+        raise SystemExit(f"codex-apps-status missing tool: {required_tool}")
+if codex_apps.get("connectorCount") != 1:
+    raise SystemExit("codex-apps-status should report one AppShot connector")
+if codex_apps.get("toolCount") != 5:
+    raise SystemExit("codex-apps-status should report five AppShot MCP tools")
+if codex_apps.get("forceRefetchSupported") is not True or codex_apps.get("retryWhenNotReady") is not True:
+    raise SystemExit("codex-apps-status lost Codex force-refetch readiness semantics")
+if codex_apps.get("codexAppsReady") != (len(codex_apps.get("blockers", [])) == 0):
+    raise SystemExit("codex-apps-status readiness does not match blockers")
+if codex_apps.get("accessibleConnectorCount") != len(codex_apps.get("accessibleConnectors", [])):
+    raise SystemExit("codex-apps-status accessibleConnectorCount does not match accessibleConnectors")
+if codex_apps.get("evidence", {}).get("anchors") != ["AccessibleConnectorsStatus", "codex_apps_ready", "force_refetch", "ConnectorsSnapshot"]:
+    raise SystemExit("codex-apps-status evidence anchors drifted")
+for name, payload in [("status", status.get("codexAppsStatus", {})), ("capture", capture.get("codexAppsStatus", {}))]:
+    require_keys(f"{name} codexAppsStatus", payload, ["format", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "tools", "blockers"])
+    if payload.get("format") != "codex-accessible-connectors-status":
+        raise SystemExit(f"{name} codexAppsStatus format drifted")
+    if "appshot_codex_apps_status" not in payload.get("tools", []):
+        raise SystemExit(f"{name} codexAppsStatus missing MCP readiness tool")
+    if payload.get("codexAppsReady") != (len(payload.get("blockers", [])) == 0):
+        raise SystemExit(f"{name} codexAppsStatus readiness does not match blockers")
 
 if isinstance(capture.get("primaryWindow"), dict):
     require_keys("capture primaryWindow", capture["primaryWindow"], ["windowID", "windowNumber", "ownerPID", "bounds", "isOnScreen"])
@@ -563,6 +612,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","screenshotPath":'"$MCP_POLICY_SCREENSHOT_JSON"',"browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
   '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.10","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
   '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"http://localhost:9229/json","title":"Content Shell Remote Debugging","viewportSize":{"width":640,"height":480},"designTargets":[{"selector":"main","role":"document","text":"Content Shell Remote Debugging","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
+  '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"appshot_codex_apps_status","arguments":{}}}' \
   | (cd "$RUN_DIR" && APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL")
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -570,11 +620,11 @@ import json
 import sys
 
 lines = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6, 7]:
-    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6, 7]")
+if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6, 7, 8]:
+    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6, 7, 8]")
 
 tools = {tool["name"] for tool in lines[1]["result"]["tools"]}
-expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows"}
+expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows", "appshot_codex_apps_status"}
 missing = sorted(expected_tools - tools)
 if missing:
     raise SystemExit(f"MCP missing tools: {', '.join(missing)}")
@@ -662,6 +712,18 @@ if mcp_debug_remote.get("localDebugPortMatched") is not True:
     raise SystemExit("MCP DOM fixture did not detect localhost debug port")
 if mcp_debug_remote.get("port") != 9229:
     raise SystemExit("MCP DOM fixture did not preserve debug port 9229")
+
+mcp_codex_apps = json.loads(lines[7]["result"]["content"][0]["text"])
+if mcp_codex_apps.get("format") != "codex-accessible-connectors-status":
+    raise SystemExit("MCP codex apps status returned unexpected format")
+if mcp_codex_apps.get("forceRefetchSupported") is not True:
+    raise SystemExit("MCP codex apps status did not preserve forceRefetchSupported")
+if mcp_codex_apps.get("retryWhenNotReady") is not True:
+    raise SystemExit("MCP codex apps status did not preserve retryWhenNotReady")
+if mcp_codex_apps.get("codexAppsReady") != (len(mcp_codex_apps.get("blockers", [])) == 0):
+    raise SystemExit("MCP codex apps readiness does not match blockers")
+if "appshot_codex_apps_status" not in mcp_codex_apps.get("tools", []):
+    raise SystemExit("MCP codex apps status did not include its own tool surface")
 PY
 
 log "ok"

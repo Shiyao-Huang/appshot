@@ -89,6 +89,8 @@ struct AppShotCLI {
                 ))
             case "permissions":
                 payload = AppShotCore.permissions(prompt: options.promptPermissions)
+            case "codex-apps-status":
+                payload = AppShotCore.codexAppsStatus(prompt: options.promptPermissions)
             case "status":
                 payload = AppShotCore.status(prompt: options.promptPermissions)
             case "list-windows":
@@ -270,12 +272,14 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
+      appshot codex-apps-status [--prompt] [--pretty]
       appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
     Notes:
       By default, capture may use a recent AppShot.app shortcut cache when no explicit target is passed.
+      codex-apps-status reports AppShot's Codex accessible-connector readiness, tool surface, and permission blockers.
       Use --ignore-cache, --no-cache, or --fresh to force a fresh frontmost-window capture.
       AppShot.app writes the shortcut cache when both left and right Option keys are pressed together.
       Use list-windows first. Then pass the chosen windowID, pid, or bundleID to capture.

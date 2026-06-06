@@ -204,10 +204,12 @@ public enum AppShotCore {
             timeoutSeconds: options.screenshotTimeoutSeconds
         )
 
+        let permissionPayload = permissions(prompt: false)
         var payload: JSONObject = [
             "schemaVersion": 1,
             "capturedAt": ISO8601DateFormatter().string(from: Date()),
-            "permissions": permissions(prompt: false),
+            "permissions": permissionPayload,
+            "codexAppsStatus": codexAppsStatus(permissions: permissionPayload),
             "frontmostApplication": appInfo(frontmostApp ?? app),
             "currentApplication": appInfo(app),
             "targetApplication": appInfo(app),
@@ -298,6 +300,10 @@ public enum AppShotCore {
         ]
     }
 
+    public static func codexAppsStatus(prompt: Bool = false) -> JSONObject {
+        codexAppsStatus(permissions: permissions(prompt: prompt))
+    }
+
     public static func listWindows() -> JSONObject {
         let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
@@ -325,19 +331,11 @@ public enum AppShotCore {
         let windows = frontmost.map { windowsForPID($0.processIdentifier) } ?? []
         let primaryWindow = windows.first
 
-        var blockers: [String] = []
-        var advisories: [String] = []
-        if !hasAccessibility {
-            blockers.append("Accessibility permission is off; text/UI tree will be shallow.")
-        }
-        if !hasScreenRecording {
-            blockers.append("Screen Recording permission is off; screenshots may fail.")
-        }
-        if let stability = permissionPayload["stability"] as? JSONObject,
-           let warning = stability["warning"] as? String,
-           !warning.isEmpty {
-            advisories.append(warning)
-        }
+        var blockers = appshotReadinessBlockers(
+            hasAccessibility: hasAccessibility,
+            hasScreenRecording: hasScreenRecording
+        )
+        let advisories = appshotReadinessAdvisories(permissions: permissionPayload)
         if frontmost == nil {
             blockers.append("No frontmost application is available.")
         }
@@ -347,6 +345,7 @@ public enum AppShotCore {
             "capturedAt": ISO8601DateFormatter().string(from: Date()),
             "state": blockers.isEmpty ? "ready" : "needsAttention",
             "permissions": permissionPayload,
+            "codexAppsStatus": codexAppsStatus(permissions: permissionPayload),
             "windowCount": windows.count,
             "blockers": blockers,
             "advisories": advisories,
@@ -368,6 +367,92 @@ public enum AppShotCore {
             payload["currentWindow"] = primaryWindow
         }
         return payload
+    }
+
+    private static let appshotMCPToolNames = [
+        "appshot_capture",
+        "appshot_permissions",
+        "appshot_status",
+        "appshot_list_windows",
+        "appshot_codex_apps_status"
+    ]
+
+    private static func appshotReadinessBlockers(
+        hasAccessibility: Bool,
+        hasScreenRecording: Bool
+    ) -> [String] {
+        var blockers: [String] = []
+        if !hasAccessibility {
+            blockers.append("Accessibility permission is off; text/UI tree will be shallow.")
+        }
+        if !hasScreenRecording {
+            blockers.append("Screen Recording permission is off; screenshots may fail.")
+        }
+        return blockers
+    }
+
+    private static func appshotReadinessAdvisories(permissions permissionPayload: JSONObject) -> [String] {
+        guard let stability = permissionPayload["stability"] as? JSONObject,
+              let warning = stability["warning"] as? String,
+              !warning.isEmpty else {
+            return []
+        }
+        return [warning]
+    }
+
+    private static func codexAppsStatus(permissions permissionPayload: JSONObject) -> JSONObject {
+        let hasAccessibility = permissionPayload["accessibility"] as? Bool ?? false
+        let hasScreenRecording = permissionPayload["screenRecording"] as? Bool ?? false
+        let blockers = appshotReadinessBlockers(
+            hasAccessibility: hasAccessibility,
+            hasScreenRecording: hasScreenRecording
+        )
+        let advisories = appshotReadinessAdvisories(permissions: permissionPayload)
+        let ready = blockers.isEmpty
+        let toolNames = appshotMCPToolNames
+        let identity = permissionPayload["identity"] as? JSONObject ?? [:]
+        let stability = permissionPayload["stability"] as? JSONObject ?? [:]
+        let connector: JSONObject = [
+            "id": "appshot",
+            "name": "AppShot",
+            "kind": "mcp-accessible-app",
+            "bundleIdentifier": identity["bundleIdentifier"] ?? "com.qppshot.AppShot",
+            "bundlePath": identity["bundlePath"] ?? "",
+            "executablePath": identity["executablePath"] ?? "",
+            "stableGrantTarget": stability["recommendedGrantTarget"] ?? [:],
+            "ready": ready,
+            "codexAppsReady": ready,
+            "state": ready ? "ready" : "needsAttention",
+            "tools": toolNames.map { ["name": $0] as JSONObject },
+            "toolCount": toolNames.count,
+            "blockers": blockers,
+            "advisories": advisories
+        ]
+        return [
+            "schemaVersion": 1,
+            "format": "codex-accessible-connectors-status",
+            "source": "appshot-codex-apps-status",
+            "codexAppsReady": ready,
+            "forceRefetchSupported": true,
+            "retryWhenNotReady": true,
+            "connectors": [connector],
+            "connectorCount": 1,
+            "accessibleConnectors": ready ? [connector] : [],
+            "accessibleConnectorCount": ready ? 1 : 0,
+            "tools": toolNames,
+            "toolCount": toolNames.count,
+            "blockers": blockers,
+            "advisories": advisories,
+            "evidence": [
+                "focusedDiff": "codex-522/artifacts/appshots-focused-diff-v0.132.0..v0.133.0.patch",
+                "anchors": [
+                    "AccessibleConnectorsStatus",
+                    "codex_apps_ready",
+                    "force_refetch",
+                    "ConnectorsSnapshot"
+                ]
+            ]
+        ]
     }
 
     public static func captureCacheStatus(maxAgeSeconds: TimeInterval = 15.0) -> JSONObject {

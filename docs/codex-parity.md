@@ -16,6 +16,7 @@ Five sentences: The current hard gate is `scripts/verify_codex_parity.sh`. It ch
 | Runtime events | `../codex-522/mac-app/artifacts/comment-preload-runtime-events-522.txt` | Browser sidebar event names |
 | App session snippets | `../codex-522/mac-app/appshots-evidence/522-app-session-appshots-snippets.js` | Settings and thread payload keys |
 | Browser preload snippets | `../codex-522/mac-app/appshots-evidence/522-appshots-snippets.js` | Host/preload sync keys and emitted runtime events |
+| Codex apps focused diff | `../codex-522/artifacts/appshots-focused-diff-v0.132.0..v0.133.0.patch` | `AccessibleConnectorsStatus`, `codex_apps_ready`, `force_refetch`, and connector snapshot semantics |
 | AppShot verifier | `scripts/verify_codex_parity.sh` | Executable local gate |
 
 ## Implemented And Verified
@@ -43,7 +44,8 @@ Five sentences: The current hard gate is `scripts/verify_codex_parity.sh`. It ch
 | TCC identity diagnosis | Codex-style app capture must run under the app identity the user actually authorized | `scripts/diagnose_tcc_identity.sh` reports installed/debug/CLI paths, bundle identifiers, signing mode, and `CDHash` drift | Manual diagnosis plus verifier anchors |
 | Permission identity JSON | Codex built-in appshot runs inside a stable signed app identity; AppShot must make mismatched local identities visible | `permissions.identity` and `permissions.stability` report the checking executable, mode, stable grant target, warning, and recovery steps | CLI/MCP schema checks plus `scripts/verify_codex_parity.sh` anchors |
 | Screenshot/OCR fallback | Codex browser annotation screenshot events and AppShot README scope | explicit `--include-screenshot`, `--include-ocr` | CLI options and release docs |
-| MCP integration | Codex consumption path needs tool-callable context | `appshot_capture`, `appshot_permissions`, `appshot_status`, `appshot_list_windows` | `scripts/verify_codex_parity.sh` MCP smoke test |
+| MCP integration | Codex consumption path needs tool-callable context | `appshot_capture`, `appshot_permissions`, `appshot_status`, `appshot_list_windows`, `appshot_codex_apps_status` | `scripts/verify_codex_parity.sh` MCP smoke test |
+| Codex apps readiness surface | Codex focused diff returns `AccessibleConnectorsStatus`, tracks `codex_apps_ready`, and retries with `force_refetch` when Codex apps are not ready | `codexAppsStatus` in `status`/`capture`, CLI `codex-apps-status`, and MCP `appshot_codex_apps_status` expose `codexAppsReady`, permission blockers, tool surface, `forceRefetchSupported`, and `retryWhenNotReady` | `scripts/verify_codex_parity.sh` focused-diff anchors plus CLI and MCP readiness checks |
 | Version/package alignment | Extracted app/plugin must match release identity | plugin, MCP package, MCP server, installer, release script at `0.1.10` | `scripts/verify_codex_parity.sh` version alignment |
 
 ## Evidence-Tracked But Not Implemented
@@ -81,6 +83,7 @@ The verifier must fail when:
 - `scripts/qa_app_capture.py` loses its target-window screenshot, window-bound image size, OCR, AX text, or hierarchy checks.
 - `scripts/diagnose_tcc_identity.sh` stops explaining bundle/signing/`CDHash` identity drift.
 - Permission JSON loses `identity` or `stability`, making CLI/App/MCP TCC drift invisible.
+- Codex apps readiness loses `codexAppsStatus`, `codex-apps-status`, `appshot_codex_apps_status`, `codexAppsReady`, `forceRefetchSupported`, `retryWhenNotReady`, `AccessibleConnectorsStatus`, or `force_refetch` evidence anchors.
 - MCP tools disappear or stop returning the verified aliases.
 - Package versions drift across plugin, MCP, installer, or release scripts.
 - This matrix loses its core implemented and evidence-tracked anchors.

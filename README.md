@@ -41,6 +41,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Claude Code App Shot support via `APPSHOT_INSTALL_CLAUDE_CODE=1`, which installs the AppShot skill and MCP server registration.
 - Global shortcut setting, enabled by default with both left and right Option keys.
 - Shared shortcut cache: left+right Option writes the latest capture so CLI/MCP can return it immediately; use `--ignore-cache`, `--no-cache`, or `--fresh` for a direct capture.
+- Codex apps readiness surface: `codexAppsStatus`, CLI `codex-apps-status`, and MCP `appshot_codex_apps_status` report whether AppShot is ready as a Codex-accessible app connector, including permission blockers, tool surface, and force-refetch guidance.
 - Codex browser-comment payload adapter: JSON captures include `codexBrowserPayload` with `localBrowserContext`, `localBrowserCommentMetadata`, `localBrowserAttachedImages`, `localBrowserDesignChange.group`, and `localBrowserScreenshot` field names for Codex/Claude consumers. Browser DOM captures prefer real page URLs, target selectors, immediate target text, marker viewport points, and bridge availability when those values are available.
 - Codex browser screenshot policy: `--browser-annotation-screenshots-mode always|necessary`, MCP `browserAnnotationScreenshotsMode`, and App Settings `Browser Screenshots` write `browser-annotation-screenshots-mode` into `codexBrowserSettings`; `always` captures a screenshot for `codexBrowserPayload` by default.
 - Codex browser runtime state adapter: JSON captures include `codexBrowserRuntimeState` with Codex `browser-sidebar-runtime-sync` field names such as `interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, and `activeDesignChange`.
@@ -82,6 +83,7 @@ CLI examples:
 
 ```sh
 .build/debug/appshot status --pretty
+.build/debug/appshot codex-apps-status --pretty
 .build/debug/appshot permissions --prompt --pretty
 .build/debug/appshot capture --pretty
 .build/debug/appshot capture --include-screenshot --screenshot appshot.png --output appshot.json --pretty
@@ -113,6 +115,8 @@ For Codex browser runtime-state parity, JSON capture includes `codexBrowserRunti
 For supported frontmost browser apps, `--include-browser-dom` adds `codexBrowserDOMIntegration`. It uses a short-timeout Apple Events JavaScript probe for Safari and Chromium-style browsers to read page images and design target candidates, then emits Codex runtime event-shaped candidate entries such as `browser-sidebar-runtime-open-editor`, `browser-sidebar-runtime-create-comment-at-point`, `browser-sidebar-runtime-update-anchor`, `browser-sidebar-runtime-open-design-editor`, `browser-sidebar-runtime-design-scrub-changed`, `browser-sidebar-runtime-image-drag-started`, and `browser-sidebar-runtime-image-drag-ended`. `--browser-dom-install-bridge` goes one step closer to Codex by installing a temporary page listener that logs real pointer, keyboard, drag, and sync events into `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`; those bridge events are merged into `codexBrowserPayload.localBrowserRuntimeEvents` and make `localBrowserRuntimeProtocol.liveEventStreamAvailable` true for that tab. If Apple Events scripting is unavailable, blocked, or times out, the capture returns `available: false` with a reason instead of hanging. This bridge is page-level instrumentation, not Codex's internal Electron preload/host IPC.
 
 DOM captures also include `codexBrowserDOMIntegration.remoteDebuggingTarget`, matching Codex app-session evidence for `content shell remote debugging`, `inspectable webcontents`, and localhost debug ports `9222` / `9229`. The same classification is mirrored into `codexBrowserPayload.localBrowserCommentMetadata.browserDOMIntegration.remoteDebuggingTarget`.
+
+`status` and `capture` also include `codexAppsStatus`, and the same payload is available through `appshot codex-apps-status --pretty` or MCP `appshot_codex_apps_status`. This mirrors the Codex app-list readiness shape from the focused diff: `codexAppsReady` is derived from permission blockers, `forceRefetchSupported` / `retryWhenNotReady` document the retry path, and `tools` lists the AppShot MCP surface Claude Code or Codex can call.
 
 ### Permissions
 
@@ -183,6 +187,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - 通过 `APPSHOT_INSTALL_CLAUDE_CODE=1` 给 Claude Code 安装 AppShot skill 和 MCP 注册，让 Claude Code 拥有 Codex 风格的 App Shot 能力。
 - 全局快捷键设置，默认使用左 Option + 右 Option。
 - 共享快捷键缓存：左 Option + 右 Option 会写入最近一次捕捉，CLI/MCP 可以立即读取；需要直接重新捕捉时使用 `--ignore-cache`、`--no-cache` 或 `--fresh`。
+- Codex apps readiness surface：`codexAppsStatus`、CLI `codex-apps-status` 和 MCP `appshot_codex_apps_status` 会报告 AppShot 作为 Codex 可访问 app connector 是否 ready，包括权限 blocker、工具列表和 force-refetch 指引。
 - Codex browser-comment payload adapter：JSON capture 会包含 `codexBrowserPayload`，内部使用 `localBrowserContext`、`localBrowserCommentMetadata`、`localBrowserAttachedImages`、`localBrowserDesignChange.group`、`localBrowserScreenshot` 这些 Codex/Claude 消费侧字段名。Browser DOM capture 在可用时会优先使用真实页面 URL、目标 selector、目标即时文本、marker viewport point 和 bridge 可用状态。
 - Codex browser screenshot policy：`--browser-annotation-screenshots-mode always|necessary`、MCP `browserAnnotationScreenshotsMode`、App Settings `Browser Screenshots` 会把 `browser-annotation-screenshots-mode` 写入 `codexBrowserSettings`；`always` 会默认给 `codexBrowserPayload` 捕捉截图。
 - Codex browser runtime state adapter：JSON capture 会包含 `codexBrowserRuntimeState`，使用 Codex `browser-sidebar-runtime-sync` 同名字段，例如 `interactionMode`、`annotationEditorMode`、`isOriginalViewEnabled`、`isDesignModifierPressed`、`isTweaksEditorOpen`、`activeDesignChange`。
@@ -224,6 +229,7 @@ CLI 示例：
 
 ```sh
 .build/debug/appshot status --pretty
+.build/debug/appshot codex-apps-status --pretty
 .build/debug/appshot permissions --prompt --pretty
 .build/debug/appshot capture --pretty
 .build/debug/appshot capture --include-screenshot --screenshot appshot.png --output appshot.json --pretty
@@ -255,6 +261,8 @@ JSON capture 还会包含 `codexBrowserPayload`，这是 AppShot 原生捕捉到
 对于支持的前台浏览器 App，`--include-browser-dom` 会额外生成 `codexBrowserDOMIntegration`。它通过短超时的 Apple Events JavaScript probe 只读 Safari 和 Chromium 系浏览器页面，提取图片和可设计元素候选，再生成 Codex runtime event 形状的候选数据，例如 `browser-sidebar-runtime-open-editor`、`browser-sidebar-runtime-create-comment-at-point`、`browser-sidebar-runtime-update-anchor`、`browser-sidebar-runtime-open-design-editor`、`browser-sidebar-runtime-design-scrub-changed`、`browser-sidebar-runtime-image-drag-started`、`browser-sidebar-runtime-image-drag-ended`。`--browser-dom-install-bridge` 会再向 Codex 靠近一步：安装临时页面监听器，把真实 pointer、keyboard、drag、sync 事件记录到 `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`；这些 bridge 事件会合并进 `codexBrowserPayload.localBrowserRuntimeEvents`，并让当前 tab 的 `localBrowserRuntimeProtocol.liveEventStreamAvailable` 变为 true。如果 Apple Events scripting 不可用、被权限挡住或超时，capture 会返回 `available: false` 和原因，不会卡住。这个 bridge 是页面级 instrumentation，不是 Codex 内部 Electron preload/host IPC。
 
 DOM capture 也会包含 `codexBrowserDOMIntegration.remoteDebuggingTarget`，对齐 Codex app-session 证据中对 `content shell remote debugging`、`inspectable webcontents` 和 localhost 调试端口 `9222` / `9229` 的识别。同一个分类会镜像到 `codexBrowserPayload.localBrowserCommentMetadata.browserDOMIntegration.remoteDebuggingTarget`。
+
+`status` 和 `capture` 还会包含 `codexAppsStatus`，同一份 payload 也可以通过 `appshot codex-apps-status --pretty` 或 MCP `appshot_codex_apps_status` 获取。这一层对齐 Codex focused diff 里的 app-list readiness 形状：`codexAppsReady` 由权限 blockers 推导，`forceRefetchSupported` / `retryWhenNotReady` 说明重试路径，`tools` 列出 Claude Code 或 Codex 可调用的 AppShot MCP surface。
 
 ### 权限
 

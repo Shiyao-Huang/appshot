@@ -139,6 +139,16 @@ function tools() {
       }
     },
     {
+      name: "appshot_codex_apps_status",
+      description: "Return AppShot's Codex accessible-connector readiness status, including codexAppsReady, tool surface, permission blockers, and force-refetch guidance.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: { type: "boolean", default: false }
+        }
+      }
+    },
+    {
       name: "appshot_list_windows",
       description: "List regular running apps and visible windows, including exact capture parameters for follow-up appshot_capture calls.",
       inputSchema: { type: "object", properties: {} }
@@ -190,6 +200,9 @@ function callTool(params = {}) {
     if (args.prompt) cliArgs.push("--prompt");
   } else if (name === "appshot_status") {
     cliArgs.push("status", "--pretty");
+    if (args.prompt) cliArgs.push("--prompt");
+  } else if (name === "appshot_codex_apps_status") {
+    cliArgs.push("codex-apps-status", "--pretty");
     if (args.prompt) cliArgs.push("--prompt");
   } else if (name === "appshot_list_windows") {
     cliArgs.push("list-windows", "--pretty");
