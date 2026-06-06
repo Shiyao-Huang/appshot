@@ -1690,21 +1690,37 @@ public func axParameterizedText(_ element: AXUIElement) -> AXParameterizedText? 
     }
 
     guard let range,
-          let parameter = axRangeValue(range),
-          let value = copyAXParameterizedValue(element, "AXStringForRange", parameter: parameter) else {
+          let parameter = axRangeValue(range) else {
         return nil
     }
 
-    let text: String
-    if let string = value as? String {
-        text = string
-    } else if let attributed = value as? NSAttributedString {
-        text = attributed.string
-    } else {
-        text = String(describing: value)
+    var candidates: [String] = []
+    for attribute in ["AXStringForRange", "AXAttributedStringForRange"] {
+        guard let value = copyAXParameterizedValue(element, attribute, parameter: parameter),
+              let text = axText(fromParameterizedValue: value) else {
+            continue
+        }
+        candidates.append(text)
     }
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : AXParameterizedText(text: trimmed, range: range)
+
+    guard let text = candidates
+        .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+        .filter({ !$0.isEmpty })
+        .max(by: { $0.count < $1.count }) else {
+        return nil
+    }
+
+    return AXParameterizedText(text: text, range: range)
+}
+
+public func axText(fromParameterizedValue value: Any) -> String? {
+    if let string = value as? String {
+        return string
+    }
+    if let attributed = value as? NSAttributedString {
+        return attributed.string
+    }
+    return nil
 }
 
 public func axParameterizedTextFragments(
@@ -2216,7 +2232,8 @@ private func codexElementLine(_ element: JSONObject) -> String {
     } else if ["text", "文本"].contains(role),
               let text = value ?? textContent ?? description {
         parts.append(text)
-    } else if let description {
+    } else if let description,
+              settableAnnotation == nil || description != codexSettableValueString(element) {
         parts.append(codexDescriptionLabel(description, role: role))
     } else if let textContent {
         parts.append(textContent)
@@ -2336,6 +2353,10 @@ private func codexSettableRawValue(_ element: JSONObject) -> Any? {
         } else {
             return value
         }
+    }
+    if ["text field", "text area", "文本栏", "文本区域"].contains(codexRoleName(element)),
+       let description = codexTrimmedString(element["description"]) {
+        return description
     }
     return element["placeholderValue"]
 }
