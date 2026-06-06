@@ -2,9 +2,9 @@
 
 ## English
 
-AppShot gives any AI a Codex-style app screenshot capability on macOS.
+AppShot gives any AI a Codex-style App Shot capability on macOS, and lets Claude Code use the same App Shot ability that Codex has.
 
-It captures the frontmost Mac application as structured context: app metadata, visible windows, primary window geometry/title, Accessibility text/UI tree, focused element text, and optional screenshots. OCR is available only as an explicit fallback. The project ships as a native macOS app first, with CLI, MCP, Codex skill, and plugin support as secondary integration layers.
+It captures the frontmost Mac application as structured context: app metadata, visible windows, primary window geometry/title, Accessibility text/UI tree, focused element text, and optional screenshots. OCR is available only as an explicit fallback. The project ships as a native macOS app first, with CLI, MCP, Codex skill, Claude Code skill, and plugin support as integration layers.
 
 ### Install
 
@@ -14,6 +14,12 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 
 By default this installs `AppShot.app` to `~/Applications/AppShot.app`, the `appshot` CLI to `~/.local/bin/appshot`, the MCP server to `~/.local/share/appshot/mcp`, and the Codex skill to `~/.codex/skills/appshot`.
 
+To let Claude Code use Codex-style App Shot, install the Claude Code skill and MCP registration too:
+
+```sh
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_CODE=1 bash
+```
+
 Options:
 
 ```sh
@@ -21,7 +27,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_SKILL_ONLY=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_NO_OPEN=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_RESET_PERMISSIONS=1 bash
-curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_MCP=1 bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_CODE=1 bash
 ```
 
 ### What Is Included
@@ -32,7 +38,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Codex skill: `skills/appshot/SKILL.md`.
 - Codex plugin manifest: `.codex-plugin/plugin.json`.
 - Release packaging for Mac users: `.app`, `.zip`, and `.dmg`.
-- Claude Code MCP registration via `APPSHOT_INSTALL_CLAUDE_MCP=1`.
+- Claude Code App Shot support via `APPSHOT_INSTALL_CLAUDE_CODE=1`, which installs the AppShot skill and MCP server registration.
 - Global shortcut setting, enabled by default with both left and right Option keys.
 
 ### Build And Run
@@ -118,9 +124,9 @@ The first release uses public macOS APIs. Window parsing will continue to be ref
 
 ## 中文
 
-AppShot 让任何 AI 都拥有 Codex 样式的应用截图能力。
+AppShot 让任何 AI 都拥有 Codex 样式的 App Shot 能力，并让 Claude Code 也拥有和 Codex 一样的 App Shot 能力。
 
-它会把当前前台 Mac 应用捕捉成结构化上下文：App 元数据、可见窗口、主窗口几何信息和标题、Accessibility 文本/UI 树、焦点元素文本，以及可选截图。OCR 只作为显式兜底能力。项目以原生 macOS App 为核心发布，同时支持 CLI、MCP、Codex skill 和 plugin。
+它会把当前前台 Mac 应用捕捉成结构化上下文：App 元数据、可见窗口、主窗口几何信息和标题、Accessibility 文本/UI 树、焦点元素文本，以及可选截图。OCR 只作为显式兜底能力。项目以原生 macOS App 为核心发布，同时支持 CLI、MCP、Codex skill、Claude Code skill 和 plugin。
 
 ### 安装
 
@@ -130,6 +136,12 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 
 默认会把 `AppShot.app` 安装到 `~/Applications/AppShot.app`，把 `appshot` CLI 安装到 `~/.local/bin/appshot`，把 MCP server 安装到 `~/.local/share/appshot/mcp`，并把 Codex skill 安装到 `~/.codex/skills/appshot`。
 
+如果要让 Claude Code 使用 Codex 样式的 App Shot，同时安装 Claude Code skill 和 MCP 注册：
+
+```sh
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_CODE=1 bash
+```
+
 可选参数：
 
 ```sh
@@ -137,7 +149,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_SKILL_ONLY=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_NO_OPEN=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_RESET_PERMISSIONS=1 bash
-curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_MCP=1 bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_CODE=1 bash
 ```
 
 ### 包含内容
@@ -148,7 +160,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Codex skill：`skills/appshot/SKILL.md`。
 - Codex plugin manifest：`.codex-plugin/plugin.json`。
 - 面向 Mac 用户的 release 包：`.app`、`.zip`、`.dmg`。
-- 通过 `APPSHOT_INSTALL_CLAUDE_MCP=1` 注册 Claude Code MCP。
+- 通过 `APPSHOT_INSTALL_CLAUDE_CODE=1` 给 Claude Code 安装 AppShot skill 和 MCP 注册，让 Claude Code 拥有 Codex 风格的 App Shot 能力。
 - 全局快捷键设置，默认使用左 Option + 右 Option。
 
 ### 构建和运行

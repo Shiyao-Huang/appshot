@@ -6,12 +6,15 @@ REPO_NAME="${APPSHOT_REPO_NAME:-appshot}"
 VERSION="${APPSHOT_VERSION:-0.1.2}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 SKILL_DIR="$CODEX_HOME/skills/appshot"
+CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+CLAUDE_SKILL_DIR="$CLAUDE_HOME/skills/appshot"
 INSTALL_DIR="${APPSHOT_INSTALL_DIR:-$HOME/Applications}"
 APP_PATH="$INSTALL_DIR/AppShot.app"
 BIN_DIR="${APPSHOT_BIN_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/appshot"
 MCP_DIR="${APPSHOT_MCP_DIR:-$HOME/.local/share/appshot/mcp}"
 BUNDLE_ID="${APPSHOT_BUNDLE_ID:-com.qppshot.AppShot}"
+INSTALL_CLAUDE_CODE="${APPSHOT_INSTALL_CLAUDE_CODE:-${APPSHOT_INSTALL_CLAUDE_MCP:-0}}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -49,9 +52,21 @@ curl -fsSL \
   "$SKILL_URL" \
   -o "$SKILL_DIR/SKILL.md"
 
+if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
+  log "installing Claude Code skill to $CLAUDE_SKILL_DIR"
+  rm -rf "$CLAUDE_SKILL_DIR"
+  mkdir -p "$CLAUDE_SKILL_DIR"
+  curl -fsSL \
+    "$SKILL_URL" \
+    -o "$CLAUDE_SKILL_DIR/SKILL.md"
+fi
+
 if [[ "${APPSHOT_SKILL_ONLY:-0}" == "1" ]]; then
   log "skill-only install complete"
   log "restart Codex to pick up the appshot skill"
+  if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
+    log "restart Claude Code to pick up the appshot skill"
+  fi
   exit 0
 fi
 
@@ -99,7 +114,7 @@ if [[ -n "$FOUND_MCP" ]]; then
   chmod +x "$MCP_DIR/server.js" || true
   log "installed AppShot MCP server to $MCP_DIR"
 
-  if [[ "${APPSHOT_INSTALL_CLAUDE_MCP:-0}" == "1" ]]; then
+  if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
     if command -v claude >/dev/null 2>&1; then
       CLAUDE_MCP_SCOPE="${APPSHOT_CLAUDE_MCP_SCOPE:-user}"
       if [[ "$BIN_PATH" == "$HOME/.local/bin/appshot" && "$MCP_DIR" == "$HOME/.local/share/appshot/mcp" ]]; then
@@ -125,7 +140,10 @@ fi
 
 log "done"
 log "restart Codex to pick up the appshot skill"
+if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
+  log "restart Claude Code to pick up the appshot skill"
+fi
 log "cli: add $BIN_DIR to PATH if appshot is not found"
 log "mcp: set APPSHOT_BIN=$BIN_PATH when running $MCP_DIR/server.js"
-log "claude: rerun with APPSHOT_INSTALL_CLAUDE_MCP=1 to register the MCP server for Claude Code"
+log "claude: rerun with APPSHOT_INSTALL_CLAUDE_CODE=1 to give Claude Code the Codex App Shot ability"
 log "permissions: grant Accessibility and Screen Recording to AppShot when prompted"

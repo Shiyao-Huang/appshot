@@ -6,7 +6,7 @@ AppShot v0.1.2 focuses on stable signed releases and cross-agent integration:
 
 - Release builds now default to `0.1.2` and refuse ad-hoc output.
 - Public release mode is explicit: set `APPSHOT_PUBLIC_RELEASE=1` with a `Developer ID Application` identity and `APPSHOT_NOTARY_PROFILE` to require notarization, stapling, and Gatekeeper assessment.
-- The installer can register AppShot for Claude Code with `APPSHOT_INSTALL_CLAUDE_MCP=1`, using the installed CLI and MCP server paths.
+- The installer can give Claude Code the Codex App Shot ability with `APPSHOT_INSTALL_CLAUDE_CODE=1`, installing both the AppShot skill and MCP server registration.
 - The native app now includes a global shortcut setting. It is enabled by default and uses left Option + right Option to capture the current app.
 - AppShot continues to report TCC identity stability directly, so users can distinguish the stable installed app from Xcode DerivedData or CLI identities.
 
@@ -16,7 +16,7 @@ AppShot v0.1.2 重点补齐稳定签名发布和跨 agent 集成：
 
 - release 构建默认版本切到 `0.1.2`，并拒绝 ad-hoc 输出。
 - 公开发布模式变成显式路径：设置 `APPSHOT_PUBLIC_RELEASE=1`，配合 `Developer ID Application` 证书和 `APPSHOT_NOTARY_PROFILE`，强制执行 notarization、staple 和 Gatekeeper 校验。
-- 安装器可以通过 `APPSHOT_INSTALL_CLAUDE_MCP=1` 为 Claude Code 注册 AppShot MCP，并指向已安装的 CLI 与 MCP server。
+- 安装器可以通过 `APPSHOT_INSTALL_CLAUDE_CODE=1` 让 Claude Code 拥有 Codex App Shot 能力，同时安装 AppShot skill 和 MCP server 注册。
 - 原生 App 新增全局快捷键设置，默认开启，使用左 Option + 右 Option 捕获当前 App。
 - AppShot 继续直接暴露 TCC 身份稳定性，方便区分固定安装版、Xcode DerivedData 版和 CLI 身份。
 

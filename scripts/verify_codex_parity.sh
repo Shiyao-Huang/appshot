@@ -193,7 +193,7 @@ for name, text, needles in [
     ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled"]),
     ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\""]),
     ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format"]),
-    ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_MCP", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
+    ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName"]),

@@ -1,13 +1,13 @@
 ---
 name: appshot
-description: Capture the current macOS app context for Codex using AppShot. If AppShot is not installed locally, bootstrap it first, then use the appshot CLI or MCP server for frontmost app metadata, visible windows, accessibility text/UI tree, optional screenshot, and optional OCR fallback.
+description: Give Codex or Claude Code a Codex-style App Shot ability on macOS. If AppShot is not installed locally, bootstrap it first, then use the appshot CLI or MCP server for frontmost app metadata, visible windows, accessibility text/UI tree, optional screenshot, and optional OCR fallback.
 ---
 
 # AppShot
 
 Use this skill when the user asks to inspect the current Mac app, capture Appshots, gather app/window context, debug UI state, or provide richer context than a bitmap screenshot.
 
-Primary goal: make AppShot fully usable for Codex through Accessibility first: capture the app, find the UI tree/text evidence directly, then act on it. Both Accessibility and Screen Recording permissions must be enabled before treating a capture as successful.
+Primary goal: make AppShot fully usable for Codex and Claude Code through Accessibility first: capture the app, find the UI tree/text evidence directly, then act on it. Both Accessibility and Screen Recording permissions must be enabled before treating a capture as successful.
 
 ## Workflow
 
@@ -45,7 +45,7 @@ Primary goal: make AppShot fully usable for Codex through Accessibility first: c
    tccutil reset ScreenCapture com.qppshot.AppShot
    open ~/Applications/AppShot.app
    ```
-7. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex or the user:
+7. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex, Claude Code, or the user:
    ```sh
    "$APPSHOT_BIN" capture --format codex --max-depth 10
    ```
@@ -110,4 +110,4 @@ The CLI returns JSON with:
 Prefer citing exact JSON fields instead of summarizing vaguely.
 
 A valid test should report `permissions.accessibility: true` and `permissions.screenRecording: true`. If either value is false, report the missing permission instead of calling the AppShot test successful.
-A valid Codex troubleshooting capture should include a complete `codex.text` block and meaningful `accessibility.text`. If Accessibility text is empty, report that AX did not expose readable text and only then consider `--include-ocr` as fallback.
+A valid Codex or Claude Code troubleshooting capture should include a complete `codex.text` block and meaningful `accessibility.text`. If Accessibility text is empty, report that AX did not expose readable text and only then consider `--include-ocr` as fallback.
