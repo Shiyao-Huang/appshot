@@ -64,8 +64,8 @@ For a complete local release package:
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.11
-open dist/AppShot-macOS-0.1.11/AppShot.app
+scripts/build_release.sh 0.1.12
+open dist/AppShot-macOS-0.1.12/AppShot.app
 ```
 
 For a public macOS release, sign with a `Developer ID Application` identity and notarize the DMG:
@@ -74,7 +74,7 @@ For a public macOS release, sign with a `Developer ID Application` identity and 
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.11
+scripts/build_release.sh 0.1.12
 ```
 
 The public release path refuses Apple Development or ad-hoc signatures, submits the DMG to Apple notarization, staples the ticket, and runs Gatekeeper assessment.
@@ -212,8 +212,8 @@ xcodebuild -project AppShot.xcodeproj -scheme AppShot -configuration Release bui
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.11
-open dist/AppShot-macOS-0.1.11/AppShot.app
+scripts/build_release.sh 0.1.12
+open dist/AppShot-macOS-0.1.12/AppShot.app
 ```
 
 公开 macOS 发布包需要 `Developer ID Application` 证书并完成 DMG 公证：
@@ -222,7 +222,7 @@ open dist/AppShot-macOS-0.1.11/AppShot.app
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.11
+scripts/build_release.sh 0.1.12
 ```
 
 公开发布路径会拒绝 Apple Development 或 ad-hoc 签名，提交 Apple notarization，staple 公证票据，并运行 Gatekeeper 校验。
