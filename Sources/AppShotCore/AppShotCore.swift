@@ -1049,6 +1049,7 @@ private func axShouldProbeSettableAttributes(_ snapshot: JSONObject) -> Bool {
     let role = snapshot["role"] as? String
     let roleDescription = snapshot["roleDescription"] as? String
     let probeRoles = Set([
+        "AXGroup",
         "AXScrollBar",
         "AXSlider",
         "AXSplitter",
@@ -2040,12 +2041,14 @@ public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 42
     let root = accessibility?["root"] as? JSONObject
     let selectedLines = codexSelectedElementLines(from: root)
     let focusedLine = codexFocusedElementLine(from: accessibility)
+    let textEvidenceLines = codexWindowTextEvidenceLines(from: payload)
 
     return [
         "format": "codex-appshot-text",
         "text": text,
         "treeLineCount": codexTreeLines(from: root, maxLines: maxTreeLines).count,
         "selectedLineCount": selectedLines.count,
+        "textEvidenceLineCount": textEvidenceLines.count,
         "hasFocusedElement": focusedLine != nil
     ]
 }
@@ -2088,6 +2091,13 @@ public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 420) 
         lines.append(contentsOf: treeLines)
     }
 
+    let textEvidenceLines = codexWindowTextEvidenceLines(from: payload)
+    if !textEvidenceLines.isEmpty {
+        lines.append("")
+        lines.append("Window Text:")
+        lines.append(contentsOf: textEvidenceLines)
+    }
+
     let selectedLines = codexSelectedElementLines(from: root)
     if !selectedLines.isEmpty {
         lines.append("")
@@ -2103,19 +2113,112 @@ public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 420) 
         lines.append("The focused UI element is \(focusedLine)")
     }
 
-    let visibleText = codexTrimmedString(accessibility?["visibleText"])
-    let text = codexTrimmedString(accessibility?["text"])
-    if visibleText == nil, let text {
-        let preview = text.split(separator: "\n").prefix(12).joined(separator: "\n")
-        if !preview.isEmpty {
-            lines.append("")
-            lines.append("Text:")
-            lines.append(preview)
+    lines.append("</appshot>")
+    return lines.joined(separator: "\n")
+}
+
+private func codexWindowTextEvidenceLines(from payload: JSONObject, maxLines: Int = 180) -> [String] {
+    let accessibility = payload["accessibility"] as? JSONObject
+    var sections: [(title: String, lines: [String])] = []
+
+    if let documents = accessibility?["documentReferences"] as? [JSONObject] {
+        for document in documents.prefix(3) {
+            guard let text = codexTrimmedString(document["textPreview"]) else {
+                continue
+            }
+            let path = codexTrimmedString(document["path"]) ?? codexTrimmedString(document["url"]) ?? "document"
+            let previewLines = codexPreviewTextLines(text, maxLines: 90, maxLineLength: 260)
+            guard !previewLines.isEmpty else {
+                continue
+            }
+
+            var documentLines = previewLines
+            if document["textTruncated"] as? Bool == true,
+               let sizeBytes = document["sizeBytes"] as? Int,
+               let previewBytes = document["textPreviewBytes"] as? Int,
+               sizeBytes > previewBytes {
+                documentLines.append("... document preview truncated at \(previewBytes) of \(sizeBytes) bytes")
+            }
+            sections.append(("Document: \(path)", documentLines))
         }
     }
 
-    lines.append("</appshot>")
-    return lines.joined(separator: "\n")
+    if let visibleText = codexTrimmedString(accessibility?["visibleText"]) {
+        let visibleLines = codexPreviewTextLines(visibleText, maxLines: 70, maxLineLength: 220)
+        if !visibleLines.isEmpty {
+            sections.append(("Visible Text", visibleLines))
+        }
+    }
+
+    if sections.isEmpty,
+       let accessibilityText = codexTrimmedString(accessibility?["text"]) {
+        let textLines = codexPreviewTextLines(accessibilityText, maxLines: 90, maxLineLength: 220)
+        if !textLines.isEmpty {
+            sections.append(("Accessibility Text", textLines))
+        }
+    }
+
+    if let ocr = payload["ocr"] as? JSONObject,
+       let ocrText = codexTrimmedString(ocr["text"]) {
+        let ocrLines = codexPreviewTextLines(ocrText, maxLines: 70, maxLineLength: 220)
+        if !ocrLines.isEmpty {
+            sections.append(("OCR Text", ocrLines))
+        }
+    }
+
+    var output: [String] = []
+    var remaining = maxLines
+    for section in sections where remaining > 0 {
+        output.append("\t\(section.title):")
+        remaining -= 1
+        for line in section.lines {
+            guard remaining > 0 else {
+                break
+            }
+            output.append("\t\t\(line)")
+            remaining -= 1
+        }
+    }
+    if remaining == 0, !output.isEmpty {
+        output.append("\t... window text evidence truncated")
+    }
+    return output
+}
+
+private func codexPreviewTextLines(_ text: String, maxLines: Int, maxLineLength: Int) -> [String] {
+    let sourceLines = text
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+
+    var lines: [String] = []
+    var seen = Set<String>()
+    var processedLineCount = 0
+    for sourceLine in sourceLines {
+        processedLineCount += 1
+        let line = codexTruncatedTextLine(sourceLine, maxLength: maxLineLength)
+        guard !seen.contains(line) else {
+            continue
+        }
+        seen.insert(line)
+        lines.append(line)
+        if lines.count >= maxLines {
+            break
+        }
+    }
+
+    if sourceLines.count > processedLineCount {
+        lines.append("... \(sourceLines.count - processedLineCount) more lines")
+    }
+    return lines
+}
+
+private func codexTruncatedTextLine(_ line: String, maxLength: Int) -> String {
+    guard line.count > maxLength else {
+        return line
+    }
+    let prefix = line.prefix(max(0, maxLength - 16))
+    return "\(prefix)... [truncated]"
 }
 
 private func codexTreeLines(from root: JSONObject?, maxLines: Int) -> [String] {
@@ -2404,6 +2507,10 @@ private func codexSettableAnnotation(_ element: JSONObject) -> String? {
     }
 
     guard let rawValue = codexSettableRawValue(element) else {
+        if isExplicitlySettable,
+           let value = element["value"] {
+            return "(settable, \(codexValueTypeName(value)))"
+        }
         return nil
     }
 
@@ -2569,12 +2676,15 @@ private func codexShouldDedupeStructuralLine(_ element: JSONObject, line: String
         "container",
         "content list",
         "group",
+        "HTML content",
         "list",
         "outline",
         "scroll area",
         "split group",
         "tab group",
         "toolbar",
+        "web area",
+        "HTML 内容",
         "单元格",
         "内容列表",
         "列表",
