@@ -2219,6 +2219,7 @@ private func codexElementLine(_ element: JSONObject) -> String {
     let placeholder = codexTrimmedString(element["placeholderValue"])
     let identifier = codexTrimmedString(element["identifier"])
     let selectedText = codexTrimmedString(element["selectedText"])
+    let url = codexURLString(element)
 
     let descendantLabel = ["row", "cell"].contains(role)
         ? codexPrimaryDescendantLabel(element)
@@ -2264,6 +2265,13 @@ private func codexElementLine(_ element: JSONObject) -> String {
     if let selectedText, selectedText != title, selectedText != value {
         parts.append("SelectedText: \(selectedText)")
     }
+    if let url {
+        if parts.count > 1, let last = parts.popLast() {
+            parts.append("\(last), URL: \(url)")
+        } else {
+            parts.append("URL: \(url)")
+        }
+    }
     if let identifier,
        codexShouldRenderIdentifier(identifier, role: role) {
         if codexIdentifierShouldBeRaw(identifier, role: role) {
@@ -2279,6 +2287,10 @@ private func codexElementLine(_ element: JSONObject) -> String {
         parts.append("children truncated: \(truncated)")
     }
     return parts.joined(separator: " ")
+}
+
+private func codexURLString(_ element: JSONObject) -> String? {
+    codexTrimmedString(element["url"]) ?? codexTrimmedString(element["document"])
 }
 
 private func codexShouldRenderDescription(role: String) -> Bool {
