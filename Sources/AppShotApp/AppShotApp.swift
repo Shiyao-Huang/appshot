@@ -2,6 +2,7 @@ import AppKit
 #if canImport(AppShotCore)
 import AppShotCore
 #endif
+import CoreGraphics
 import SwiftUI
 
 @main
@@ -17,6 +18,9 @@ struct AppShotDesktopApp: App {
                 .onAppear {
                     model.refreshStatus()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    model.refreshStatus()
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -27,6 +31,11 @@ struct AppShotDesktopApp: App {
                 .environmentObject(model)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            AppShotSettingsView()
+                .environmentObject(model)
+        }
     }
 }
 
@@ -49,19 +58,34 @@ final class AppShotAppDelegate: NSObject, NSApplicationDelegate {
 // @sm:evidence swift build && .build/debug/AppShotApp
 @MainActor
 final class AppShotModel: ObservableObject {
+    private static let globalShortcutEnabledKey = "AppShot.globalShortcut.enabled"
+    private let optionShortcutMonitor = OptionPairShortcutMonitor()
+
     @Published var state: String = "checking"
     @Published var accessibility = false
     @Published var screenRecording = false
+    @Published var permissionMode = "-"
+    @Published var permissionExecutable = "-"
     @Published var frontmostName = "-"
     @Published var bundleIdentifier = "-"
     @Published var primaryWindowTitle = "-"
     @Published var windowCount = 0
     @Published var blockers: [String] = []
+    @Published var advisories: [String] = []
     @Published var lastCaptureSummary = "No capture yet"
     @Published var lastJSON = "{}"
     @Published var lastError: String?
     @Published var isCapturing = false
     @Published var isRefreshing = false
+    @Published var isGlobalShortcutEnabled: Bool = AppShotModel.defaultGlobalShortcutEnabled() {
+        didSet {
+            guard isGlobalShortcutEnabled != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(isGlobalShortcutEnabled, forKey: Self.globalShortcutEnabledKey)
+            configureGlobalShortcut()
+        }
+    }
     @Published var isAutoRefreshEnabled = false
     @Published var lastSampleAt: Date?
     @Published var samplingIntervalSeconds: Double = 2.0 {
@@ -78,6 +102,19 @@ final class AppShotModel: ObservableObject {
     private var sampleRequestSerial = 0
     private var sampleInFlight = false
     private var autoRefreshTimer: Timer?
+
+    init() {
+        optionShortcutMonitor.onTrigger = { [weak self] in
+            Task { @MainActor in
+                self?.handleGlobalShortcut()
+            }
+        }
+        configureGlobalShortcut()
+    }
+
+    var globalShortcutLabel: String {
+        "Left Option + Right Option"
+    }
 
     var menuBarSymbol: String {
         if isCapturing || isRefreshing {
@@ -146,6 +183,7 @@ final class AppShotModel: ObservableObject {
 
     func requestPermissions() {
         refreshStatus(prompt: true)
+        schedulePermissionRefreshes()
     }
 
     func setAutoRefreshEnabled(_ enabled: Bool) {
@@ -163,8 +201,42 @@ final class AppShotModel: ObservableObject {
         }
     }
 
+    func setGlobalShortcutEnabled(_ enabled: Bool) {
+        isGlobalShortcutEnabled = enabled
+    }
+
     func clearFrontAppTrail() {
         frontAppTrail.removeAll()
+    }
+
+    private func schedulePermissionRefreshes() {
+        for delay in [1.0, 3.0, 8.0, 15.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.refreshStatus()
+            }
+        }
+    }
+
+    private static func defaultGlobalShortcutEnabled() -> Bool {
+        if UserDefaults.standard.object(forKey: globalShortcutEnabledKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: globalShortcutEnabledKey)
+    }
+
+    private func configureGlobalShortcut() {
+        if isGlobalShortcutEnabled {
+            optionShortcutMonitor.start()
+        } else {
+            optionShortcutMonitor.stop()
+        }
+    }
+
+    private func handleGlobalShortcut() {
+        guard isGlobalShortcutEnabled, !isCapturing else {
+            return
+        }
+        capture(includeScreenshot: true)
     }
 
     private func startAutoRefreshTimer() {
@@ -214,7 +286,7 @@ final class AppShotModel: ObservableObject {
                     maxDepth: 10,
                     maxChildren: 120,
                     includeOCR: includeOCR,
-                    accessibilityTimeoutSeconds: 2.0,
+                    accessibilityTimeoutSeconds: 8.0,
                     screenshotTimeoutSeconds: 3.0
                 ))
                 result = .success(try AppShotCore.jsonString(payload, pretty: true))
@@ -253,11 +325,13 @@ final class AppShotModel: ObservableObject {
     private func applyStatus(_ payload: JSONObject, recordTrail: Bool) {
         assignIfChanged(&state, payload["state"] as? String ?? "unknown")
         assignIfChanged(&blockers, payload["blockers"] as? [String] ?? [])
+        assignIfChanged(&advisories, payload["advisories"] as? [String] ?? [])
         assignIfChanged(&windowCount, payload["windowCount"] as? Int ?? 0)
 
         if let permissions = payload["permissions"] as? JSONObject {
             assignIfChanged(&accessibility, permissions["accessibility"] as? Bool ?? false)
             assignIfChanged(&screenRecording, permissions["screenRecording"] as? Bool ?? false)
+            applyPermissionDetails(permissions)
         }
         if let app = payload["frontmostApplication"] as? JSONObject {
             assignIfChanged(&frontmostName, app["localizedName"] as? String ?? "-")
@@ -303,6 +377,8 @@ final class AppShotModel: ObservableObject {
         if let permissions = payload["permissions"] as? JSONObject {
             accessibility = permissions["accessibility"] as? Bool ?? false
             screenRecording = permissions["screenRecording"] as? Bool ?? false
+            applyPermissionDetails(permissions)
+            advisories = Self.permissionAdvisories(from: permissions)
         }
         if let app = payload["frontmostApplication"] as? JSONObject {
             frontmostName = app["localizedName"] as? String ?? "-"
@@ -364,11 +440,87 @@ final class AppShotModel: ObservableObject {
         }
     }
 
+    private func applyPermissionDetails(_ permissions: JSONObject) {
+        if let stability = permissions["stability"] as? JSONObject {
+            assignIfChanged(&permissionMode, stability["mode"] as? String ?? "-")
+            let executable = stability["currentExecutablePath"] as? String ?? "-"
+            assignIfChanged(&permissionExecutable, executable)
+        } else {
+            assignIfChanged(&permissionMode, "-")
+            assignIfChanged(&permissionExecutable, "-")
+        }
+    }
+
+    private static func permissionAdvisories(from permissions: JSONObject) -> [String] {
+        guard let stability = permissions["stability"] as? JSONObject,
+              let warning = stability["warning"] as? String,
+              !warning.isEmpty else {
+            return []
+        }
+        return [warning]
+    }
+
     private func assignIfChanged<T: Equatable>(_ value: inout T, _ nextValue: T) {
         guard value != nextValue else {
             return
         }
         value = nextValue
+    }
+}
+
+@MainActor
+final class OptionPairShortcutMonitor {
+    private let leftOptionKeyCode: CGKeyCode = 58
+    private let rightOptionKeyCode: CGKeyCode = 61
+    private var globalMonitor: Any?
+    private var localMonitor: Any?
+    private var chordIsDown = false
+
+    var onTrigger: (() -> Void)?
+
+    func start() {
+        guard globalMonitor == nil, localMonitor == nil else {
+            return
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            let keyCode = CGKeyCode(event.keyCode)
+            Task { @MainActor in
+                self?.handle(keyCode: keyCode)
+            }
+        }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handle(keyCode: CGKeyCode(event.keyCode))
+            return event
+        }
+    }
+
+    func stop() {
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+            self.globalMonitor = nil
+        }
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
+        chordIsDown = false
+    }
+
+    private func handle(keyCode: CGKeyCode) {
+        guard keyCode == leftOptionKeyCode || keyCode == rightOptionKeyCode else {
+            return
+        }
+
+        let leftIsDown = CGEventSource.keyState(.hidSystemState, key: leftOptionKeyCode)
+        let rightIsDown = CGEventSource.keyState(.hidSystemState, key: rightOptionKeyCode)
+        let nextChordIsDown = leftIsDown && rightIsDown
+
+        if nextChordIsDown && !chordIsDown {
+            chordIsDown = true
+            onTrigger?()
+        } else if !nextChordIsDown {
+            chordIsDown = false
+        }
     }
 }
 
@@ -461,6 +613,10 @@ struct AppShotDashboardView: View {
             GridRow {
                 StatusTile(title: "Bundle", value: model.bundleIdentifier, symbol: "shippingbox", good: model.bundleIdentifier != "-")
                 StatusTile(title: "Primary Window", value: model.primaryWindowTitle, symbol: "rectangle.inset.filled", good: model.primaryWindowTitle != "-")
+            }
+            GridRow {
+                StatusTile(title: "Permission Identity", value: model.permissionMode, symbol: "person.crop.rectangle.stack", good: model.permissionMode == "stableInstalledApp")
+                StatusTile(title: "Permission Executable", value: model.permissionExecutable, symbol: "terminal", good: model.permissionExecutable.hasSuffix("/Applications/AppShot.app/Contents/MacOS/AppShot"))
             }
         }
     }
@@ -559,6 +715,8 @@ struct AppShotDashboardView: View {
             InfoPanel(title: "Error", symbol: "exclamationmark.triangle", color: .red, lines: [error])
         } else if !model.blockers.isEmpty {
             InfoPanel(title: "Needs Attention", symbol: "info.circle", color: .orange, lines: model.blockers)
+        } else if !model.advisories.isEmpty {
+            InfoPanel(title: "Advisory", symbol: "exclamationmark.shield", color: .orange, lines: model.advisories)
         } else {
             InfoPanel(title: "Last Capture", symbol: "checkmark.circle", color: .green, lines: [model.lastCaptureSummary])
         }
@@ -600,6 +758,7 @@ struct MenuBarView: View {
             StatusLine(label: "Screen Recording", value: model.screenRecording ? "On" : "Off", good: model.screenRecording)
             StatusLine(label: "Front App", value: model.frontmostName, good: model.frontmostName != "-")
             StatusLine(label: "Auto Refresh", value: model.isAutoRefreshEnabled ? "\(Int(model.samplingIntervalSeconds))s" : "Off", good: model.isAutoRefreshEnabled)
+            StatusLine(label: "Shortcut", value: model.isGlobalShortcutEnabled ? model.globalShortcutLabel : "Off", good: model.isGlobalShortcutEnabled)
             HStack {
                 Button("Refresh") {
                     model.refreshStatus()
@@ -623,6 +782,40 @@ struct MenuBarView: View {
         .onAppear {
             model.refreshStatus()
         }
+    }
+}
+
+struct AppShotSettingsView: View {
+    @EnvironmentObject private var model: AppShotModel
+
+    var body: some View {
+        Form {
+            Toggle(isOn: Binding(
+                get: { model.isGlobalShortcutEnabled },
+                set: { model.setGlobalShortcutEnabled($0) }
+            )) {
+                Label("Global Shortcut", systemImage: "keyboard")
+            }
+
+            LabeledContent("Shortcut") {
+                Text(model.globalShortcutLabel)
+                    .font(.body.monospacedDigit())
+            }
+
+            Text("Use both left and right Option keys together.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Button {
+                model.requestPermissions()
+            } label: {
+                Label("Request Permissions", systemImage: "lock.open")
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 
@@ -681,6 +874,7 @@ struct StatusTile: View {
                 Text(value)
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
+                    .truncationMode(.middle)
             }
             Spacer(minLength: 0)
         }

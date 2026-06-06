@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_OWNER="${APPSHOT_REPO_OWNER:-Shiyao-Huang}"
 REPO_NAME="${APPSHOT_REPO_NAME:-appshot}"
-VERSION="${APPSHOT_VERSION:-0.1.1}"
+VERSION="${APPSHOT_VERSION:-0.1.2}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 SKILL_DIR="$CODEX_HOME/skills/appshot"
 INSTALL_DIR="${APPSHOT_INSTALL_DIR:-$HOME/Applications}"
@@ -98,6 +98,22 @@ if [[ -n "$FOUND_MCP" ]]; then
   ditto "$(dirname "$FOUND_MCP")/" "$MCP_DIR/"
   chmod +x "$MCP_DIR/server.js" || true
   log "installed AppShot MCP server to $MCP_DIR"
+
+  if [[ "${APPSHOT_INSTALL_CLAUDE_MCP:-0}" == "1" ]]; then
+    if command -v claude >/dev/null 2>&1; then
+      CLAUDE_MCP_SCOPE="${APPSHOT_CLAUDE_MCP_SCOPE:-user}"
+      if [[ "$BIN_PATH" == "$HOME/.local/bin/appshot" && "$MCP_DIR" == "$HOME/.local/share/appshot/mcp" ]]; then
+        CLAUDE_MCP_COMMAND='APPSHOT_BIN="$HOME/.local/bin/appshot" exec node "$HOME/.local/share/appshot/mcp/server.js"'
+      else
+        printf -v CLAUDE_MCP_COMMAND 'APPSHOT_BIN=%q exec node %q' "$BIN_PATH" "$MCP_DIR/server.js"
+      fi
+      log "installing AppShot MCP for Claude Code in $CLAUDE_MCP_SCOPE scope"
+      claude mcp remove --scope "$CLAUDE_MCP_SCOPE" appshot >/dev/null 2>&1 || true
+      claude mcp add --scope "$CLAUDE_MCP_SCOPE" appshot -- /bin/sh -lc "$CLAUDE_MCP_COMMAND"
+    else
+      log "Claude Code CLI was not found; skipping Claude MCP install"
+    fi
+  fi
 fi
 
 if [[ "${APPSHOT_NO_OPEN:-0}" == "1" ]]; then
@@ -111,4 +127,5 @@ log "done"
 log "restart Codex to pick up the appshot skill"
 log "cli: add $BIN_DIR to PATH if appshot is not found"
 log "mcp: set APPSHOT_BIN=$BIN_PATH when running $MCP_DIR/server.js"
+log "claude: rerun with APPSHOT_INSTALL_CLAUDE_MCP=1 to register the MCP server for Claude Code"
 log "permissions: grant Accessibility and Screen Recording to AppShot when prompted"

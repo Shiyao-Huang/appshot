@@ -1,0 +1,74 @@
+# Codex Parity Matrix
+
+## Layered Summary
+
+One sentence: AppShot must expose extracted macOS app context in the same shape and operational spirit as the Codex Mac app's built-in appshot/browser annotation surfaces.
+
+Three sentences: The strongest local evidence is the extracted Codex Mac app bundle under `../codex-522/mac-app`, especially runtime event lists, app-session snippets, and the architecture note. AppShot currently implements the native macOS app/window/accessibility/screenshot side and exposes it through CLI, MCP, skill, plugin, and release packaging. Browser annotation design/tweaks/image-drag behavior is evidence-tracked but not implemented in AppShot because it belongs to Codex's embedded browser runtime, not a standalone macOS capture tool.
+
+Five sentences: The current hard gate is `scripts/verify_codex_parity.sh`. It checks local Codex evidence, AppShot JSON aliases, MCP tool output, and version alignment. Passing the gate proves the implemented subset did not drift from the known Codex evidence it claims to match. It does not prove full parity with every Codex internal appshot behavior. New parity work should add evidence first, then add or update a matrix row, then tighten the verifier.
+
+## Evidence Sources
+
+| Evidence | Path | Used For |
+| --- | --- | --- |
+| Codex Mac app architecture | `../codex-522/mac-app/docs/appshots-macapp-architecture.md` | Scope, version boundary, browser appshots architecture |
+| Runtime events | `../codex-522/mac-app/artifacts/comment-preload-runtime-events-522.txt` | Browser sidebar event names |
+| App session snippets | `../codex-522/mac-app/appshots-evidence/522-app-session-appshots-snippets.js` | Settings and thread payload keys |
+| Browser preload snippets | `../codex-522/mac-app/appshots-evidence/522-appshots-snippets.js` | Host/preload sync keys and emitted runtime events |
+| AppShot verifier | `scripts/verify_codex_parity.sh` | Executable local gate |
+
+## Implemented And Verified
+
+| Area | Codex Evidence | AppShot Surface | Verification |
+| --- | --- | --- | --- |
+| Front/current app identity | `frontmostApplication`, `currentApplication` in Codex native-module strings | `frontmostApplication`, `currentApplication`, `targetApplication` in `status`/`capture` JSON | `scripts/verify_codex_parity.sh` CLI and MCP checks |
+| Front/current window identity | `FrontmostWindow`, `frontmostWindow`, `CGWindow` in Codex native-module strings | `primaryWindow`, `frontmostWindow`, `currentWindow`, `windowID`, `windowNumber` | `scripts/verify_codex_parity.sh` CLI and MCP checks |
+| Screen/display metadata | `NSScreen`, `CGWindow` in Codex native-module strings | best-effort `screen.displayID/frame/isMain` or `screen.localizedName/frame/visibleFrame/backingScaleFactor` | CLI capture/list-windows checks plus Swift build |
+| Native App build | Extracted AppShot must ship as a real macOS app, not only a CLI/MCP surface | `AppShot.xcodeproj` scheme `AppShot`, bundle id `com.qppshot.AppShot`, version `0.1.1` | `scripts/verify_codex_parity.sh` Xcode build, bundle plist, executable, and codesign checks |
+| Accessibility-first text | Codex appshot goal is structured context before OCR fallback | `accessibility.root`, `focusedElement`, `documentReferences`, `text`, `textLineCount` | `scripts/verify_codex_parity.sh` capture schema check |
+| Codex appshot text block | User-visible Codex appshots are XML-like `<appshot ...>` blocks with `Window:`, localized AX role lines, selected-context notes, and stable image/window attributes | `codex.format == "codex-appshot-text"`, `codex.text`, CLI `--format codex` / `--codex`, MCP `format: "codex"`, settable annotations, compact row/control formatting | `scripts/verify_codex_parity.sh` schema, source-anchor, and CLI text checks |
+| Visible reading order | Codex-style app context should expose a readable visible text stream, not only raw tree order | `accessibility.visibleText`, `visibleTextLineCount`, coordinate-sorted AX text entries, and `AXBoundsForRange` line fragments for large text controls | `scripts/verify_codex_parity.sh` schema and source-anchor checks plus Xcode QA artifacts |
+| App/window QA | User-visible parity requires screenshot, OCR-visible text, AX text, and hierarchy checks for real apps | `scripts/qa_app_capture.py` captures a target window and validates target-window screenshot metadata, window-bound image dimensions, AX/OCR text, and target AX hierarchy anchors | Xcode QA artifacts under `artifacts/xcode-parity` |
+| TCC identity diagnosis | Codex-style app capture must run under the app identity the user actually authorized | `scripts/diagnose_tcc_identity.sh` reports installed/debug/CLI paths, bundle identifiers, signing mode, and `CDHash` drift | Manual diagnosis plus verifier anchors |
+| Permission identity JSON | Codex built-in appshot runs inside a stable signed app identity; AppShot must make mismatched local identities visible | `permissions.identity` and `permissions.stability` report the checking executable, mode, stable grant target, warning, and recovery steps | CLI/MCP schema checks plus `scripts/verify_codex_parity.sh` anchors |
+| Screenshot/OCR fallback | Codex browser annotation screenshot events and AppShot README scope | explicit `--include-screenshot`, `--include-ocr` | CLI options and release docs |
+| MCP integration | Codex consumption path needs tool-callable context | `appshot_capture`, `appshot_permissions`, `appshot_status`, `appshot_list_windows` | `scripts/verify_codex_parity.sh` MCP smoke test |
+| Version/package alignment | Extracted app/plugin must match release identity | plugin, MCP package, MCP server, installer, release script at `0.1.1` | `scripts/verify_codex_parity.sh` version alignment |
+
+## Evidence-Tracked But Not Implemented
+
+| Area | Codex Evidence | Why Not Claimed Complete | Next Concrete Step |
+| --- | --- | --- | --- |
+| Browser annotation screenshot policy | `browser-annotation-screenshots-mode`, `always`, `necessary` | AppShot has no embedded browser settings UI or annotation runtime | Add config only if AppShot grows browser annotation capture |
+| Browser comment payload | `localBrowserContext`, `localBrowserScreenshot`, `localBrowserAttachedImages`, `localBrowserDesignChange` | These are Codex thread/browser comment payload fields, not native app capture JSON | Define an AppShot browser payload adapter before claiming parity |
+| Design editor/tweaks | `browser-sidebar-runtime-open-design-editor`, `design-scrub`, `isTweaksEditorOpen` | Requires DOM element targeting and Codex browser host/preload IPC | Keep evidence checked; do not present AppShot as implementing this |
+| Image drag metadata | `browser-sidebar-runtime-image-drag-started`, `browser-sidebar-runtime-image-drag-ended`, `sourceUrl` | Requires browser page drag instrumentation | Add only with a browser integration layer |
+| Original view/design modifier state | `isOriginalViewEnabled`, `isDesignModifierPressed`, `activeDesignChange` | Browser runtime state, not macOS AX/window state | Preserve as evidence gate until implementation exists |
+
+## Verification Contract
+
+Run:
+
+```sh
+scripts/verify_codex_parity.sh
+```
+
+The verifier must fail when:
+
+- Local Codex Mac app evidence is missing.
+- Required browser appshot/design/image-drag event evidence disappears.
+- AppShot CLI output loses Codex-style app/window aliases.
+- Native `AppShot.app` no longer builds, loses its executable, changes bundle id/version unexpectedly, or fails codesign verification.
+- Accessibility output loses coordinate-sorted `visibleText` / `visibleTextLineCount` or `AXBoundsForRange`-backed line fragments.
+- Codex text output loses the `<appshot ...>` wrapper, `Window:` header, `codex-appshot-text` format marker, `--format codex` CLI path, MCP `format: "codex"` path, selected-context note, compact row/control rendering, or settable annotations.
+- `scripts/qa_app_capture.py` loses its target-window screenshot, window-bound image size, OCR, AX text, or hierarchy checks.
+- `scripts/diagnose_tcc_identity.sh` stops explaining bundle/signing/`CDHash` identity drift.
+- Permission JSON loses `identity` or `stability`, making CLI/App/MCP TCC drift invisible.
+- MCP tools disappear or stop returning the verified aliases.
+- Package versions drift across plugin, MCP, installer, or release scripts.
+- This matrix loses its core implemented and evidence-tracked anchors.
+
+## Completion Rule
+
+Do not mark full Codex parity complete until every evidence-tracked row is either implemented with a verifier-backed surface or explicitly removed because updated Codex evidence proves it is out of scope.

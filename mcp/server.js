@@ -58,7 +58,7 @@ function handleLine(line) {
       respond(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "appshot", version: "0.1.1" }
+        serverInfo: { name: "appshot", version: "0.1.2" }
       });
     } else if (method === "tools/list") {
       respond(id, { tools: tools() });
@@ -78,7 +78,7 @@ function tools() {
   return [
     {
       name: "appshot_capture",
-      description: "Capture the frontmost macOS app as JSON with app/window metadata, accessibility text tree, optional screenshot, and optional OCR fallback.",
+      description: "Capture the frontmost macOS app as JSON or Codex-style appshot text with app/window metadata, accessibility text tree, optional screenshot, and optional OCR fallback.",
       inputSchema: {
         type: "object",
         properties: {
@@ -88,15 +88,18 @@ function tools() {
           windowID: { type: "number" },
           pid: { type: "number" },
           bundleID: { type: "string" },
+          format: { type: "string", enum: ["json", "codex"], default: "json" },
           maxDepth: { type: "number", default: 10 },
           maxChildren: { type: "number", default: 120 },
-          maxOCRObservations: { type: "number", default: 240 }
+          maxOCRObservations: { type: "number", default: 240 },
+          accessibilityTimeout: { type: "number", default: 8 },
+          screenshotTimeout: { type: "number", default: 3 }
         }
       }
     },
     {
       name: "appshot_permissions",
-      description: "Check macOS Accessibility and Screen Recording permissions.",
+      description: "Check macOS Accessibility and Screen Recording permissions, including the current TCC identity and stable grant target guidance.",
       inputSchema: {
         type: "object",
         properties: {
@@ -106,7 +109,7 @@ function tools() {
     },
     {
       name: "appshot_status",
-      description: "Return complete AppShot readiness state, including permissions, front app, primary window, and blockers.",
+      description: "Return complete AppShot readiness state, including permissions, permission identity stability, front app, primary window, and blockers.",
       inputSchema: {
         type: "object",
         properties: {
@@ -135,9 +138,12 @@ function callTool(params = {}) {
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
     if (args.pid != null) cliArgs.push("--pid", String(args.pid));
     if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
+    if (args.format === "codex") cliArgs.push("--format", "codex");
     if (args.maxDepth != null) cliArgs.push("--max-depth", String(args.maxDepth));
     if (args.maxChildren != null) cliArgs.push("--max-children", String(args.maxChildren));
     if (args.maxOCRObservations != null) cliArgs.push("--max-ocr-observations", String(args.maxOCRObservations));
+    if (args.accessibilityTimeout != null) cliArgs.push("--accessibility-timeout", String(args.accessibilityTimeout));
+    if (args.screenshotTimeout != null) cliArgs.push("--screenshot-timeout", String(args.screenshotTimeout));
   } else if (name === "appshot_permissions") {
     cliArgs.push("permissions", "--pretty");
     if (args.prompt) cliArgs.push("--prompt");

@@ -1,3 +1,25 @@
+# AppShot v0.1.2
+
+## English
+
+AppShot v0.1.2 focuses on stable signed releases and cross-agent integration:
+
+- Release builds now default to `0.1.2` and refuse ad-hoc output.
+- Public release mode is explicit: set `APPSHOT_PUBLIC_RELEASE=1` with a `Developer ID Application` identity and `APPSHOT_NOTARY_PROFILE` to require notarization, stapling, and Gatekeeper assessment.
+- The installer can register AppShot for Claude Code with `APPSHOT_INSTALL_CLAUDE_MCP=1`, using the installed CLI and MCP server paths.
+- The native app now includes a global shortcut setting. It is enabled by default and uses left Option + right Option to capture the current app.
+- AppShot continues to report TCC identity stability directly, so users can distinguish the stable installed app from Xcode DerivedData or CLI identities.
+
+## 中文
+
+AppShot v0.1.2 重点补齐稳定签名发布和跨 agent 集成：
+
+- release 构建默认版本切到 `0.1.2`，并拒绝 ad-hoc 输出。
+- 公开发布模式变成显式路径：设置 `APPSHOT_PUBLIC_RELEASE=1`，配合 `Developer ID Application` 证书和 `APPSHOT_NOTARY_PROFILE`，强制执行 notarization、staple 和 Gatekeeper 校验。
+- 安装器可以通过 `APPSHOT_INSTALL_CLAUDE_MCP=1` 为 Claude Code 注册 AppShot MCP，并指向已安装的 CLI 与 MCP server。
+- 原生 App 新增全局快捷键设置，默认开启，使用左 Option + 右 Option 捕获当前 App。
+- AppShot 继续直接暴露 TCC 身份稳定性，方便区分固定安装版、Xcode DerivedData 版和 CLI 身份。
+
 # AppShot v0.1.1
 
 ## English
@@ -9,6 +31,11 @@ AppShot v0.1.1 focuses on making the Mac release installable end to end:
 - The Codex skill bootstraps AppShot when the local CLI is missing.
 - Permission reset is available with `APPSHOT_RESET_PERMISSIONS=1` for broken development TCC states.
 - Accessibility remains the primary text path; OCR is explicit fallback only.
+- Codex parity verification is now runnable with `scripts/verify_codex_parity.sh`; it checks local Codex Mac app evidence, native App target build output, CLI JSON aliases, MCP tools, and package version alignment.
+- App/window QA is now scriptable with `scripts/qa_app_capture.py`, including target-window screenshot metadata, window-bound image dimensions, OCR text, Accessibility text, and hierarchy anchors.
+- TCC identity diagnosis is now available with `scripts/diagnose_tcc_identity.sh` to explain cases where Privacy & Security shows AppShot enabled but the running build still cannot see permissions.
+- Accessibility output now includes coordinate-sorted `visibleText` and `visibleTextLineCount` for a more human-readable visible text stream alongside the full AX tree text.
+- Large Accessibility text controls now contribute `AXBoundsForRange` line fragments, so editor/body text can participate in `visibleText` when the app exposes range bounds.
 
 ## 中文
 
@@ -19,6 +46,11 @@ AppShot v0.1.1 的重点是把 Mac 发布包补成完整可安装形态：
 - Codex skill 会在本地缺少 CLI 时自动引导安装 AppShot。
 - 开发阶段权限状态损坏时，可以用 `APPSHOT_RESET_PERMISSIONS=1` 重置 TCC 授权记录。
 - Accessibility 仍然是主文本路径，OCR 只作为显式兜底能力。
+- 现在可以运行 `scripts/verify_codex_parity.sh` 做 Codex 一致性检查；它会检查本地 Codex Mac app 证据、原生 App target 构建产物、CLI JSON 别名、MCP tools 和包版本一致性。
+- 现在可以用 `scripts/qa_app_capture.py` 对真实 App/window 做脚本化 QA，包括目标窗口截图元数据、窗口 bounds 对应的图片尺寸、OCR 文本、Accessibility 文本和层级锚点。
+- 现在可以用 `scripts/diagnose_tcc_identity.sh` 诊断 TCC 身份漂移，解释“隐私设置里 AppShot 已打开，但当前运行构建仍然识别不到权限”的情况。
+- Accessibility 输出现在包含按坐标排序的 `visibleText` 和 `visibleTextLineCount`，在完整 AX 树文本之外提供更接近人眼阅读顺序的可见文本流。
+- 大块 Accessibility 文本控件现在会贡献 `AXBoundsForRange` 行级片段，因此当目标 App 暴露文本范围坐标时，编辑器/正文文本也可以进入 `visibleText`。
 
 # AppShot v0.1.0
 

@@ -26,7 +26,7 @@ public struct AppShotCaptureOptions {
         maxChildren: Int = 120,
         includeOCR: Bool = false,
         maxOCRObservations: Int = 240,
-        accessibilityTimeoutSeconds: TimeInterval = 2.0,
+        accessibilityTimeoutSeconds: TimeInterval = 8.0,
         screenshotTimeoutSeconds: TimeInterval = 3.0,
         targetWindowID: UInt32? = nil,
         targetProcessIdentifier: pid_t? = nil,
@@ -86,6 +86,7 @@ public enum AppShotCore {
             bundleIdentifier: options.targetBundleIdentifier
         )
         let app = target.application
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
         let pid = app.processIdentifier
         let windows = target.windows
         let primaryWindow = target.window ?? windows.first
@@ -101,7 +102,9 @@ public enum AppShotCore {
             "schemaVersion": 1,
             "capturedAt": ISO8601DateFormatter().string(from: Date()),
             "permissions": permissions(prompt: false),
-            "frontmostApplication": appInfo(app),
+            "frontmostApplication": appInfo(frontmostApp ?? app),
+            "currentApplication": appInfo(app),
+            "targetApplication": appInfo(app),
             "windows": windows,
             "accessibility": accessibilitySnapshot(
                 pid: pid,
@@ -117,6 +120,12 @@ public enum AppShotCore {
         }
         if let primaryWindow {
             payload["primaryWindow"] = primaryWindow
+            payload["currentWindow"] = primaryWindow
+            payload["frontmostWindow"] = primaryWindow
+        } else {
+            payload["primaryWindow"] = NSNull()
+            payload["currentWindow"] = NSNull()
+            payload["frontmostWindow"] = NSNull()
         }
         if let screenshot {
             payload["screenshot"] = screenshot
@@ -129,6 +138,7 @@ public enum AppShotCore {
                 maxObservations: options.maxOCRObservations
             )
         }
+        payload["codex"] = codexSummaryPayload(from: payload)
         return payload
     }
 
@@ -149,7 +159,9 @@ public enum AppShotCore {
 
         return [
             "accessibility": AXIsProcessTrustedWithOptions(axOptions),
-            "screenRecording": screenCapture
+            "screenRecording": screenCapture,
+            "identity": permissionIdentity(),
+            "stability": permissionStability()
         ]
     }
 
@@ -181,11 +193,17 @@ public enum AppShotCore {
         let primaryWindow = windows.first
 
         var blockers: [String] = []
+        var advisories: [String] = []
         if !hasAccessibility {
             blockers.append("Accessibility permission is off; text/UI tree will be shallow.")
         }
         if !hasScreenRecording {
             blockers.append("Screen Recording permission is off; screenshots may fail.")
+        }
+        if let stability = permissionPayload["stability"] as? JSONObject,
+           let warning = stability["warning"] as? String,
+           !warning.isEmpty {
+            advisories.append(warning)
         }
         if frontmost == nil {
             blockers.append("No frontmost application is available.")
@@ -197,14 +215,23 @@ public enum AppShotCore {
             "state": blockers.isEmpty ? "ready" : "needsAttention",
             "permissions": permissionPayload,
             "windowCount": windows.count,
-            "blockers": blockers
+            "blockers": blockers,
+            "advisories": advisories,
+            "frontmostApplication": NSNull(),
+            "currentApplication": NSNull(),
+            "primaryWindow": NSNull(),
+            "frontmostWindow": NSNull(),
+            "currentWindow": NSNull()
         ]
 
         if let frontmost {
             payload["frontmostApplication"] = appInfo(frontmost)
+            payload["currentApplication"] = appInfo(frontmost)
         }
         if let primaryWindow {
             payload["primaryWindow"] = primaryWindow
+            payload["frontmostWindow"] = primaryWindow
+            payload["currentWindow"] = primaryWindow
         }
         return payload
     }
@@ -222,6 +249,93 @@ public enum AppShotCore {
         }
         return string
     }
+}
+
+public func permissionIdentity() -> JSONObject {
+    let bundle = Bundle.main
+    let executablePath = bundle.executableURL?.resolvingSymlinksInPath().path
+        ?? URL(fileURLWithPath: CommandLine.arguments.first ?? "").resolvingSymlinksInPath().path
+    let bundlePath = bundle.bundleURL.resolvingSymlinksInPath().path
+    let bundleIdentifier = bundle.bundleIdentifier ?? ""
+    let isBundledApp = bundlePath.hasSuffix(".app")
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    let recommendedAppPath = "\(home)/Applications/AppShot.app"
+    let recommendedBundleIdentifier = recommendedAppBundleIdentifier(
+        installedAppPath: recommendedAppPath,
+        currentBundleIdentifier: isBundledApp ? bundleIdentifier : nil
+    )
+
+    return [
+        "processIdentifier": ProcessInfo.processInfo.processIdentifier,
+        "bundleIdentifier": bundleIdentifier,
+        "bundlePath": bundlePath,
+        "executablePath": executablePath,
+        "isBundledApp": isBundledApp,
+        "recommendedAppPath": recommendedAppPath,
+        "recommendedBundleIdentifier": recommendedBundleIdentifier,
+        "diagnosticScript": "scripts/diagnose_tcc_identity.sh"
+    ]
+}
+
+private func recommendedAppBundleIdentifier(installedAppPath: String, currentBundleIdentifier: String?) -> String {
+    if let currentBundleIdentifier, !currentBundleIdentifier.isEmpty {
+        return currentBundleIdentifier
+    }
+
+    let infoPlistURL = URL(fileURLWithPath: installedAppPath)
+        .appendingPathComponent("Contents")
+        .appendingPathComponent("Info.plist")
+    if let data = try? Data(contentsOf: infoPlistURL),
+       let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+       let object = plist as? [String: Any],
+       let bundleIdentifier = object["CFBundleIdentifier"] as? String,
+       !bundleIdentifier.isEmpty {
+        return bundleIdentifier
+    }
+
+    return "com.qppshot.AppShot"
+}
+
+public func permissionStability() -> JSONObject {
+    let identity = permissionIdentity()
+    let bundleIdentifier = identity["bundleIdentifier"] as? String ?? ""
+    let bundlePath = identity["bundlePath"] as? String ?? ""
+    let executablePath = identity["executablePath"] as? String ?? ""
+    let recommendedAppPath = identity["recommendedAppPath"] as? String ?? ""
+    let recommendedBundleIdentifier = identity["recommendedBundleIdentifier"] as? String ?? ""
+    let isRecommendedApp = bundleIdentifier == recommendedBundleIdentifier && bundlePath == recommendedAppPath
+    let isBundledApp = identity["isBundledApp"] as? Bool ?? false
+    let isCommandLineTool = !isBundledApp
+
+    var warning = ""
+    var recoverySteps: [String] = []
+
+    if isCommandLineTool {
+        warning = "Permissions were checked by a command-line AppShot binary. macOS may store this separately from AppShot.app, so CLI/MCP permission state can differ from the installed app."
+        recoverySteps = [
+            "Use one fixed installed AppShot.app identity for prompting and manual grants.",
+            "If System Settings already shows AppShot enabled but this binary reports false, run scripts/diagnose_tcc_identity.sh and check for CDHash drift.",
+            "Reset stale rows once with tccutil reset Accessibility \(recommendedBundleIdentifier) and tccutil reset ScreenCapture \(recommendedBundleIdentifier), then open \(recommendedAppPath)."
+        ]
+    } else if !isRecommendedApp {
+        warning = "Permissions were checked by an AppShot.app outside the recommended install path. Debug/rebuilt app bundles can have a different TCC identity from the installed app."
+        recoverySteps = [
+            "Install or open \(recommendedAppPath), then grant Accessibility and Screen Recording to that app.",
+            "Avoid switching between Debug, release, and installed AppShot.app when validating permissions."
+        ]
+    }
+
+    return [
+        "mode": isRecommendedApp ? "stableInstalledApp" : isCommandLineTool ? "commandLineTool" : "alternateAppBundle",
+        "isStableGrantTarget": isRecommendedApp,
+        "warning": warning,
+        "recommendedGrantTarget": [
+            "bundleIdentifier": recommendedBundleIdentifier,
+            "path": recommendedAppPath
+        ],
+        "recoverySteps": recoverySteps,
+        "currentExecutablePath": executablePath
+    ]
 }
 
 private struct CaptureTarget {
@@ -324,17 +438,22 @@ public func windowsForPID(_ pid: pid_t) -> [JSONObject] {
 
         var out: JSONObject = [
             "windowID": info[kCGWindowNumber as String] as? UInt32 ?? 0,
+            "windowNumber": info[kCGWindowNumber as String] as? UInt32 ?? 0,
             "ownerPID": ownerPID,
             "ownerName": info[kCGWindowOwnerName as String] as? String ?? "",
             "title": info[kCGWindowName as String] as? String ?? "",
             "layer": layer,
-            "alpha": info[kCGWindowAlpha as String] as? Double ?? 0
+            "alpha": info[kCGWindowAlpha as String] as? Double ?? 0,
+            "isOnScreen": true
         ]
 
         if let bounds = info[kCGWindowBounds as String] as? JSONObject {
             out["bounds"] = normalizedBounds(bounds)
             if let width = bounds["Width"] as? CGFloat, let height = bounds["Height"] as? CGFloat {
                 out["area"] = width * height
+            }
+            if let screen = screenForWindowBounds(bounds) {
+                out["screen"] = screen
             }
         }
         out["captureParameters"] = [
@@ -354,6 +473,75 @@ public func normalizedBounds(_ bounds: JSONObject) -> JSONObject {
         "y": bounds["Y"] ?? 0,
         "width": bounds["Width"] ?? 0,
         "height": bounds["Height"] ?? 0
+    ]
+}
+
+public func screenForWindowBounds(_ bounds: JSONObject) -> JSONObject? {
+    guard let x = numberValue(bounds["X"]),
+          let y = numberValue(bounds["Y"]),
+          let width = numberValue(bounds["Width"]),
+          let height = numberValue(bounds["Height"]) else {
+        return nil
+    }
+
+    let windowRect = CGRect(x: x, y: y, width: width, height: height)
+    let displayMatches = activeDisplays()
+        .map { display -> (display: CGDirectDisplayID, bounds: CGRect, intersectionArea: CGFloat) in
+            let bounds = CGDisplayBounds(display)
+            let intersection = bounds.intersection(windowRect)
+            return (display, bounds, intersection.width * intersection.height)
+        }
+        .sorted { $0.intersectionArea > $1.intersectionArea }
+
+    if let best = displayMatches.first,
+       best.intersectionArea > 0 {
+        return [
+            "displayID": best.display,
+            "frame": rectPayload(best.bounds),
+            "isMain": best.display == CGMainDisplayID()
+        ]
+    }
+
+    let screenMatches = NSScreen.screens
+        .map { screen -> (screen: NSScreen, intersectionArea: CGFloat) in
+            let intersection = screen.frame.intersection(windowRect)
+            return (screen, intersection.width * intersection.height)
+        }
+        .sorted { $0.intersectionArea > $1.intersectionArea }
+
+    guard let best = screenMatches.first,
+          best.intersectionArea > 0 else {
+        return nil
+    }
+
+    return [
+        "localizedName": best.screen.localizedName,
+        "frame": rectPayload(best.screen.frame),
+        "visibleFrame": rectPayload(best.screen.visibleFrame),
+        "backingScaleFactor": best.screen.backingScaleFactor
+    ]
+}
+
+public func activeDisplays() -> [CGDirectDisplayID] {
+    var count: UInt32 = 0
+    guard CGGetActiveDisplayList(0, nil, &count) == .success,
+          count > 0 else {
+        return []
+    }
+
+    var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+    guard CGGetActiveDisplayList(count, &displays, &count) == .success else {
+        return []
+    }
+    return Array(displays.prefix(Int(count)))
+}
+
+public func rectPayload(_ rect: CGRect) -> JSONObject {
+    [
+        "x": rect.origin.x,
+        "y": rect.origin.y,
+        "width": rect.size.width,
+        "height": rect.size.height
     ]
 }
 
@@ -395,7 +583,7 @@ public func accessibilitySnapshot(
     timeoutSeconds: TimeInterval = 2.0
 ) -> JSONObject {
     let appElement = AXUIElementCreateApplication(pid)
-    AXUIElementSetMessagingTimeout(appElement, 0.25)
+    AXUIElementSetMessagingTimeout(appElement, 0.75)
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     var focusedWindow: AnyObject?
     let focusedWindowResult = AXUIElementCopyAttributeValue(
@@ -420,11 +608,11 @@ public func accessibilitySnapshot(
     let targetAXWindow = targetWindow.flatMap {
         matchingAXWindow(appElement: appElement, targetWindow: $0)
     }
-    let rootElement = targetAXWindow != nil
-        ? targetAXWindow!
-        : focusedWindowResult == .success
-        ? (focusedWindow as! AXUIElement)
-        : appElement
+    let focusedAXWindow = focusedWindowResult == .success ? axElement(from: focusedWindow) : nil
+    let mainAXWindow = mainWindowResult == .success ? axElement(from: mainWindow) : nil
+    let windowFallback = [focusedAXWindow, mainAXWindow].compactMap { $0 }.first(where: axIsWindowElement)
+    let rootElement = targetAXWindow ?? windowFallback ?? appElement
+    let rootSource = targetAXWindow != nil ? "targetWindow" : windowFallback != nil ? "focusedWindow" : "application"
     let root = elementSnapshot(
         rootElement,
         depth: 0,
@@ -437,7 +625,7 @@ public func accessibilitySnapshot(
     var payload: JSONObject = [
         "trusted": AXIsProcessTrusted(),
         "timeoutSeconds": timeoutSeconds,
-        "rootSource": targetAXWindow != nil ? "targetWindow" : focusedWindowResult == .success ? "focusedWindow" : "application",
+        "rootSource": rootSource,
         "root": root
     ]
 
@@ -449,13 +637,14 @@ public func accessibilitySnapshot(
        let focusedElement {
         let focusedAXElement = focusedElement as! AXUIElement
         if !sameAXElement(focusedAXElement, rootElement) {
+            var focusedVisited = Set<String>()
             payload["focusedElement"] = elementSnapshot(
                 focusedAXElement,
                 depth: 0,
                 maxDepth: max(1, min(maxDepth, 4)),
                 maxChildren: maxChildren,
                 deadline: deadline,
-                visited: &visited
+                visited: &focusedVisited
             )
         }
     }
@@ -464,13 +653,14 @@ public func accessibilitySnapshot(
        let mainWindow {
         let mainAXWindow = mainWindow as! AXUIElement
         if !sameAXElement(mainAXWindow, rootElement) {
+            var mainWindowVisited = Set<String>()
             payload["mainWindow"] = elementSnapshot(
                 mainAXWindow,
                 depth: 0,
                 maxDepth: max(1, min(maxDepth, 4)),
                 maxChildren: maxChildren,
                 deadline: deadline,
-                visited: &visited
+                visited: &mainWindowVisited
             )
         }
     }
@@ -483,6 +673,9 @@ public func accessibilitySnapshot(
     let lines = accessibilityTextLines(from: payload)
     payload["text"] = lines.joined(separator: "\n")
     payload["textLineCount"] = lines.count
+    let visibleLines = visibleTextLines(from: payload)
+    payload["visibleText"] = visibleLines.joined(separator: "\n")
+    payload["visibleTextLineCount"] = visibleLines.count
 
     return payload
 }
@@ -500,7 +693,7 @@ public func elementSnapshot(
         return ["truncatedByTimeout": true]
     }
 
-    AXUIElementSetMessagingTimeout(element, 0.25)
+    AXUIElementSetMessagingTimeout(element, depth <= 2 ? 0.75 : 0.35)
     let elementID = axElementID(element)
     if visited.contains(elementID) {
         return ["cycle": true]
@@ -515,50 +708,102 @@ public func elementSnapshot(
         kAXDescriptionAttribute,
         kAXHelpAttribute,
         kAXIdentifierAttribute,
+        kAXEnabledAttribute,
         kAXSelectedTextAttribute,
+        "AXFocused",
+        "AXSelected",
         "AXPlaceholderValue",
         "AXRoleDescription",
         "AXDocument",
         "AXFilename",
         "AXURL"
     ]
-    let attributes = dedupeStrings(fixedAttributes + axAttributeNames(element))
-    var childAttributes = axChildAttributes
+    let attributes = dedupeStrings(fixedAttributes + (depth <= 1 ? axAttributeNames(element) : []))
+    var discoveredChildAttributes: [String] = []
 
     for attribute in attributes {
         if let value = copyAXValue(element, attribute) {
             if valueContainsAXElement(value) {
-                childAttributes.append(attribute)
+                if isAXDescendantAttribute(attribute) {
+                    discoveredChildAttributes.append(attribute)
+                }
             } else if let safeValue = jsonSafeAXValue(value) {
                 out[attribute.replacingOccurrences(of: "AX", with: "").lowercasedFirst] = safeValue
             }
         }
     }
-
-    if let parameterizedText = axParameterizedText(element) {
-        out["textContent"] = parameterizedText
+    if axShouldProbeSettableAttributes(out) {
+        let settableAttributes = axSettableAttributes(element)
+        if !settableAttributes.isEmpty {
+            out["settableAttributes"] = settableAttributes
+        }
     }
 
-    if let position = copyAXValue(element, kAXPositionAttribute),
-       let point = axPoint(position) {
-        out["position"] = ["x": point.x, "y": point.y]
-    }
-    if let size = copyAXValue(element, kAXSizeAttribute),
-       let cgSize = axSize(size) {
-        out["size"] = ["width": cgSize.width, "height": cgSize.height]
+    if axShouldProbeParameterizedText(out),
+       let parameterizedText = axParameterizedText(element) {
+        out["textContent"] = parameterizedText.text
+        let fragments = axParameterizedTextFragments(
+            element,
+            text: parameterizedText.text,
+            range: parameterizedText.range
+        )
+        if !fragments.isEmpty {
+            out["visibleTextFragments"] = fragments
+        }
     }
 
-    guard depth < maxDepth else {
+    if axShouldCompactRow(out) {
+        for (key, value) in axFirstDescendantTextPayload(element, deadline: deadline, remainingDepth: 3) {
+            if out[key] == nil {
+                out[key] = value
+            }
+        }
+        let controls = axCompactInteractiveDescendants(
+            element,
+            depth: depth,
+            maxChildren: maxChildren,
+            deadline: deadline,
+            visited: &visited
+        )
+        if !controls.isEmpty {
+            out["children"] = controls
+        }
         return out
     }
 
+    if axShouldCaptureGeometry(out, depth: depth) {
+        if let position = copyAXValue(element, kAXPositionAttribute),
+           let point = axPoint(position) {
+            out["position"] = ["x": point.x, "y": point.y]
+        }
+        if let size = copyAXValue(element, kAXSizeAttribute),
+           let cgSize = axSize(size) {
+            out["size"] = ["width": cgSize.width, "height": cgSize.height]
+        }
+    }
+
+    guard depth < maxDepth, axShouldSnapshotChildren(out) else {
+        return out
+    }
+
+    let childMaxDepth = axChildMaxDepth(parentSnapshot: out, parentDepth: depth, requestedMaxDepth: maxDepth)
+    let childAttributes = axPreferredChildAttributes(parentSnapshot: out, discovered: discoveredChildAttributes)
+
+    var localChildIDs = Set<String>()
     for childAttribute in dedupeStrings(childAttributes) {
         guard Date() < deadline else {
             out["truncatedByTimeout"] = true
             return out
         }
 
-        let children = axChildElements(element, attribute: childAttribute)
+        let children = axChildElements(element, attribute: childAttribute).filter { child in
+            let childID = axElementID(child)
+            guard !localChildIDs.contains(childID) else {
+                return false
+            }
+            localChildIDs.insert(childID)
+            return true
+        }
         guard !children.isEmpty else {
             continue
         }
@@ -569,7 +814,7 @@ public func elementSnapshot(
             elementSnapshot(
                 $0,
                 depth: depth + 1,
-                maxDepth: maxDepth,
+                maxDepth: childMaxDepth,
                 maxChildren: maxChildren,
                 deadline: deadline,
                 visited: &visited
@@ -594,12 +839,46 @@ let axChildAttributes = [
     "AXVisibleColumns",
     "AXTabs",
     "AXChildrenInNavigationOrder",
-    "AXLinkedUIElements",
-    "AXTitleUIElement",
-    "AXServesAsTitleForUIElements",
-    "AXHeader",
-    "AXEditedAncestor"
+    "AXSplitters"
 ]
+
+public func isAXDescendantAttribute(_ attribute: String) -> Bool {
+    Set(axChildAttributes).contains(attribute)
+}
+
+private func axPreferredChildAttributes(parentSnapshot: JSONObject, discovered: [String]) -> [String] {
+    let role = parentSnapshot["role"] as? String
+    switch role {
+    case "AXCell", "AXRow", "AXOutlineRow":
+        return [kAXChildrenAttribute]
+    case "AXList", "AXOutline", "AXTable":
+        return [
+            "AXVisibleRows",
+            "AXRows",
+            kAXChildrenAttribute
+        ]
+    case "AXScrollArea":
+        return [
+            "AXContents",
+            kAXChildrenAttribute,
+            "AXVisibleChildren"
+        ]
+    case "AXSplitGroup":
+        return [
+            kAXChildrenAttribute,
+            "AXSplitters"
+        ]
+    case "AXWindow", "AXGroup", "AXToolbar":
+        return [
+            kAXChildrenAttribute,
+            "AXContents",
+            "AXTabs",
+            "AXSplitters"
+        ]
+    default:
+        return dedupeStrings(discovered + axChildAttributes)
+    }
+}
 
 public func axAttributeNames(_ element: AXUIElement) -> [String] {
     AXUIElementSetMessagingTimeout(element, 0.25)
@@ -610,6 +889,27 @@ public func axAttributeNames(_ element: AXUIElement) -> [String] {
         return []
     }
     return names
+}
+
+public func axSettableAttributes(_ element: AXUIElement) -> [String] {
+    let attributes = [
+        kAXValueAttribute,
+        kAXFocusedAttribute,
+        kAXSelectedTextAttribute,
+        kAXSelectedChildrenAttribute,
+        kAXSelectedRowsAttribute,
+        kAXPositionAttribute,
+        kAXSizeAttribute
+    ].map { $0 as String }
+
+    return attributes.compactMap { attribute in
+        var isSettable = DarwinBoolean(false)
+        let result = AXUIElementIsAttributeSettable(element, attribute as CFString, &isSettable)
+        guard result == .success, isSettable.boolValue else {
+            return nil
+        }
+        return attribute.replacingOccurrences(of: "AX", with: "").lowercasedFirst
+    }
 }
 
 public func axChildElements(_ element: AXUIElement, attribute: String) -> [AXUIElement] {
@@ -625,11 +925,233 @@ public func axChildElements(_ element: AXUIElement, attribute: String) -> [AXUIE
     return []
 }
 
+private func axShouldProbeSettableAttributes(_ snapshot: JSONObject) -> Bool {
+    let role = snapshot["role"] as? String
+    let roleDescription = snapshot["roleDescription"] as? String
+    let probeRoles = Set([
+        "AXScrollBar",
+        "AXSlider",
+        "AXSplitter",
+        "AXTextArea",
+        "AXTextField"
+    ])
+
+    if let role, probeRoles.contains(role) {
+        return true
+    }
+    if roleDescription?.contains("文本栏") == true || roleDescription?.contains("滚动条") == true {
+        return true
+    }
+    return false
+}
+
+private func axShouldCaptureGeometry(_ snapshot: JSONObject, depth: Int) -> Bool {
+    if depth <= 1 {
+        return true
+    }
+    switch snapshot["role"] as? String {
+    case "AXScrollBar",
+         "AXSplitter",
+         "AXStaticText",
+         "AXTextArea",
+         "AXTextField",
+         "AXValueIndicator",
+         "AXWindow":
+        return true
+    default:
+        return false
+    }
+}
+
+private func axShouldCompactRow(_ snapshot: JSONObject) -> Bool {
+    switch snapshot["role"] as? String {
+    case "AXRow", "AXOutlineRow":
+        return true
+    default:
+        return false
+    }
+}
+
+private func axShouldSnapshotChildren(_ snapshot: JSONObject) -> Bool {
+    switch snapshot["role"] as? String {
+    case "AXButton",
+         "AXCheckBox",
+         "AXImage",
+         "AXMenuButton",
+         "AXPopUpButton",
+         "AXRadioButton",
+         "AXScrollBar",
+         "AXSlider",
+         "AXStaticText",
+         "AXSwitch",
+         "AXTextArea",
+         "AXTextField":
+        return false
+    default:
+        return true
+    }
+}
+
+private func axFirstDescendantTextPayload(
+    _ element: AXUIElement,
+    deadline: Date,
+    remainingDepth: Int
+) -> JSONObject {
+    guard Date() < deadline, remainingDepth >= 0 else {
+        return [:]
+    }
+
+    let role = copyAXValue(element, kAXRoleAttribute) as? String
+    let title = (copyAXValue(element, kAXTitleAttribute) as? String)
+        .flatMap(codexTrimmedString)
+    let description = (copyAXValue(element, kAXDescriptionAttribute) as? String)
+        .flatMap(codexTrimmedString)
+    let value = (copyAXValue(element, kAXValueAttribute) as? String)
+        .flatMap(codexTrimmedString)
+
+    if role == "AXStaticText" || role == "AXTextField" || role == "AXTextArea" {
+        if let description {
+            var out: JSONObject = ["description": description]
+            if let value {
+                out["value"] = value
+            }
+            return out
+        }
+        if let value {
+            return ["value": value, "textContent": value]
+        }
+        if let title {
+            return ["title": title]
+        }
+    }
+
+    guard remainingDepth > 0 else {
+        return [:]
+    }
+
+    for attribute in [kAXChildrenAttribute as String, "AXVisibleChildren"] {
+        for child in axChildElements(element, attribute: attribute) {
+            let payload = axFirstDescendantTextPayload(
+                child,
+                deadline: deadline,
+                remainingDepth: remainingDepth - 1
+            )
+            if !payload.isEmpty {
+                return payload
+            }
+        }
+    }
+    return [:]
+}
+
+private func axCompactInteractiveDescendants(
+    _ element: AXUIElement,
+    depth: Int,
+    maxChildren: Int,
+    deadline: Date,
+    visited: inout Set<String>
+) -> [JSONObject] {
+    var controls: [JSONObject] = []
+
+    func visit(_ candidate: AXUIElement, remainingDepth: Int) {
+        guard Date() < deadline,
+              remainingDepth >= 0,
+              controls.count < maxChildren else {
+            return
+        }
+
+        if let role = copyAXValue(candidate, kAXRoleAttribute) as? String,
+           axIsCompactInteractiveRole(role) {
+            controls.append(elementSnapshot(
+                candidate,
+                depth: depth + 1,
+                maxDepth: depth + 1,
+                maxChildren: maxChildren,
+                deadline: deadline,
+                visited: &visited
+            ))
+            return
+        }
+
+        guard remainingDepth > 0 else {
+            return
+        }
+        for attribute in [kAXChildrenAttribute as String, "AXVisibleChildren"] {
+            for child in axChildElements(candidate, attribute: attribute) {
+                visit(child, remainingDepth: remainingDepth - 1)
+            }
+        }
+    }
+
+    for attribute in [kAXChildrenAttribute as String, "AXVisibleChildren"] {
+        for child in axChildElements(element, attribute: attribute) {
+            visit(child, remainingDepth: 3)
+        }
+    }
+    return controls
+}
+
+private func axIsCompactInteractiveRole(_ role: String) -> Bool {
+    switch role {
+    case "AXButton", "AXCheckBox", "AXMenuButton", "AXPopUpButton", "AXRadioButton", "AXSlider", "AXSwitch":
+        return true
+    default:
+        return false
+    }
+}
+
+private func axShouldProbeParameterizedText(_ snapshot: JSONObject) -> Bool {
+    switch snapshot["role"] as? String {
+    case "AXTextArea", "AXTextField":
+        return true
+    default:
+        break
+    }
+    let roleDescription = snapshot["roleDescription"] as? String ?? ""
+    return roleDescription == "text area"
+        || roleDescription == "text field"
+        || roleDescription == "文本区域"
+        || roleDescription == "文本栏"
+        || roleDescription == "搜索文本栏"
+}
+
+private func axChildMaxDepth(parentSnapshot: JSONObject, parentDepth: Int, requestedMaxDepth: Int) -> Int {
+    switch parentSnapshot["role"] as? String {
+    case "AXRow", "AXOutlineRow":
+        return min(requestedMaxDepth, parentDepth + 3)
+    case "AXCell":
+        return min(requestedMaxDepth, parentDepth + 2)
+    default:
+        return requestedMaxDepth
+    }
+}
+
 public func matchingAXWindow(appElement: AXUIElement, targetWindow: JSONObject) -> AXUIElement? {
-    let windows = dedupeAXElements(
+    var focusedWindow: AnyObject?
+    let focusedWindowResult = AXUIElementCopyAttributeValue(
+        appElement,
+        kAXFocusedWindowAttribute as CFString,
+        &focusedWindow
+    )
+    var mainWindow: AnyObject?
+    let mainWindowResult = AXUIElementCopyAttributeValue(
+        appElement,
+        kAXMainWindowAttribute as CFString,
+        &mainWindow
+    )
+    var candidates: [AXUIElement] = []
+    if focusedWindowResult == .success, let focusedWindow {
+        candidates.append(focusedWindow as! AXUIElement)
+    }
+    if mainWindowResult == .success, let mainWindow {
+        candidates.append(mainWindow as! AXUIElement)
+    }
+    candidates +=
         axChildElements(appElement, attribute: kAXWindowsAttribute) +
         axChildElements(appElement, attribute: "AXVisibleChildren") +
         axChildElements(appElement, attribute: kAXChildrenAttribute)
+    let windows = dedupeAXElements(
+        candidates
     )
     guard !windows.isEmpty else {
         return nil
@@ -678,8 +1200,19 @@ public func matchingAXWindow(appElement: AXUIElement, targetWindow: JSONObject) 
     return best?.score ?? 0 > 0 ? best?.element : nil
 }
 
+private func axIsWindowElement(_ element: AXUIElement) -> Bool {
+    (copyAXValue(element, kAXRoleAttribute) as? String) == "AXWindow"
+}
+
 public func isAXUIElement(_ value: Any) -> Bool {
     CFGetTypeID(value as CFTypeRef) == AXUIElementGetTypeID()
+}
+
+private func axElement(from value: AnyObject?) -> AXUIElement? {
+    guard let value, isAXUIElement(value) else {
+        return nil
+    }
+    return (value as! AXUIElement)
 }
 
 public func valueContainsAXElement(_ value: Any) -> Bool {
@@ -707,7 +1240,29 @@ public func dedupeAXElements(_ elements: [AXUIElement]) -> [AXUIElement] {
 }
 
 public func axElementID(_ element: AXUIElement) -> String {
-    String(describing: element)
+    var parts = [String(describing: element)]
+    for attribute in [
+        kAXRoleAttribute,
+        kAXSubroleAttribute,
+        kAXIdentifierAttribute,
+        kAXTitleAttribute,
+        kAXDescriptionAttribute,
+        kAXRoleDescriptionAttribute
+    ] {
+        if let value = copyAXValue(element, attribute),
+           let safeValue = jsonSafeAXValue(value) {
+            parts.append("\(attribute)=\(safeValue)")
+        }
+    }
+    if let position = copyAXValue(element, kAXPositionAttribute),
+       let point = axPoint(position) {
+        parts.append("position=\(Int(point.x)),\(Int(point.y))")
+    }
+    if let size = copyAXValue(element, kAXSizeAttribute),
+       let cgSize = axSize(size) {
+        parts.append("size=\(Int(cgSize.width))x\(Int(cgSize.height))")
+    }
+    return parts.joined(separator: "|")
 }
 
 public func sameAXElement(_ lhs: AXUIElement, _ rhs: AXUIElement) -> Bool {
@@ -760,6 +1315,134 @@ public func accessibilityTextLines(from value: Any) -> [String] {
     }
 
     visit(value)
+    return lines
+}
+
+public struct VisibleTextEntry {
+    public let text: String
+    public let x: CGFloat
+    public let y: CGFloat
+    public let width: CGFloat
+    public let height: CGFloat
+}
+
+public struct AXParameterizedText {
+    public let text: String
+    public let range: CFRange
+}
+
+public func visibleTextLines(from value: Any) -> [String] {
+    let visibleTextKeys = [
+        "textContent",
+        "selectedText",
+        "value",
+        "title",
+        "description",
+        "placeholderValue",
+        "help"
+    ]
+    var entries: [VisibleTextEntry] = []
+
+    func textFragments(from raw: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> [VisibleTextEntry] {
+        let fragments = raw
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !fragments.isEmpty else {
+            return []
+        }
+
+        let lineHeight = fragments.count > 1 && height > 0
+            ? max(1, height / CGFloat(fragments.count))
+            : height
+        return fragments.enumerated().map { index, text in
+            VisibleTextEntry(
+                text: text,
+                x: x,
+                y: y + CGFloat(index) * lineHeight,
+                width: width,
+                height: lineHeight
+            )
+        }
+    }
+
+    func visit(_ value: Any) {
+        if let array = value as? [Any] {
+            for item in array {
+                visit(item)
+            }
+            return
+        }
+
+        guard let object = value as? JSONObject else {
+            return
+        }
+
+        if let fragments = object["visibleTextFragments"] as? [JSONObject] {
+            for fragment in fragments {
+                guard let text = fragment["text"] as? String,
+                      let position = fragment["position"] as? JSONObject,
+                      let size = fragment["size"] as? JSONObject,
+                      let x = numberValue(position["x"]),
+                      let y = numberValue(position["y"]),
+                      let width = numberValue(size["width"]),
+                      let height = numberValue(size["height"]) else {
+                    continue
+                }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    continue
+                }
+                entries.append(VisibleTextEntry(text: trimmed, x: x, y: y, width: width, height: height))
+            }
+        }
+
+        if let position = object["position"] as? JSONObject,
+           let size = object["size"] as? JSONObject,
+           let x = numberValue(position["x"]),
+           let y = numberValue(position["y"]),
+           let width = numberValue(size["width"]),
+           let height = numberValue(size["height"]),
+           width > 0,
+           height > 0 {
+            for key in visibleTextKeys {
+                guard let raw = object[key] as? String else {
+                    continue
+                }
+                entries.append(contentsOf: textFragments(from: raw, x: x, y: y, width: width, height: height))
+            }
+        }
+
+        for child in object.values {
+            if child is JSONObject || child is [Any] {
+                visit(child)
+            }
+        }
+    }
+
+    visit(value)
+
+    var seen = Set<String>()
+    let sorted = entries.sorted {
+        let yDelta = abs($0.y - $1.y)
+        if yDelta > 8 {
+            return $0.y < $1.y
+        }
+        if abs($0.x - $1.x) > 8 {
+            return $0.x < $1.x
+        }
+        return $0.text < $1.text
+    }
+
+    var lines: [String] = []
+    for entry in sorted {
+        let key = "\(entry.text)|\(Int(entry.x / 4))|\(Int(entry.y / 4))"
+        guard !seen.contains(key) else {
+            continue
+        }
+        seen.insert(key)
+        lines.append(entry.text)
+    }
     return lines
 }
 
@@ -874,7 +1557,7 @@ public func copyAXParameterizedValue(_ element: AXUIElement, _ attribute: String
     return value
 }
 
-public func axParameterizedText(_ element: AXUIElement) -> String? {
+public func axParameterizedText(_ element: AXUIElement) -> AXParameterizedText? {
     let visibleRange = copyAXValue(element, "AXVisibleCharacterRange").flatMap(axRange)
     let characterCount = copyAXValue(element, "AXNumberOfCharacters").flatMap(intValue)
     let range: CFRange?
@@ -901,7 +1584,66 @@ public func axParameterizedText(_ element: AXUIElement) -> String? {
         text = String(describing: value)
     }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
+    return trimmed.isEmpty ? nil : AXParameterizedText(text: trimmed, range: range)
+}
+
+public func axParameterizedTextFragments(
+    _ element: AXUIElement,
+    text: String,
+    range: CFRange,
+    maxLines: Int = 400
+) -> [JSONObject] {
+    let nsText = text as NSString
+    var fragments: [JSONObject] = []
+    var location = 0
+
+    while location < nsText.length && fragments.count < maxLines {
+        let lineRange = nsText.lineRange(for: NSRange(location: location, length: 0))
+        var contentLength = lineRange.length
+        while contentLength > 0 {
+            let char = nsText.character(at: lineRange.location + contentLength - 1)
+            if char == 10 || char == 13 {
+                contentLength -= 1
+            } else {
+                break
+            }
+        }
+
+        let contentRange = NSRange(location: lineRange.location, length: contentLength)
+        let rawLine = contentLength > 0 ? nsText.substring(with: contentRange) : ""
+        let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let axRange = CFRange(location: range.location + contentRange.location, length: max(1, contentRange.length))
+            if let parameter = axRangeValue(axRange),
+               let value = copyAXParameterizedValue(element, "AXBoundsForRange", parameter: parameter),
+               let rect = axRect(value),
+               rect.width > 0,
+               rect.height > 0 {
+                fragments.append([
+                    "text": trimmed,
+                    "position": ["x": rect.origin.x, "y": rect.origin.y],
+                    "size": ["width": rect.size.width, "height": rect.size.height],
+                    "range": ["location": axRange.location, "length": axRange.length]
+                ])
+            }
+        }
+
+        let nextLocation = lineRange.location + max(lineRange.length, 1)
+        if nextLocation <= location {
+            break
+        }
+        location = nextLocation
+    }
+
+    if location < nsText.length {
+        fragments.append([
+            "text": "[visible text truncated]",
+            "position": ["x": 0, "y": CGFloat.greatestFiniteMagnitude],
+            "size": ["width": 1, "height": 1],
+            "truncated": true
+        ])
+    }
+    return fragments
 }
 
 public func axPoint(_ value: Any) -> CGPoint? {
@@ -1154,6 +1896,606 @@ public func ocrSnapshot(
         "text": text,
         "observations": observations
     ]
+}
+
+public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 420) -> JSONObject {
+    let text = codexSummaryText(from: payload, maxTreeLines: maxTreeLines)
+    let accessibility = payload["accessibility"] as? JSONObject
+    let root = accessibility?["root"] as? JSONObject
+    let selectedLines = codexSelectedElementLines(from: root)
+    let focusedLine = codexFocusedElementLine(from: accessibility)
+
+    return [
+        "format": "codex-appshot-text",
+        "text": text,
+        "treeLineCount": codexTreeLines(from: root, maxLines: maxTreeLines).count,
+        "selectedLineCount": selectedLines.count,
+        "hasFocusedElement": focusedLine != nil
+    ]
+}
+
+public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 420) -> String {
+    let app = payload["targetApplication"] as? JSONObject
+        ?? payload["currentApplication"] as? JSONObject
+        ?? payload["frontmostApplication"] as? JSONObject
+        ?? [:]
+    let window = payload["primaryWindow"] as? JSONObject
+        ?? payload["currentWindow"] as? JSONObject
+        ?? payload["frontmostWindow"] as? JSONObject
+    let accessibility = payload["accessibility"] as? JSONObject
+    let root = accessibility?["root"] as? JSONObject
+    let screenshot = payload["screenshot"] as? JSONObject
+
+    let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
+    let bundleIdentifier = codexTrimmedString(app["bundleIdentifier"]) ?? ""
+    let windowTitle = codexTrimmedString(window?["title"]) ?? codexTrimmedString(root?["title"]) ?? appName
+    let imagePath = codexTrimmedString(screenshot?["path"]) ?? ""
+
+    var attributes = [
+        "app=\"\(codexEscapeAttribute(appName))\"",
+        "bundle-identifier=\"\(codexEscapeAttribute(bundleIdentifier))\"",
+        "window-title=\"\(codexEscapeAttribute(windowTitle))\""
+    ]
+    if !imagePath.isEmpty {
+        attributes.append("image=\"\(codexEscapeAttribute(imagePath))\"")
+    }
+
+    var lines: [String] = [
+        "<appshot \(attributes.joined(separator: " "))>",
+        "Window: \"\(windowTitle)\", App: \(appName)."
+    ]
+
+    let treeLines = codexTreeLines(from: root, maxLines: maxTreeLines)
+    if treeLines.isEmpty {
+        lines.append("No accessibility tree was captured.")
+    } else {
+        lines.append(contentsOf: treeLines)
+    }
+
+    let selectedLines = codexSelectedElementLines(from: root)
+    if !selectedLines.isEmpty {
+        lines.append("")
+        lines.append("Selected:")
+        lines.append(contentsOf: selectedLines.map { "\t\($0)" })
+        lines.append("")
+        lines.append("Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).")
+    }
+
+    if let focusedLine = codexFocusedElementLine(from: accessibility),
+       focusedLine != codexElementLine(root ?? [:]) {
+        lines.append("")
+        lines.append("The focused UI element is \(focusedLine)")
+    }
+
+    let visibleText = codexTrimmedString(accessibility?["visibleText"])
+    let text = codexTrimmedString(accessibility?["text"])
+    if visibleText == nil, let text {
+        let preview = text.split(separator: "\n").prefix(12).joined(separator: "\n")
+        if !preview.isEmpty {
+            lines.append("")
+            lines.append("Text:")
+            lines.append(preview)
+        }
+    }
+
+    lines.append("</appshot>")
+    return lines.joined(separator: "\n")
+}
+
+private func codexTreeLines(from root: JSONObject?, maxLines: Int) -> [String] {
+    guard let root else {
+        return []
+    }
+
+    var lines: [String] = []
+    var seen = Set<String>()
+    codexAppendElementLines(root, depth: 0, lines: &lines, maxLines: maxLines, seen: &seen)
+    return lines
+}
+
+private func codexAppendElementLines(_ element: JSONObject, depth: Int, lines: inout [String], maxLines: Int, seen: inout Set<String>) {
+    guard lines.count < maxLines else {
+        return
+    }
+
+    let digest = codexElementDigest(element)
+    let includeLine = codexShouldIncludeElementLine(element) && !seen.contains(digest)
+    if includeLine {
+        seen.insert(digest)
+        lines.append(String(repeating: "\t", count: depth) + codexElementLine(element))
+    }
+
+    let children = codexChildrenForSummary(of: element)
+    for child in children {
+        guard lines.count < maxLines else {
+            lines.append(String(repeating: "\t", count: includeLine ? depth + 1 : depth) + "... truncated")
+            return
+        }
+        codexAppendElementLines(child, depth: includeLine ? depth + 1 : depth, lines: &lines, maxLines: maxLines, seen: &seen)
+    }
+}
+
+private func codexSelectedElementLines(from root: JSONObject?) -> [String] {
+    guard let root else {
+        return []
+    }
+
+    var lines: [String] = []
+    codexVisitElements(root) { element in
+        if codexIsSelected(element) {
+            lines.append(codexElementLine(element))
+        }
+    }
+    return Array(lines.prefix(40))
+}
+
+private func codexFocusedElementLine(from accessibility: JSONObject?) -> String? {
+    if let focused = accessibility?["focusedElement"] as? JSONObject {
+        guard codexShouldIncludeElementLine(focused) else {
+            return nil
+        }
+        return codexElementLine(focused)
+    }
+
+    if let root = accessibility?["root"] as? JSONObject {
+        var focusedLine: String?
+        codexVisitElements(root) { element in
+            if focusedLine == nil,
+               element["focused"] as? Bool == true,
+               codexShouldIncludeElementLine(element) {
+                focusedLine = codexElementLine(element)
+            }
+        }
+        return focusedLine
+    }
+
+    return nil
+}
+
+private func codexVisitElements(_ element: JSONObject, _ visit: (JSONObject) -> Void) {
+    visit(element)
+    for child in codexSemanticChildren(of: element) {
+        codexVisitElements(child, visit)
+    }
+}
+
+private func codexElementLine(_ element: JSONObject) -> String {
+    let role = codexRoleName(element)
+    var parts: [String] = []
+
+    parts.append(role)
+    if codexIsSelected(element) {
+        parts.append("(selected)")
+    }
+
+    let title = codexTrimmedString(element["title"])
+    let description = codexTrimmedString(element["description"])
+    let value = codexTrimmedString(element["value"])
+    let textContent = codexTrimmedString(element["textContent"])
+    let placeholder = codexTrimmedString(element["placeholderValue"])
+    let identifier = codexTrimmedString(element["identifier"])
+    let selectedText = codexTrimmedString(element["selectedText"])
+
+    let descendantLabel = ["row", "cell"].contains(role)
+        ? codexPrimaryDescendantLabel(element)
+        : nil
+    let settableAnnotation = codexSettableAnnotation(element)
+
+    if let settableAnnotation {
+        parts.append(settableAnnotation)
+    }
+
+    if let title {
+        parts.append(title)
+    } else if role == "text",
+              let text = value ?? textContent ?? description {
+        parts.append(text)
+    } else if let description {
+        parts.append(codexDescriptionLabel(description, role: role))
+    } else if let textContent {
+        parts.append(textContent)
+    } else if let descendantLabel {
+        parts.append(descendantLabel)
+    }
+
+    if role != "text",
+       settableAnnotation == nil,
+       let value,
+       value != title,
+       value != description,
+       value != textContent {
+        parts.append("Value: \(value)")
+    }
+    if let placeholder,
+       settableAnnotation == nil || placeholder != codexSettableValueString(element) {
+        parts.append("Placeholder: \(placeholder)")
+    }
+    if let selectedText, selectedText != title, selectedText != value {
+        parts.append("SelectedText: \(selectedText)")
+    }
+    if let identifier,
+       codexShouldRenderIdentifier(identifier, role: role) {
+        if codexIdentifierShouldBeRaw(identifier, role: role) {
+            parts.append(identifier)
+        } else if parts.count > 1, let last = parts.popLast() {
+            parts.append("\(last), ID: \(identifier)")
+        } else {
+            parts.append("ID: \(identifier)")
+        }
+    }
+
+    if let truncated = element["truncated"] as? Int, truncated > 0 {
+        parts.append("children truncated: \(truncated)")
+    }
+    return parts.joined(separator: " ")
+}
+
+private func codexDescriptionLabel(_ description: String, role: String) -> String {
+    let rawDescriptionRoles = Set([
+        "list",
+        "outline",
+        "scroll area",
+        "split group",
+        "toolbar",
+        "列表",
+        "大纲",
+        "滚动区",
+        "分离组",
+        "工具栏"
+    ])
+    if rawDescriptionRoles.contains(role) {
+        return description
+    }
+    return "Description: \(description)"
+}
+
+private func codexIdentifierShouldBeRaw(_ identifier: String, role: String) -> Bool {
+    if ["split group", "分离组"].contains(role) {
+        return true
+    }
+    return identifier.contains(",") && !["standard window", "标准窗口", "window"].contains(role)
+}
+
+private func codexShouldRenderIdentifier(_ identifier: String, role: String) -> Bool {
+    if identifier.isEmpty {
+        return false
+    }
+    let hiddenControlRoles = Set([
+        "button",
+        "checkbox",
+        "menu button",
+        "pop up button",
+        "radio button",
+        "switch",
+        "按钮",
+        "复选框",
+        "菜单按钮",
+        "弹出式按钮",
+        "单选按钮",
+        "转换"
+    ])
+    return !hiddenControlRoles.contains(role)
+}
+
+private func codexSettableAnnotation(_ element: JSONObject) -> String? {
+    guard let attributes = element["settableAttributes"] as? [String],
+          attributes.contains("value") else {
+        return nil
+    }
+
+    guard let rawValue = codexSettableRawValue(element) else {
+        return nil
+    }
+
+    return "(settable, \(codexValueTypeName(rawValue))) \(codexScalarString(rawValue))"
+}
+
+private func codexSettableRawValue(_ element: JSONObject) -> Any? {
+    if let value = element["value"] {
+        if let string = value as? String {
+            if let trimmed = codexTrimmedString(string) {
+                return trimmed
+            }
+        } else {
+            return value
+        }
+    }
+    return element["placeholderValue"]
+}
+
+private func codexSettableValueString(_ element: JSONObject) -> String? {
+    guard let rawValue = codexSettableRawValue(element) else {
+        return nil
+    }
+    return codexScalarString(rawValue)
+}
+
+private func codexValueTypeName(_ value: Any) -> String {
+    if value is Bool {
+        return "bool"
+    }
+    if value is String {
+        return "string"
+    }
+    if value is Int || value is Double || value is Float || value is CGFloat || value is NSNumber {
+        return "float"
+    }
+    return "value"
+}
+
+private func codexScalarString(_ value: Any) -> String {
+    if let string = value as? String {
+        return string
+    }
+    if let bool = value as? Bool {
+        return bool ? "1" : "0"
+    }
+    if let number = value as? NSNumber {
+        return number.stringValue
+    }
+    return String(describing: value)
+}
+
+private func codexShouldIncludeElementLine(_ element: JSONObject) -> Bool {
+    if codexIsColumn(element) {
+        return false
+    }
+
+    if codexTrimmedString(element["role"]) == nil,
+       codexTrimmedString(element["roleDescription"]) == nil,
+       codexTrimmedString(element["title"]) == nil,
+       codexTrimmedString(element["description"]) == nil,
+       codexTrimmedString(element["value"]) == nil,
+       codexTrimmedString(element["identifier"]) == nil,
+       element["truncatedByTimeout"] as? Bool == true {
+        return false
+    }
+
+    let role = codexRoleName(element)
+    if ["element", "组", "group", "cell"].contains(role),
+        codexTrimmedString(element["title"]) == nil,
+       codexTrimmedString(element["description"]) == nil,
+       codexTrimmedString(element["value"]) == nil,
+       codexTrimmedString(element["textContent"]) == nil,
+       codexTrimmedString(element["identifier"]) == nil,
+       !codexIsSelected(element) {
+        let childCount = codexSemanticChildren(of: element).count
+        return childCount != 1
+    }
+
+    return true
+}
+
+private let codexChildKeys = [
+    "windows",
+    "children",
+    "visibleChildren",
+    "selectedChildren",
+    "contents",
+    "rows",
+    "visibleRows",
+    "columns",
+    "visibleColumns",
+    "tabs",
+    "childrenInNavigationOrder",
+    "splitters"
+]
+
+private func codexSemanticChildren(of element: JSONObject) -> [JSONObject] {
+    for key in ["visibleRows", "rows", "children", "childrenInNavigationOrder", "selectedChildren", "visibleChildren", "contents", "tabs", "splitters", "windows"] {
+        if let children = element[key] as? [JSONObject], !children.isEmpty {
+            let semanticChildren = children.filter { !codexIsColumn($0) && !codexIsWindowChromeElement($0) }
+            if !semanticChildren.isEmpty {
+                return semanticChildren
+            }
+        }
+    }
+    return []
+}
+
+private func codexChildrenForSummary(of element: JSONObject) -> [JSONObject] {
+    if codexRoleName(element) == "row" {
+        return codexInteractiveDescendants(of: element)
+    }
+    return codexSemanticChildren(of: element)
+}
+
+private func codexInteractiveDescendants(of element: JSONObject) -> [JSONObject] {
+    var controls: [JSONObject] = []
+
+    func visit(_ value: JSONObject) {
+        if codexIsInteractiveControl(value) {
+            controls.append(value)
+            return
+        }
+        for child in codexSemanticChildren(of: value) {
+            visit(child)
+        }
+    }
+
+    for child in codexSemanticChildren(of: element) {
+        visit(child)
+    }
+    return controls
+}
+
+private func codexIsInteractiveControl(_ element: JSONObject) -> Bool {
+    switch codexTrimmedString(element["role"]) {
+    case "AXButton", "AXCheckBox", "AXSwitch", "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXTextField", "AXSlider":
+        return true
+    default:
+        return false
+    }
+}
+
+private func codexIsColumn(_ element: JSONObject) -> Bool {
+    codexTrimmedString(element["role"]) == "AXColumn" || codexTrimmedString(element["roleDescription"]) == "栏"
+}
+
+private func codexIsWindowChromeElement(_ element: JSONObject) -> Bool {
+    guard codexTrimmedString(element["role"]) == "AXButton",
+          let roleDescription = codexTrimmedString(element["roleDescription"]) else {
+        return false
+    }
+    let chromeDescriptions = Set([
+        "close button",
+        "full screen button",
+        "minimize button",
+        "zoom button",
+        "关闭按钮",
+        "全屏幕按钮",
+        "最小化按钮",
+        "缩放按钮"
+    ])
+    return chromeDescriptions.contains(roleDescription)
+}
+
+private func codexPrimaryDescendantLabel(_ element: JSONObject) -> String? {
+    var found: String?
+    func visit(_ value: JSONObject) {
+        guard found == nil else {
+            return
+        }
+        if let title = codexTrimmedString(value["title"]) {
+            found = title
+            return
+        }
+        if let description = codexTrimmedString(value["description"]) {
+            found = "Description: \(description)"
+            return
+        }
+        if let valueText = codexTrimmedString(value["value"]) ?? codexTrimmedString(value["textContent"]) {
+            found = valueText
+            return
+        }
+        for child in codexSemanticChildren(of: value) {
+            visit(child)
+        }
+    }
+
+    for child in codexSemanticChildren(of: element) {
+        visit(child)
+        if found != nil {
+            break
+        }
+    }
+    return found
+}
+
+private func codexElementDigest(_ element: JSONObject) -> String {
+    var parts = [
+        codexRoleName(element),
+        codexTrimmedString(element["title"]) ?? "",
+        codexTrimmedString(element["description"]) ?? "",
+        codexTrimmedString(element["value"]) ?? "",
+        codexTrimmedString(element["textContent"]) ?? "",
+        codexTrimmedString(element["identifier"]) ?? "",
+        codexPrimaryDescendantLabel(element) ?? ""
+    ]
+    if let position = element["position"] as? JSONObject {
+        parts.append("\(Int(numberValue(position["x"]) ?? 0))")
+        parts.append("\(Int(numberValue(position["y"]) ?? 0))")
+    }
+    if let size = element["size"] as? JSONObject {
+        parts.append("\(Int(numberValue(size["width"]) ?? 0))")
+        parts.append("\(Int(numberValue(size["height"]) ?? 0))")
+    }
+    return parts.joined(separator: "|")
+}
+
+private func codexRoleName(_ element: JSONObject) -> String {
+    if let role = codexTrimmedString(element["role"]) {
+        switch role {
+        case "AXRow", "AXOutlineRow":
+            return "row"
+        case "AXCell":
+            return "cell"
+        case "AXStaticText":
+            return "text"
+        default:
+            break
+        }
+    }
+    if let roleDescription = codexTrimmedString(element["roleDescription"]) {
+        if ["outline row", "外框行"].contains(roleDescription) {
+            return "row"
+        }
+        if ["cell", "单元格"].contains(roleDescription) {
+            return "cell"
+        }
+        return roleDescription
+    }
+    guard let role = codexTrimmedString(element["role"]) else {
+        return "element"
+    }
+    switch role {
+    case "AXButton":
+        return "button"
+    case "AXCheckBox":
+        return "checkbox"
+    case "AXMenuButton", "AXPopUpButton":
+        return "menu button"
+    case "AXRadioButton":
+        return "radio button"
+    case "AXScrollArea":
+        return "scroll area"
+    case "AXScrollBar":
+        return "scroll bar"
+    case "AXSplitGroup":
+        return "split group"
+    case "AXSplitter":
+        return "splitter"
+    case "AXSwitch":
+        return "switch"
+    case "AXTextArea":
+        return "text area"
+    case "AXTextField":
+        return "text field"
+    case "AXToolbar":
+        return "toolbar"
+    case "AXValueIndicator":
+        return "value indicator"
+    case "AXWindow":
+        return "standard window"
+    default:
+        break
+    }
+    if role.hasPrefix("AX") {
+        return String(role.dropFirst(2)).lowercased()
+    }
+    return role
+}
+
+private func codexIsSelected(_ element: JSONObject) -> Bool {
+    if element["selected"] as? Bool == true {
+        return true
+    }
+    if codexTrimmedString(element["selectedText"]) != nil {
+        return true
+    }
+    if let selectedRows = element["selectedRows"] as? [Any], !selectedRows.isEmpty {
+        return true
+    }
+    if let selectedChildren = element["selectedChildren"] as? [Any], !selectedChildren.isEmpty {
+        return true
+    }
+    return false
+}
+
+private func codexTrimmedString(_ value: Any?) -> String? {
+    guard let string = value as? String else {
+        return nil
+    }
+    let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+private func codexEscapeAttribute(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "&", with: "&amp;")
+        .replacingOccurrences(of: "\"", with: "&quot;")
+        .replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: ">", with: "&gt;")
 }
 
 public func defaultScreenshotPath() -> String {

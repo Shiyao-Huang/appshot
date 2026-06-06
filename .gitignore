@@ -3,9 +3,11 @@
 .swiftpm/
 .xcode-build/
 dist/
+artifacts/
+capture*.json
+wechat-appshot*.png
 *.xcuserstate
 xcuserdata/
 DerivedData/
 *.dSYM
 *.log
-

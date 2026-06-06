@@ -21,6 +21,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_SKILL_ONLY=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_NO_OPEN=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_RESET_PERMISSIONS=1 bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_MCP=1 bash
 ```
 
 ### What Is Included
@@ -31,6 +32,8 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Codex skill: `skills/appshot/SKILL.md`.
 - Codex plugin manifest: `.codex-plugin/plugin.json`.
 - Release packaging for Mac users: `.app`, `.zip`, and `.dmg`.
+- Claude Code MCP registration via `APPSHOT_INSTALL_CLAUDE_MCP=1`.
+- Global shortcut setting, enabled by default with both left and right Option keys.
 
 ### Build And Run
 
@@ -46,9 +49,20 @@ For a complete local release package:
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.1
-open dist/AppShot-macOS-0.1.1/AppShot.app
+scripts/build_release.sh 0.1.2
+open dist/AppShot-macOS-0.1.2/AppShot.app
 ```
+
+For a public macOS release, sign with a `Developer ID Application` identity and notarize the DMG:
+
+```sh
+APPSHOT_PUBLIC_RELEASE=1 \
+APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+APPSHOT_NOTARY_PROFILE="appshot-notary" \
+scripts/build_release.sh 0.1.2
+```
+
+The public release path refuses Apple Development or ad-hoc signatures, submits the DMG to Apple notarization, staples the ticket, and runs Gatekeeper assessment.
 
 CLI examples:
 
@@ -60,9 +74,43 @@ CLI examples:
 .build/debug/appshot capture --include-ocr --screenshot appshot.png --output appshot.json --pretty
 ```
 
+Codex parity check:
+
+```sh
+scripts/verify_codex_parity.sh
+```
+
+This builds the Swift CLI and native `AppShot.app`, checks bundle identity/version, verifies Codex-style JSON aliases, and runs MCP smoke tests. See `docs/codex-parity.md` for the evidence-backed parity matrix.
+
+App/window QA example:
+
+```sh
+scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot —' --accessibility-timeout 20 --expect-hierarchy 'Source Editor'
+```
+
+Accessibility output includes both `accessibility.text` for full AX/document text and `accessibility.visibleText` for coordinate-sorted visible UI text. When a large text control exposes `AXBoundsForRange`, AppShot uses line fragments so editor/body text can join the visible reading stream.
+
 ### Permissions
 
-Accessibility permission is required for rich UI/text trees and is AppShot's primary text path. Screen Recording permission is required for screenshots and OCR. OCR is a fallback for apps that do not expose visible content through Accessibility. On macOS, permissions belong to the launched app identity, so run `dist/AppShot.app` when granting AppShot permissions.
+Accessibility permission is required for rich UI/text trees and is AppShot's primary text path. Screen Recording permission is required for screenshots and OCR. OCR is a fallback for apps that do not expose visible content through Accessibility. On macOS, permissions belong to the launched app identity, so run the installed `AppShot.app` when granting AppShot permissions.
+
+The global shortcut is enabled by default: press the left and right Option keys together to capture the current app. You can turn it off from AppShot Settings.
+
+If macOS shows AppShot as enabled in Privacy & Security but AppShot still reports missing permission, check identity drift:
+
+```sh
+scripts/diagnose_tcc_identity.sh
+```
+
+Xcode Debug builds, installed release builds, and SwiftPM CLI binaries can have the same visible name but different code-signing identities. Ad-hoc signed builds are especially fragile because a rebuild can change the `CDHash`, making TCC treat it as a different app. For stable development/release permissions, keep using one installed app identity or build with a stable signing identity via `APPSHOT_CODESIGN_IDENTITY`.
+
+To recover from a stale Privacy & Security entry, reset the old TCC rows once, open the exact installed app, and grant permissions again:
+
+```sh
+tccutil reset Accessibility com.qppshot.AppShot
+tccutil reset ScreenCapture com.qppshot.AppShot
+open ~/Applications/AppShot.app
+```
 
 ### Implementation Note
 
@@ -89,6 +137,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_SKILL_ONLY=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_NO_OPEN=1 bash
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_RESET_PERMISSIONS=1 bash
+curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | APPSHOT_INSTALL_CLAUDE_MCP=1 bash
 ```
 
 ### 包含内容
@@ -99,6 +148,8 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Codex skill：`skills/appshot/SKILL.md`。
 - Codex plugin manifest：`.codex-plugin/plugin.json`。
 - 面向 Mac 用户的 release 包：`.app`、`.zip`、`.dmg`。
+- 通过 `APPSHOT_INSTALL_CLAUDE_MCP=1` 注册 Claude Code MCP。
+- 全局快捷键设置，默认使用左 Option + 右 Option。
 
 ### 构建和运行
 
@@ -114,9 +165,20 @@ xcodebuild -project AppShot.xcodeproj -scheme AppShot -configuration Release bui
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.1
-open dist/AppShot-macOS-0.1.1/AppShot.app
+scripts/build_release.sh 0.1.2
+open dist/AppShot-macOS-0.1.2/AppShot.app
 ```
+
+公开 macOS 发布包需要 `Developer ID Application` 证书并完成 DMG 公证：
+
+```sh
+APPSHOT_PUBLIC_RELEASE=1 \
+APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+APPSHOT_NOTARY_PROFILE="appshot-notary" \
+scripts/build_release.sh 0.1.2
+```
+
+公开发布路径会拒绝 Apple Development 或 ad-hoc 签名，提交 Apple notarization，staple 公证票据，并运行 Gatekeeper 校验。
 
 CLI 示例：
 
@@ -128,9 +190,43 @@ CLI 示例：
 .build/debug/appshot capture --include-ocr --screenshot appshot.png --output appshot.json --pretty
 ```
 
+Codex 一致性检查：
+
+```sh
+scripts/verify_codex_parity.sh
+```
+
+这个脚本会构建 Swift CLI 和原生 `AppShot.app`，检查 bundle 身份和版本，验证 Codex 风格 JSON 别名，并运行 MCP smoke test。证据化的一致性矩阵见 `docs/codex-parity.md`。
+
+App/window QA 示例：
+
+```sh
+scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot —' --accessibility-timeout 20 --expect-hierarchy 'Source Editor'
+```
+
+Accessibility 输出同时包含完整 AX/document 文本 `accessibility.text`，以及按坐标排序的可见 UI 文本 `accessibility.visibleText`。当大块文本控件暴露 `AXBoundsForRange` 时，AppShot 会使用行级片段，让编辑器/正文文本也进入可见阅读流。
+
 ### 权限
 
-完整 UI/文本树需要辅助功能权限，这是 AppShot 的主文本路径。截图和 OCR 需要屏幕录制权限。当 App 没有通过 Accessibility 暴露正文时，OCR 才作为兜底从可见像素里恢复文字。在 macOS 上，权限归属于启动的 App 身份，所以授权时请运行 `dist/AppShot.app`，不要只跑 SwiftPM 里的 CLI 可执行文件。
+完整 UI/文本树需要辅助功能权限，这是 AppShot 的主文本路径。截图和 OCR 需要屏幕录制权限。当 App 没有通过 Accessibility 暴露正文时，OCR 才作为兜底从可见像素里恢复文字。在 macOS 上，权限归属于启动的 App 身份，所以授权时请运行已安装的 `AppShot.app`，不要只跑 SwiftPM 里的 CLI 可执行文件。
+
+全局快捷键默认开启：同时按下左 Option 和右 Option 可以捕获当前 App。你可以在 AppShot Settings 里关闭它。
+
+如果 macOS 隐私设置里已经显示 AppShot 打开了，但 AppShot 仍然识别不到权限，先检查身份漂移：
+
+```sh
+scripts/diagnose_tcc_identity.sh
+```
+
+Xcode Debug 构建、已安装 release App、SwiftPM CLI 可能显示同一个名字，但代码签名身份不同。尤其是 ad-hoc 签名，重新构建后 `CDHash` 可能变化，TCC 会把它当成另一个 App。要让开发/发布权限稳定，请固定使用同一个已安装 App 身份，或者通过 `APPSHOT_CODESIGN_IDENTITY` 使用稳定签名身份构建。
+
+如果隐私设置里有旧记录导致状态错乱，可以先重置旧 TCC 记录，再打开同一个已安装 App 重新授权：
+
+```sh
+tccutil reset Accessibility com.qppshot.AppShot
+tccutil reset ScreenCapture com.qppshot.AppShot
+open ~/Applications/AppShot.app
+```
 
 ### 实现说明
 

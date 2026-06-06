@@ -8,9 +8,12 @@ struct CLIOptions {
     var includeScreenshot = false
     var includeOCR = false
     var pretty = false
+    var format = "json"
     var maxDepth = 10
     var maxChildren = 120
     var maxOCRObservations = 240
+    var accessibilityTimeoutSeconds = 8.0
+    var screenshotTimeoutSeconds = 3.0
     var promptPermissions = false
     var windowID: UInt32?
     var pid: pid_t?
@@ -38,6 +41,8 @@ struct AppShotCLI {
                     maxChildren: options.maxChildren,
                     includeOCR: options.includeOCR,
                     maxOCRObservations: options.maxOCRObservations,
+                    accessibilityTimeoutSeconds: options.accessibilityTimeoutSeconds,
+                    screenshotTimeoutSeconds: options.screenshotTimeoutSeconds,
                     targetWindowID: options.windowID,
                     targetProcessIdentifier: options.pid,
                     targetBundleIdentifier: options.bundleID
@@ -54,7 +59,7 @@ struct AppShotCLI {
             default:
                 throw AppShotError.usage("Unknown command: \(options.command)")
             }
-            try write(payload: payload, to: options.outputPath, pretty: options.pretty)
+            try write(payload: payload, to: options.outputPath, pretty: options.pretty, format: options.format)
         } catch {
             fputs("appshot: \(error)\n", stderr)
             fputs("Run `appshot help` for usage.\n", stderr)
@@ -92,12 +97,24 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.includeOCR = true
         case "--pretty":
             options.pretty = true
+        case "--format":
+            let format = try nextValue()
+            guard ["json", "codex"].contains(format) else {
+                throw AppShotError.usage("Unknown format: \(format)")
+            }
+            options.format = format
+        case "--codex":
+            options.format = "codex"
         case "--max-depth":
             options.maxDepth = Int(try nextValue()) ?? options.maxDepth
         case "--max-children":
             options.maxChildren = Int(try nextValue()) ?? options.maxChildren
         case "--max-ocr-observations":
             options.maxOCRObservations = Int(try nextValue()) ?? options.maxOCRObservations
+        case "--accessibility-timeout":
+            options.accessibilityTimeoutSeconds = Double(try nextValue()) ?? options.accessibilityTimeoutSeconds
+        case "--screenshot-timeout":
+            options.screenshotTimeoutSeconds = Double(try nextValue()) ?? options.screenshotTimeoutSeconds
         case "--window-id":
             options.windowID = UInt32(try nextValue())
         case "--pid":
@@ -116,8 +133,14 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
     return options
 }
 
-func write(payload: JSONObject, to path: String?, pretty: Bool) throws {
-    let string = try AppShotCore.jsonString(payload, pretty: pretty)
+func write(payload: JSONObject, to path: String?, pretty: Bool, format: String) throws {
+    let string: String
+    if format == "codex" {
+        let codex = payload["codex"] as? JSONObject
+        string = codex?["text"] as? String ?? codexSummaryText(from: payload)
+    } else {
+        string = try AppShotCore.jsonString(payload, pretty: pretty)
+    }
     let data = string.data(using: .utf8)!
 
     if let path {
@@ -139,7 +162,7 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--include-ocr] [--screenshot path.png] [--output path.json] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -149,5 +172,6 @@ func printHelp() {
       Screen Recording permission is required for screenshots.
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
+      --format codex prints a compact AppShot block similar to Codex built-in appshots.
     """)
 }
