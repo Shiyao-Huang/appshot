@@ -2233,6 +2233,7 @@ private func codexElementLine(_ element: JSONObject) -> String {
               let text = value ?? textContent ?? description {
         parts.append(text)
     } else if let description,
+              codexShouldRenderDescription(role: role),
               settableAnnotation == nil || description != codexSettableValueString(element) {
         parts.append(codexDescriptionLabel(description, role: role))
     } else if let textContent {
@@ -2271,6 +2272,20 @@ private func codexElementLine(_ element: JSONObject) -> String {
         parts.append("children truncated: \(truncated)")
     }
     return parts.joined(separator: " ")
+}
+
+private func codexShouldRenderDescription(role: String) -> Bool {
+    let suppressedDescriptionRoles = Set([
+        "button",
+        "checkbox",
+        "switch",
+        "toggle button",
+        "按钮",
+        "复选框",
+        "切换按钮",
+        "转换"
+    ])
+    return !suppressedDescriptionRoles.contains(role)
 }
 
 private func codexDescriptionLabel(_ description: String, role: String) -> String {
