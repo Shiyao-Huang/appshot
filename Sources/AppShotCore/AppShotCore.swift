@@ -22,11 +22,11 @@ public struct AppShotCaptureOptions {
     public init(
         screenshotPath: String? = nil,
         includeScreenshot: Bool = false,
-        maxDepth: Int = 10,
-        maxChildren: Int = 120,
+        maxDepth: Int = 30,
+        maxChildren: Int = 240,
         includeOCR: Bool = false,
         maxOCRObservations: Int = 240,
-        accessibilityTimeoutSeconds: TimeInterval = 8.0,
+        accessibilityTimeoutSeconds: TimeInterval = 20.0,
         screenshotTimeoutSeconds: TimeInterval = 3.0,
         targetWindowID: UInt32? = nil,
         targetProcessIdentifier: pid_t? = nil,
@@ -428,7 +428,7 @@ public func windowsForPID(_ pid: pid_t) -> [JSONObject] {
         return []
     }
 
-    return raw.compactMap { info in
+    return raw.enumerated().compactMap { index, info in
         guard let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t,
               ownerPID == pid,
               let layer = info[kCGWindowLayer as String] as? Int,
@@ -442,6 +442,7 @@ public func windowsForPID(_ pid: pid_t) -> [JSONObject] {
             "ownerPID": ownerPID,
             "ownerName": info[kCGWindowOwnerName as String] as? String ?? "",
             "title": info[kCGWindowName as String] as? String ?? "",
+            "windowOrder": index,
             "layer": layer,
             "alpha": info[kCGWindowAlpha as String] as? Double ?? 0,
             "isOnScreen": true
@@ -461,9 +462,6 @@ public func windowsForPID(_ pid: pid_t) -> [JSONObject] {
             "pid": ownerPID
         ]
         return out
-    }
-    .sorted {
-        (($0["area"] as? CGFloat) ?? 0) > (($1["area"] as? CGFloat) ?? 0)
     }
 }
 
@@ -584,6 +582,7 @@ public func accessibilitySnapshot(
 ) -> JSONObject {
     let appElement = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(appElement, 0.75)
+    let electronAccessibility = enableElectronAccessibility(appElement)
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     var focusedWindow: AnyObject?
     let focusedWindowResult = AXUIElementCopyAttributeValue(
@@ -625,6 +624,7 @@ public func accessibilitySnapshot(
     var payload: JSONObject = [
         "trusted": AXIsProcessTrusted(),
         "timeoutSeconds": timeoutSeconds,
+        "electronAccessibility": electronAccessibility,
         "rootSource": rootSource,
         "root": root
     ]
@@ -699,6 +699,7 @@ public func elementSnapshot(
         return ["cycle": true]
     }
     visited.insert(elementID)
+    out["elementID"] = elementID
 
     let fixedAttributes = [
         kAXRoleAttribute,
@@ -861,7 +862,8 @@ private func axPreferredChildAttributes(parentSnapshot: JSONObject, discovered: 
         return [
             "AXContents",
             kAXChildrenAttribute,
-            "AXVisibleChildren"
+            "AXVisibleChildren",
+            "AXChildrenInNavigationOrder"
         ]
     case "AXSplitGroup":
         return [
@@ -871,6 +873,8 @@ private func axPreferredChildAttributes(parentSnapshot: JSONObject, discovered: 
     case "AXWindow", "AXGroup", "AXToolbar":
         return [
             kAXChildrenAttribute,
+            "AXVisibleChildren",
+            "AXChildrenInNavigationOrder",
             "AXContents",
             "AXTabs",
             "AXSplitters"
@@ -878,6 +882,21 @@ private func axPreferredChildAttributes(parentSnapshot: JSONObject, discovered: 
     default:
         return dedupeStrings(discovered + axChildAttributes)
     }
+}
+
+public func enableElectronAccessibility(_ appElement: AXUIElement) -> JSONObject {
+    AXUIElementSetMessagingTimeout(appElement, 0.5)
+    let result = AXUIElementSetAttributeValue(
+        appElement,
+        "AXManualAccessibility" as CFString,
+        kCFBooleanTrue
+    )
+    return [
+        "attribute": "AXManualAccessibility",
+        "requested": true,
+        "result": String(describing: result),
+        "enabled": result == .success
+    ]
 }
 
 public func axAttributeNames(_ element: AXUIElement) -> [String] {
@@ -1102,7 +1121,7 @@ private func axIsCompactInteractiveRole(_ role: String) -> Bool {
 
 private func axShouldProbeParameterizedText(_ snapshot: JSONObject) -> Bool {
     switch snapshot["role"] as? String {
-    case "AXTextArea", "AXTextField":
+    case "AXTextArea", "AXTextField", "AXWebArea":
         return true
     default:
         break
@@ -2021,9 +2040,15 @@ private func codexSelectedElementLines(from root: JSONObject?) -> [String] {
     }
 
     var lines: [String] = []
+    var seen = Set<String>()
     codexVisitElements(root) { element in
         if codexIsSelected(element) {
-            lines.append(codexElementLine(element))
+            let line = codexElementLine(element)
+            guard !seen.contains(line) else {
+                return
+            }
+            seen.insert(line)
+            lines.append(line)
         }
     }
     return Array(lines.prefix(40))
@@ -2282,15 +2307,49 @@ private let codexChildKeys = [
 ]
 
 private func codexSemanticChildren(of element: JSONObject) -> [JSONObject] {
+    var out: [JSONObject] = []
+    var seen = Set<String>()
     for key in ["visibleRows", "rows", "children", "childrenInNavigationOrder", "selectedChildren", "visibleChildren", "contents", "tabs", "splitters", "windows"] {
-        if let children = element[key] as? [JSONObject], !children.isEmpty {
-            let semanticChildren = children.filter { !codexIsColumn($0) && !codexIsWindowChromeElement($0) }
-            if !semanticChildren.isEmpty {
-                return semanticChildren
+        guard let children = element[key] as? [JSONObject], !children.isEmpty else {
+            continue
+        }
+        for child in children where !codexIsColumn(child) && !codexIsWindowChromeElement(child) {
+            let identity = codexChildIdentity(child)
+            guard !seen.contains(identity) else {
+                continue
             }
+            seen.insert(identity)
+            out.append(child)
         }
     }
-    return []
+    return out
+}
+
+private func codexChildIdentity(_ element: JSONObject) -> String {
+    let parts = [
+        codexTrimmedString(element["role"]) ?? codexRoleName(element),
+        codexTrimmedString(element["roleDescription"]) ?? "",
+        codexTrimmedString(element["title"]) ?? "",
+        codexTrimmedString(element["description"]) ?? "",
+        codexTrimmedString(element["value"]) ?? "",
+        codexTrimmedString(element["textContent"]) ?? "",
+        codexTrimmedString(element["identifier"]) ?? ""
+    ]
+    let hasDescriptivePayload = parts.dropFirst(2).contains { !$0.isEmpty }
+    guard hasDescriptivePayload else {
+        return codexTrimmedString(element["elementID"]) ?? parts.joined(separator: "|")
+    }
+
+    var descriptiveParts = parts
+    if let position = element["position"] as? JSONObject {
+        descriptiveParts.append("\(Int(numberValue(position["x"]) ?? 0))")
+        descriptiveParts.append("\(Int(numberValue(position["y"]) ?? 0))")
+    }
+    if let size = element["size"] as? JSONObject {
+        descriptiveParts.append("\(Int(numberValue(size["width"]) ?? 0))")
+        descriptiveParts.append("\(Int(numberValue(size["height"]) ?? 0))")
+    }
+    return descriptiveParts.joined(separator: "|")
 }
 
 private func codexChildrenForSummary(of element: JSONObject) -> [JSONObject] {

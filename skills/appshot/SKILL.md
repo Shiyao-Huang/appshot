@@ -47,17 +47,17 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```
 7. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex, Claude Code, or the user:
    ```sh
-   "$APPSHOT_BIN" capture --format codex --max-depth 10
+   "$APPSHOT_BIN" capture --format codex --max-depth 30 --accessibility-timeout 20
    ```
    Use JSON when you need to inspect exact fields or automate checks:
    ```sh
-   "$APPSHOT_BIN" capture --pretty --max-depth 10
+   "$APPSHOT_BIN" capture --pretty --max-depth 30 --accessibility-timeout 20
    ```
 8. For complex apps such as Xcode, raise the Accessibility timeout instead of treating a slow AX tree as missing data:
    ```sh
-   "$APPSHOT_BIN" capture --pretty --max-depth 10 --accessibility-timeout 20
+   "$APPSHOT_BIN" capture --pretty --max-depth 30 --accessibility-timeout 30
    ```
-9. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 10`.
+9. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 30 --accessibility-timeout 20`.
 10. Read `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
 11. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 12. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.

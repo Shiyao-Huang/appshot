@@ -283,10 +283,10 @@ final class AppShotModel: ObservableObject {
             do {
                 let payload = try AppShotCore.capture(options: AppShotCaptureOptions(
                     includeScreenshot: includeScreenshot,
-                    maxDepth: 10,
-                    maxChildren: 120,
+                    maxDepth: 30,
+                    maxChildren: 240,
                     includeOCR: includeOCR,
-                    accessibilityTimeoutSeconds: 8.0,
+                    accessibilityTimeoutSeconds: 20.0,
                     screenshotTimeoutSeconds: 3.0
                 ))
                 result = .success(try AppShotCore.jsonString(payload, pretty: true))

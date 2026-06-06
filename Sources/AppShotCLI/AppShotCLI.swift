@@ -9,10 +9,10 @@ struct CLIOptions {
     var includeOCR = false
     var pretty = false
     var format = "json"
-    var maxDepth = 10
-    var maxChildren = 120
+    var maxDepth = 30
+    var maxChildren = 240
     var maxOCRObservations = 240
-    var accessibilityTimeoutSeconds = 8.0
+    var accessibilityTimeoutSeconds = 20.0
     var screenshotTimeoutSeconds = 3.0
     var promptPermissions = false
     var windowID: UInt32?

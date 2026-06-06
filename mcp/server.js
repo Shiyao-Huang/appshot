@@ -89,10 +89,10 @@ function tools() {
           pid: { type: "number" },
           bundleID: { type: "string" },
           format: { type: "string", enum: ["json", "codex"], default: "json" },
-          maxDepth: { type: "number", default: 10 },
-          maxChildren: { type: "number", default: 120 },
+          maxDepth: { type: "number", default: 30 },
+          maxChildren: { type: "number", default: 240 },
           maxOCRObservations: { type: "number", default: 240 },
-          accessibilityTimeout: { type: "number", default: 8 },
+          accessibilityTimeout: { type: "number", default: 20 },
           screenshotTimeout: { type: "number", default: 3 }
         }
       }
@@ -139,10 +139,10 @@ function callTool(params = {}) {
     if (args.pid != null) cliArgs.push("--pid", String(args.pid));
     if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
     if (args.format === "codex") cliArgs.push("--format", "codex");
-    if (args.maxDepth != null) cliArgs.push("--max-depth", String(args.maxDepth));
-    if (args.maxChildren != null) cliArgs.push("--max-children", String(args.maxChildren));
+    cliArgs.push("--max-depth", String(args.maxDepth ?? 30));
+    cliArgs.push("--max-children", String(args.maxChildren ?? 240));
     if (args.maxOCRObservations != null) cliArgs.push("--max-ocr-observations", String(args.maxOCRObservations));
-    if (args.accessibilityTimeout != null) cliArgs.push("--accessibility-timeout", String(args.accessibilityTimeout));
+    cliArgs.push("--accessibility-timeout", String(args.accessibilityTimeout ?? 20));
     if (args.screenshotTimeout != null) cliArgs.push("--screenshot-timeout", String(args.screenshotTimeout));
   } else if (name === "appshot_permissions") {
     cliArgs.push("permissions", "--pretty");
