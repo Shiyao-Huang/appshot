@@ -3125,7 +3125,7 @@ private func browserDOMPageProbeJavaScript(
     JSON.stringify((function() {
       const appshotInstallBridge = \#(installBridgeLiteral);
       const appshotClearBridgeLog = \#(clearBridgeLogLiteral);
-      const appshotBridgeVersion = "0.1.10";
+      const appshotBridgeVersion = "0.1.11";
       const appshotBridgeSource = "appshot-browser-runtime-bridge";
       function textOf(element) {
         return (element.innerText || element.alt || element.getAttribute("aria-label") || element.title || element.value || "").replace(/\s+/g, " ").trim().slice(0, 240);
