@@ -2125,22 +2125,44 @@ private func codexTreeLines(from root: JSONObject?, maxLines: Int) -> [String] {
 
     var lines: [String] = []
     var seen = Set<String>()
-    codexAppendElementLines(root, depth: 0, lines: &lines, maxLines: maxLines, seen: &seen)
+    var seenStructuralLines = Set<String>()
+    codexAppendElementLines(
+        root,
+        depth: 0,
+        lines: &lines,
+        maxLines: maxLines,
+        seen: &seen,
+        seenStructuralLines: &seenStructuralLines
+    )
     return lines
 }
 
-private func codexAppendElementLines(_ element: JSONObject, depth: Int, lines: inout [String], maxLines: Int, seen: inout Set<String>) {
+private func codexAppendElementLines(
+    _ element: JSONObject,
+    depth: Int,
+    lines: inout [String],
+    maxLines: Int,
+    seen: inout Set<String>,
+    seenStructuralLines: inout Set<String>
+) {
     guard lines.count < maxLines else {
         return
     }
 
     let digest = codexElementDigest(element)
+    let line = codexElementLine(element)
+    let dedupeStructuralLine = codexShouldDedupeStructuralLine(element, line: line)
+    let structuralLineSeen = dedupeStructuralLine && seenStructuralLines.contains(line)
     let includeLine = codexShouldIncludeElementLine(element)
         && !seen.contains(digest)
+        && !structuralLineSeen
         && (!codexIsStructuralShell(element) || codexHasUnseenRenderableDescendant(element, seen: seen))
     if includeLine {
         seen.insert(digest)
-        lines.append(String(repeating: "\t", count: depth) + codexElementLine(element))
+        if dedupeStructuralLine {
+            seenStructuralLines.insert(line)
+        }
+        lines.append(String(repeating: "\t", count: depth) + line)
     }
 
     let children = codexChildrenForSummary(of: element)
@@ -2149,7 +2171,14 @@ private func codexAppendElementLines(_ element: JSONObject, depth: Int, lines: i
             lines.append(String(repeating: "\t", count: includeLine ? depth + 1 : depth) + "... truncated")
             return
         }
-        codexAppendElementLines(child, depth: includeLine ? depth + 1 : depth, lines: &lines, maxLines: maxLines, seen: &seen)
+        codexAppendElementLines(
+            child,
+            depth: includeLine ? depth + 1 : depth,
+            lines: &lines,
+            maxLines: maxLines,
+            seen: &seen,
+            seenStructuralLines: &seenStructuralLines
+        )
     }
 }
 
@@ -2527,6 +2556,46 @@ private func codexIsStructuralShell(_ element: JSONObject) -> Bool {
         && codexTrimmedString(element["textContent"]) == nil
         && codexTrimmedString(element["identifier"]) == nil
         && !codexIsSelected(element)
+}
+
+private func codexShouldDedupeStructuralLine(_ element: JSONObject, line: String) -> Bool {
+    guard !codexIsSelected(element) else {
+        return false
+    }
+
+    let role = codexRoleName(element)
+    let dedupableStructuralRoles = Set([
+        "cell",
+        "container",
+        "content list",
+        "group",
+        "list",
+        "outline",
+        "scroll area",
+        "split group",
+        "tab group",
+        "toolbar",
+        "单元格",
+        "内容列表",
+        "列表",
+        "分离组",
+        "外框",
+        "工具栏",
+        "滚动区",
+        "组",
+        "标签组"
+    ])
+    guard dedupableStructuralRoles.contains(role) else {
+        return false
+    }
+
+    // Keep repeated unlabeled scroll/list/tab shells visible; Codex often shows
+    // them as separate structural boundaries in macOS Settings and Xcode.
+    let unlabeledLine = line == role
+    if unlabeledLine {
+        return ["container", "content list", "group", "toolbar", "内容列表", "工具栏", "组"].contains(role)
+    }
+    return true
 }
 
 private func codexHasUnseenRenderableDescendant(_ element: JSONObject, seen: Set<String>) -> Bool {
