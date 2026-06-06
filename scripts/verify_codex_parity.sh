@@ -107,8 +107,12 @@ for anchor in \
   "frontmostWindow" \
   "windowNumber" \
   "localBrowserContext" \
+  "localBrowserCommentMetadata" \
   "localBrowserScreenshot" \
+  "localBrowserAttachedImages" \
   "localBrowserDesignChange" \
+  "codexBrowserPayload" \
+  "codex-browser-comment-payload-adapter" \
   "browser-sidebar-runtime-open-design-editor" \
   "browser-sidebar-runtime-image-drag-started" \
   "scripts/qa_app_capture.py" \
@@ -203,6 +207,7 @@ for name, text, needles in [
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
+    ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -248,7 +253,7 @@ require_keys(
 require_keys(
     "capture",
     capture,
-    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex"],
+    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserPayload"],
 )
 
 if isinstance(capture.get("primaryWindow"), dict):
@@ -263,15 +268,34 @@ if accessibility.get("trusted") and accessibility.get("visibleTextLineCount", 0)
     raise SystemExit("trusted accessibility capture has no visibleText lines")
 
 codex = capture.get("codex", {})
-require_keys("capture codex", codex, ["format", "text", "treeLineCount", "selectedLineCount", "hasFocusedElement"])
+require_keys("capture codex", codex, ["format", "text", "treeLineCount", "selectedLineCount", "hasFocusedElement", "hasBrowserPayload", "browserPayloadFormat"])
 if codex.get("format") != "codex-appshot-text":
     raise SystemExit(f"unexpected codex format: {codex.get('format')!r}")
+if codex.get("hasBrowserPayload") is not True:
+    raise SystemExit("capture codex summary does not report hasBrowserPayload")
+if codex.get("browserPayloadFormat") != "codex-browser-comment-payload-adapter":
+    raise SystemExit(f"unexpected browser payload format: {codex.get('browserPayloadFormat')!r}")
 if not codex.get("text", "").startswith("<appshot "):
     raise SystemExit("capture codex text does not start with <appshot")
 if "Window:" not in codex.get("text", ""):
     raise SystemExit("capture codex text missing Window header")
 if not codex_text.startswith("<appshot ") or "Window:" not in codex_text or "</appshot>" not in codex_text:
     raise SystemExit("CLI --format codex output is not a complete appshot block")
+
+browser_payload = capture.get("codexBrowserPayload", {})
+require_keys(
+    "capture codexBrowserPayload",
+    browser_payload,
+    ["format", "source", "type", "content", "position", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot"],
+)
+if browser_payload.get("format") != "codex-browser-comment-payload-adapter":
+    raise SystemExit(f"unexpected codexBrowserPayload format: {browser_payload.get('format')!r}")
+context = browser_payload.get("localBrowserContext", {})
+require_keys("capture localBrowserContext", context, ["pageUrl", "framePath", "frameUrl", "targetDescription", "targetRole", "targetName", "targetSelector", "targetPath", "nearbyText"])
+metadata = browser_payload.get("localBrowserCommentMetadata", {})
+require_keys("capture localBrowserCommentMetadata", metadata, ["kind", "annotationScreenshotsMode", "applicationName", "windowTitle"])
+if metadata.get("kind") != "appshot-native":
+    raise SystemExit(f"unexpected browser metadata kind: {metadata.get('kind')!r}")
 
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})

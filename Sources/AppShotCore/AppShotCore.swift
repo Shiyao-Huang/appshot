@@ -155,6 +155,7 @@ public enum AppShotCore {
                 maxObservations: options.maxOCRObservations
             )
         }
+        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload)
         if options.writeCache {
             payload = try payloadByWritingCaptureCache(
                 payload,
@@ -381,6 +382,7 @@ public enum AppShotCore {
             metadata["writtenAt"] = ISO8601DateFormatter().string(from: writtenAt)
         }
         payload["captureCache"] = metadata
+        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload)
         payload["codex"] = codexSummaryPayload(from: payload)
         return payload
     }
@@ -422,6 +424,7 @@ public enum AppShotCore {
             reason: "written",
             servedAt: nil
         )
+        cachedPayload["codexBrowserPayload"] = codexBrowserPayload(from: cachedPayload)
         cachedPayload["codex"] = codexSummaryPayload(from: cachedPayload)
 
         do {
@@ -2297,6 +2300,7 @@ public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 42
     let selectedLines = codexSelectedElementLines(from: root)
     let focusedLine = codexFocusedElementLine(from: accessibility)
     let textEvidenceLines = codexWindowTextEvidenceLines(from: payload)
+    let browserPayload = payload["codexBrowserPayload"] as? JSONObject
 
     return [
         "format": "codex-appshot-text",
@@ -2304,8 +2308,204 @@ public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 42
         "treeLineCount": codexTreeLines(from: root, maxLines: maxTreeLines).count,
         "selectedLineCount": selectedLines.count,
         "textEvidenceLineCount": textEvidenceLines.count,
-        "hasFocusedElement": focusedLine != nil
+        "hasFocusedElement": focusedLine != nil,
+        "hasBrowserPayload": browserPayload != nil,
+        "browserPayloadFormat": codexTrimmedString(browserPayload?["format"]) ?? "none"
     ]
+}
+
+public func codexBrowserPayload(from payload: JSONObject) -> JSONObject {
+    let app = payload["targetApplication"] as? JSONObject
+        ?? payload["currentApplication"] as? JSONObject
+        ?? payload["frontmostApplication"] as? JSONObject
+        ?? [:]
+    let window = payload["primaryWindow"] as? JSONObject
+        ?? payload["currentWindow"] as? JSONObject
+        ?? payload["frontmostWindow"] as? JSONObject
+    let accessibility = payload["accessibility"] as? JSONObject
+    let root = accessibility?["root"] as? JSONObject
+    let screenshot = payload["screenshot"] as? JSONObject
+
+    let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
+    let bundleIdentifier = codexTrimmedString(app["bundleIdentifier"]) ?? ""
+    let windowTitle = codexTrimmedString(window?["title"]) ?? codexTrimmedString(root?["title"]) ?? appName
+    let pageURL = codexAppShotURL(bundleIdentifier: bundleIdentifier, appName: appName, windowTitle: windowTitle)
+    let nearbyText = codexNearbyText(from: accessibility)
+    let documentContext = codexDocumentContext(from: accessibility)
+    let screenshotPayload: Any = screenshot.map { $0 as Any } ?? NSNull()
+
+    var localBrowserContext: JSONObject = [
+        "pageUrl": pageURL,
+        "framePath": [],
+        "frameUrl": pageURL,
+        "targetDescription": windowTitle,
+        "targetRole": codexTrimmedString(root?["role"]) ?? "AXWindow",
+        "targetName": codexTrimmedString(root?["title"]) ?? windowTitle,
+        "targetSelector": bundleIdentifier.isEmpty ? "app:\(appName)" : "bundle:\(bundleIdentifier)",
+        "targetPath": codexTargetPath(from: root, appName: appName, windowTitle: windowTitle),
+        "nearbyText": nearbyText
+    ]
+    if !documentContext.isEmpty {
+        localBrowserContext["documentContext"] = documentContext
+    }
+
+    var localBrowserCommentMetadata: JSONObject = [
+        "kind": "appshot-native",
+        "bundleIdentifier": bundleIdentifier,
+        "applicationName": appName,
+        "windowTitle": windowTitle,
+        "annotationScreenshotsMode": "necessary"
+    ]
+    if let viewportSize = codexViewportSize(from: window) {
+        localBrowserCommentMetadata["viewportSize"] = viewportSize
+    }
+    if let windowID = window?["windowID"] {
+        localBrowserCommentMetadata["windowID"] = windowID
+    }
+
+    var out: JSONObject = [
+        "format": "codex-browser-comment-payload-adapter",
+        "source": "appshot-native-adapter",
+        "type": "comment",
+        "content": [
+            [
+                "content_type": "text",
+                "text": codexSummaryBody(appName: appName, windowTitle: windowTitle, nearbyText: nearbyText)
+            ]
+        ],
+        "position": [
+            "side": "right",
+            "path": "browser:\(windowTitle.isEmpty ? appName : windowTitle)",
+            "line": 1
+        ],
+        "localBrowserContext": localBrowserContext,
+        "localBrowserCommentMetadata": localBrowserCommentMetadata,
+        "localBrowserAttachedImages": [],
+        "localBrowserDesignChange": NSNull(),
+        "localBrowserScreenshot": screenshotPayload
+    ]
+
+    if let screenshot,
+       screenshot["captured"] as? Bool == true {
+        out["localBrowserScreenshot"] = screenshot
+    }
+    return out
+}
+
+private func codexAppShotURL(bundleIdentifier: String, appName: String, windowTitle: String) -> String {
+    let identity = (bundleIdentifier.isEmpty ? appName : bundleIdentifier)
+        .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "unknown"
+    let title = windowTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+    return title.isEmpty ? "appshot://macos/\(identity)" : "appshot://macos/\(identity)?window=\(title)"
+}
+
+private func codexNearbyText(from accessibility: JSONObject?) -> String {
+    for key in ["visibleText", "text"] {
+        if let text = codexTrimmedString(accessibility?[key]) {
+            let lines = codexPreviewTextLines(text, maxLines: 28, maxLineLength: 220)
+            if !lines.isEmpty {
+                return lines.joined(separator: "\n")
+            }
+        }
+    }
+
+    if let documents = accessibility?["documentReferences"] as? [JSONObject] {
+        for document in documents {
+            if let preview = codexTrimmedString(document["textPreview"]) {
+                let lines = codexPreviewTextLines(preview, maxLines: 20, maxLineLength: 220)
+                if !lines.isEmpty {
+                    return lines.joined(separator: "\n")
+                }
+            }
+        }
+    }
+    return ""
+}
+
+private func codexDocumentContext(from accessibility: JSONObject?) -> JSONObject {
+    var context: JSONObject = [:]
+    if let visibleText = codexTrimmedString(accessibility?["visibleText"]) {
+        context["visibleText"] = codexPreviewTextLines(visibleText, maxLines: 36, maxLineLength: 220).joined(separator: "\n")
+    }
+    if let accessibilityText = codexTrimmedString(accessibility?["text"]) {
+        context["accessibilityText"] = codexPreviewTextLines(accessibilityText, maxLines: 36, maxLineLength: 220).joined(separator: "\n")
+    }
+    if let documents = accessibility?["documentReferences"] as? [JSONObject] {
+        let documentPayloads: [JSONObject] = documents.prefix(3).map { document in
+            var out: JSONObject = [
+                "path": codexTrimmedString(document["path"]) ?? codexTrimmedString(document["url"]) ?? "document",
+                "textPreview": codexPreviewTextLines(
+                    codexTrimmedString(document["textPreview"]) ?? "",
+                    maxLines: 28,
+                    maxLineLength: 220
+                ).joined(separator: "\n")
+            ]
+            if let sizeBytes = document["sizeBytes"] {
+                out["sizeBytes"] = sizeBytes
+            }
+            if let previewBytes = document["textPreviewBytes"] {
+                out["textPreviewBytes"] = previewBytes
+            }
+            if let truncated = document["textTruncated"] {
+                out["textTruncated"] = truncated
+            }
+            return out
+        }
+        if !documentPayloads.isEmpty {
+            context["documents"] = documentPayloads
+        }
+    }
+    return context.filter { entry in
+        if let string = entry.value as? String {
+            return !string.isEmpty
+        }
+        return true
+    }
+}
+
+private func codexTargetPath(from root: JSONObject?, appName: String, windowTitle: String) -> Any {
+    if let path = root?["path"] {
+        return path
+    }
+    return ["macos", appName, windowTitle]
+}
+
+private func codexViewportSize(from window: JSONObject?) -> JSONObject? {
+    guard let bounds = window?["bounds"] as? JSONObject,
+          let width = codexNumber(bounds["width"]),
+          let height = codexNumber(bounds["height"]) else {
+        return nil
+    }
+    return [
+        "width": width,
+        "height": height
+    ]
+}
+
+private func codexNumber(_ value: Any?) -> Double? {
+    switch value {
+    case let number as NSNumber:
+        return number.doubleValue
+    case let value as Double:
+        return value
+    case let value as Float:
+        return Double(value)
+    case let value as Int:
+        return Double(value)
+    case let value as CGFloat:
+        return Double(value)
+    default:
+        return nil
+    }
+}
+
+private func codexSummaryBody(appName: String, windowTitle: String, nearbyText: String) -> String {
+    var lines = ["AppShot capture for \(appName): \(windowTitle)"]
+    if !nearbyText.isEmpty {
+        lines.append("")
+        lines.append(contentsOf: codexPreviewTextLines(nearbyText, maxLines: 18, maxLineLength: 220))
+    }
+    return lines.joined(separator: "\n")
 }
 
 public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 420) -> String {

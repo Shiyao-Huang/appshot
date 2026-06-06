@@ -78,7 +78,7 @@ function tools() {
   return [
     {
       name: "appshot_capture",
-      description: "Capture the frontmost macOS app as JSON or Codex-style appshot text with app/window metadata, accessibility text tree, optional screenshot, and optional OCR fallback. By default, uses a recent AppShot.app left+right Option shortcut cache when available.",
+      description: "Capture the frontmost macOS app as JSON or Codex-style appshot text with app/window metadata, accessibility text tree, Codex browser-comment payload adapter, optional screenshot, and optional OCR fallback. By default, uses a recent AppShot.app left+right Option shortcut cache when available.",
       inputSchema: {
         type: "object",
         properties: {
