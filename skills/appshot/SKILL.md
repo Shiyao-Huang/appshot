@@ -65,6 +65,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
 10. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`.
 11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
     When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`.
+    For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
 12. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 13. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
 14. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
@@ -106,11 +107,19 @@ The CLI returns JSON with:
 - `captureCache`
 - `codexBrowserSettings`
 - `codexBrowserSettings.browser-annotation-screenshots-mode`
+- `codexBrowserRuntimeState`
+- `codexBrowserRuntimeState.interactionMode`
+- `codexBrowserRuntimeState.annotationEditorMode`
+- `codexBrowserRuntimeState.isOriginalViewEnabled`
+- `codexBrowserRuntimeState.isDesignModifierPressed`
+- `codexBrowserRuntimeState.isTweaksEditorOpen`
+- `codexBrowserRuntimeState.activeDesignChange`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
 - `codexBrowserPayload.localBrowserCommentMetadata`
 - `codexBrowserPayload.localBrowserAttachedImages`
 - `codexBrowserPayload.localBrowserDesignChange`
+- `codexBrowserPayload.localBrowserRuntimeState`
 - `codexBrowserPayload.localBrowserScreenshot`
 - `accessibility.root`
 - `accessibility.focusedElement`

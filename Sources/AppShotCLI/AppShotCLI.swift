@@ -7,6 +7,16 @@ struct CLIOptions {
     var screenshotPath: String?
     var includeScreenshot = false
     var browserAnnotationScreenshotsMode = browserAnnotationScreenshotsModeNecessary
+    var browserInteractionMode = browserInteractionModeDefault
+    var browserAnnotationEditorMode = browserAnnotationEditorModeComment
+    var browserIsAgentControllingBrowser = false
+    var browserCanUseTweaks = true
+    var browserIsDesignModifierPressed = false
+    var browserIsOriginalViewEnabled = false
+    var browserIsTweaksEditorOpen = false
+    var browserViewportScale = 1.0
+    var browserZoomPercent: Double?
+    var browserActiveDesignChange: JSONObject?
     var includeOCR = false
     var pretty = false
     var format = "json"
@@ -43,6 +53,16 @@ struct AppShotCLI {
                     screenshotPath: options.screenshotPath,
                     includeScreenshot: options.includeScreenshot,
                     browserAnnotationScreenshotsMode: options.browserAnnotationScreenshotsMode,
+                    browserInteractionMode: options.browserInteractionMode,
+                    browserAnnotationEditorMode: options.browserAnnotationEditorMode,
+                    browserIsAgentControllingBrowser: options.browserIsAgentControllingBrowser,
+                    browserCanUseTweaks: options.browserCanUseTweaks,
+                    browserIsDesignModifierPressed: options.browserIsDesignModifierPressed,
+                    browserIsOriginalViewEnabled: options.browserIsOriginalViewEnabled,
+                    browserIsTweaksEditorOpen: options.browserIsTweaksEditorOpen,
+                    browserViewportScale: options.browserViewportScale,
+                    browserZoomPercent: options.browserZoomPercent,
+                    browserActiveDesignChange: options.browserActiveDesignChange,
                     maxDepth: options.maxDepth,
                     maxChildren: options.maxChildren,
                     includeOCR: options.includeOCR,
@@ -109,6 +129,30 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
                 throw AppShotError.usage("Unknown browser annotation screenshots mode: \(rawMode)")
             }
             options.browserAnnotationScreenshotsMode = rawMode
+        case "--browser-interaction-mode":
+            options.browserInteractionMode = normalizedBrowserInteractionMode(try nextValue())
+        case "--browser-annotation-editor-mode":
+            let rawMode = try nextValue().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard isValidBrowserAnnotationEditorMode(rawMode) else {
+                throw AppShotError.usage("Unknown browser annotation editor mode: \(rawMode)")
+            }
+            options.browserAnnotationEditorMode = rawMode
+        case "--browser-agent-controlling":
+            options.browserIsAgentControllingBrowser = true
+        case "--browser-disable-tweaks":
+            options.browserCanUseTweaks = false
+        case "--browser-design-modifier-pressed":
+            options.browserIsDesignModifierPressed = true
+        case "--browser-original-view-enabled":
+            options.browserIsOriginalViewEnabled = true
+        case "--browser-tweaks-editor-open":
+            options.browserIsTweaksEditorOpen = true
+        case "--browser-viewport-scale":
+            options.browserViewportScale = Double(try nextValue()) ?? options.browserViewportScale
+        case "--browser-zoom-percent":
+            options.browserZoomPercent = Double(try nextValue())
+        case "--browser-active-design-change-json":
+            options.browserActiveDesignChange = try parseJSONObject(try nextValue(), optionName: arg)
         case "--include-ocr":
             options.includeOCR = true
         case "--pretty":
@@ -157,6 +201,23 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
     return options
 }
 
+func parseJSONObject(_ text: String, optionName: String) throws -> JSONObject {
+    guard let data = text.data(using: .utf8) else {
+        throw AppShotError.usage("Invalid UTF-8 value for \(optionName)")
+    }
+    do {
+        let value = try JSONSerialization.jsonObject(with: data)
+        guard let object = value as? JSONObject else {
+            throw AppShotError.usage("\(optionName) must be a JSON object")
+        }
+        return object
+    } catch let error as AppShotError {
+        throw error
+    } catch {
+        throw AppShotError.usage("Invalid JSON for \(optionName): \(error)")
+    }
+}
+
 func write(payload: JSONObject, to path: String?, pretty: Bool, format: String) throws {
     let string: String
     if format == "codex" {
@@ -186,7 +247,7 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -198,6 +259,7 @@ func printHelp() {
       Accessibility permission is required for rich text/UI trees.
       Screen Recording permission is required for screenshots.
       --browser-annotation-screenshots-mode always captures a screenshot for codexBrowserPayload by default.
+      Browser runtime options populate codexBrowserRuntimeState using Codex browser-sidebar-runtime-sync field names.
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
       --format codex prints a compact AppShot block similar to Codex built-in appshots.

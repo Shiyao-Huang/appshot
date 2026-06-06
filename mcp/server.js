@@ -58,7 +58,7 @@ function handleLine(line) {
       respond(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "appshot", version: "0.1.4" }
+        serverInfo: { name: "appshot", version: "0.1.5" }
       });
     } else if (method === "tools/list") {
       respond(id, { tools: tools() });
@@ -84,6 +84,16 @@ function tools() {
         properties: {
           includeScreenshot: { type: "boolean", default: false },
           browserAnnotationScreenshotsMode: { type: "string", enum: ["always", "necessary"], default: "necessary" },
+          browserInteractionMode: { type: "string", default: "comment" },
+          browserAnnotationEditorMode: { type: "string", enum: ["comment", "design"], default: "comment" },
+          browserAgentControlling: { type: "boolean", default: false },
+          browserCanUseTweaks: { type: "boolean", default: true },
+          browserDesignModifierPressed: { type: "boolean", default: false },
+          browserOriginalViewEnabled: { type: "boolean", default: false },
+          browserTweaksEditorOpen: { type: "boolean", default: false },
+          browserViewportScale: { type: "number", default: 1 },
+          browserZoomPercent: { type: "number" },
+          browserActiveDesignChange: { type: "object" },
           includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
           windowID: { type: "number" },
@@ -140,6 +150,16 @@ function callTool(params = {}) {
     cliArgs.push("capture", "--pretty");
     if (args.includeScreenshot) cliArgs.push("--include-screenshot");
     if (args.browserAnnotationScreenshotsMode) cliArgs.push("--browser-annotation-screenshots-mode", String(args.browserAnnotationScreenshotsMode));
+    if (args.browserInteractionMode) cliArgs.push("--browser-interaction-mode", String(args.browserInteractionMode));
+    if (args.browserAnnotationEditorMode) cliArgs.push("--browser-annotation-editor-mode", String(args.browserAnnotationEditorMode));
+    if (args.browserAgentControlling) cliArgs.push("--browser-agent-controlling");
+    if (args.browserCanUseTweaks === false) cliArgs.push("--browser-disable-tweaks");
+    if (args.browserDesignModifierPressed) cliArgs.push("--browser-design-modifier-pressed");
+    if (args.browserOriginalViewEnabled) cliArgs.push("--browser-original-view-enabled");
+    if (args.browserTweaksEditorOpen) cliArgs.push("--browser-tweaks-editor-open");
+    if (args.browserViewportScale != null) cliArgs.push("--browser-viewport-scale", String(args.browserViewportScale));
+    if (args.browserZoomPercent != null) cliArgs.push("--browser-zoom-percent", String(args.browserZoomPercent));
+    if (args.browserActiveDesignChange != null) cliArgs.push("--browser-active-design-change-json", JSON.stringify(args.browserActiveDesignChange));
     if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));

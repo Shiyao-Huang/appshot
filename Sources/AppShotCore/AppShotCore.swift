@@ -13,11 +13,28 @@ public let browserAnnotationScreenshotsModeValues = [
     browserAnnotationScreenshotsModeAlways,
     browserAnnotationScreenshotsModeNecessary
 ]
+public let browserInteractionModeDefault = "comment"
+public let browserAnnotationEditorModeComment = "comment"
+public let browserAnnotationEditorModeDesign = "design"
+public let browserAnnotationEditorModeValues = [
+    browserAnnotationEditorModeComment,
+    browserAnnotationEditorModeDesign
+]
 
 public struct AppShotCaptureOptions {
     public var screenshotPath: String?
     public var includeScreenshot: Bool
     public var browserAnnotationScreenshotsMode: String
+    public var browserInteractionMode: String
+    public var browserAnnotationEditorMode: String
+    public var browserIsAgentControllingBrowser: Bool
+    public var browserCanUseTweaks: Bool
+    public var browserIsDesignModifierPressed: Bool
+    public var browserIsOriginalViewEnabled: Bool
+    public var browserIsTweaksEditorOpen: Bool
+    public var browserViewportScale: Double
+    public var browserZoomPercent: Double?
+    public var browserActiveDesignChange: JSONObject?
     public var maxDepth: Int
     public var maxChildren: Int
     public var includeOCR: Bool
@@ -36,6 +53,16 @@ public struct AppShotCaptureOptions {
         screenshotPath: String? = nil,
         includeScreenshot: Bool = false,
         browserAnnotationScreenshotsMode: String = browserAnnotationScreenshotsModeNecessary,
+        browserInteractionMode: String = browserInteractionModeDefault,
+        browserAnnotationEditorMode: String = browserAnnotationEditorModeComment,
+        browserIsAgentControllingBrowser: Bool = false,
+        browserCanUseTweaks: Bool = true,
+        browserIsDesignModifierPressed: Bool = false,
+        browserIsOriginalViewEnabled: Bool = false,
+        browserIsTweaksEditorOpen: Bool = false,
+        browserViewportScale: Double = 1.0,
+        browserZoomPercent: Double? = nil,
+        browserActiveDesignChange: JSONObject? = nil,
         maxDepth: Int = 60,
         maxChildren: Int = 240,
         includeOCR: Bool = false,
@@ -53,6 +80,16 @@ public struct AppShotCaptureOptions {
         self.screenshotPath = screenshotPath
         self.includeScreenshot = includeScreenshot
         self.browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(browserAnnotationScreenshotsMode)
+        self.browserInteractionMode = normalizedBrowserInteractionMode(browserInteractionMode)
+        self.browserAnnotationEditorMode = normalizedBrowserAnnotationEditorMode(browserAnnotationEditorMode)
+        self.browserIsAgentControllingBrowser = browserIsAgentControllingBrowser
+        self.browserCanUseTweaks = browserCanUseTweaks
+        self.browserIsDesignModifierPressed = browserIsDesignModifierPressed
+        self.browserIsOriginalViewEnabled = browserIsOriginalViewEnabled
+        self.browserIsTweaksEditorOpen = browserIsTweaksEditorOpen
+        self.browserViewportScale = browserViewportScale
+        self.browserZoomPercent = browserZoomPercent
+        self.browserActiveDesignChange = browserActiveDesignChange
         self.maxDepth = maxDepth
         self.maxChildren = maxChildren
         self.includeOCR = includeOCR
@@ -169,6 +206,7 @@ public enum AppShotCore {
                 maxObservations: options.maxOCRObservations
             )
         }
+        payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
         payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: browserAnnotationScreenshotsMode)
         if options.writeCache {
             payload = try payloadByWritingCaptureCache(
@@ -398,6 +436,7 @@ public enum AppShotCore {
         payload["captureCache"] = metadata
         let mode = codexBrowserAnnotationScreenshotsMode(from: payload)
         payload["codexBrowserSettings"] = codexBrowserSettingsPayload(annotationScreenshotsMode: mode)
+        payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
         payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: mode)
         payload["codex"] = codexSummaryPayload(from: payload)
         return payload
@@ -2328,6 +2367,22 @@ public func isValidBrowserAnnotationScreenshotsMode(_ mode: String) -> Bool {
     browserAnnotationScreenshotsModeValues.contains(mode)
 }
 
+public func normalizedBrowserInteractionMode(_ mode: String?) -> String {
+    let candidate = mode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return candidate.isEmpty ? browserInteractionModeDefault : candidate
+}
+
+public func normalizedBrowserAnnotationEditorMode(_ mode: String?) -> String {
+    let candidate = mode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return browserAnnotationEditorModeValues.contains(candidate)
+        ? candidate
+        : browserAnnotationEditorModeComment
+}
+
+public func isValidBrowserAnnotationEditorMode(_ mode: String) -> Bool {
+    browserAnnotationEditorModeValues.contains(mode)
+}
+
 public func codexBrowserSettingsPayload(annotationScreenshotsMode: String) -> JSONObject {
     [
         browserAnnotationScreenshotsModeSettingKey: normalizedBrowserAnnotationScreenshotsMode(annotationScreenshotsMode),
@@ -2354,6 +2409,41 @@ public func codexBrowserAnnotationScreenshotsMode(from payload: JSONObject) -> S
     return browserAnnotationScreenshotsModeNecessary
 }
 
+public func codexBrowserRuntimeStatePayload(options: AppShotCaptureOptions) -> JSONObject {
+    var out: JSONObject = [
+        "format": "codex-browser-runtime-state-adapter",
+        "source": "appshot-native-adapter",
+        "type": "browser-sidebar-runtime-sync",
+        "interactionMode": normalizedBrowserInteractionMode(options.browserInteractionMode),
+        "annotationEditorMode": normalizedBrowserAnnotationEditorMode(options.browserAnnotationEditorMode),
+        "isAgentControllingBrowser": options.browserIsAgentControllingBrowser,
+        "canUseTweaks": options.browserCanUseTweaks,
+        "isDesignModifierPressed": options.browserIsDesignModifierPressed,
+        "isOriginalViewEnabled": options.browserIsOriginalViewEnabled,
+        "isTweaksEditorOpen": options.browserIsTweaksEditorOpen,
+        "comments": [],
+        "intlConfig": NSNull(),
+        "activeDesignChange": options.browserActiveDesignChange.map { $0 as Any } ?? NSNull(),
+        "viewportScale": options.browserViewportScale,
+        "zoomPercent": options.browserZoomPercent.map { $0 as Any } ?? NSNull(),
+        "evidenceEvents": [
+            "browser-sidebar-runtime-sync",
+            "browser-sidebar-runtime-open-design-editor",
+            "browser-sidebar-runtime-open-design-editor-at-point",
+            "browser-sidebar-runtime-design-scrub-changed"
+        ],
+        "adapterOnly": true,
+        "warning": "Adapter state only; AppShot does not run Codex browser DOM/preload design editor or tweaks IPC."
+    ]
+
+    if let activeDesignChange = options.browserActiveDesignChange {
+        out["localBrowserDesignChange"] = activeDesignChange
+    } else {
+        out["localBrowserDesignChange"] = NSNull()
+    }
+    return out
+}
+
 public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 420) -> JSONObject {
     let text = codexSummaryText(from: payload, maxTreeLines: maxTreeLines)
     let accessibility = payload["accessibility"] as? JSONObject
@@ -2371,7 +2461,9 @@ public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 42
         "textEvidenceLineCount": textEvidenceLines.count,
         "hasFocusedElement": focusedLine != nil,
         "hasBrowserPayload": browserPayload != nil,
-        "browserPayloadFormat": codexTrimmedString(browserPayload?["format"]) ?? "none"
+        "browserPayloadFormat": codexTrimmedString(browserPayload?["format"]) ?? "none",
+        "hasBrowserRuntimeState": payload["codexBrowserRuntimeState"] is JSONObject,
+        "browserRuntimeStateFormat": codexTrimmedString((payload["codexBrowserRuntimeState"] as? JSONObject)?["format"]) ?? "none"
     ]
 }
 
@@ -2389,6 +2481,7 @@ public func codexBrowserPayload(
     let accessibility = payload["accessibility"] as? JSONObject
     let root = accessibility?["root"] as? JSONObject
     let screenshot = payload["screenshot"] as? JSONObject
+    let runtimeState = payload["codexBrowserRuntimeState"] as? JSONObject
 
     let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
     let bundleIdentifier = codexTrimmedString(app["bundleIdentifier"]) ?? ""
@@ -2426,6 +2519,11 @@ public func codexBrowserPayload(
     if let windowID = window?["windowID"] {
         localBrowserCommentMetadata["windowID"] = windowID
     }
+    if let runtimeState {
+        localBrowserCommentMetadata["runtimeState"] = runtimeState
+    }
+
+    let localBrowserDesignChange: Any = runtimeState?["activeDesignChange"] ?? NSNull()
 
     var out: JSONObject = [
         "format": "codex-browser-comment-payload-adapter",
@@ -2445,7 +2543,8 @@ public func codexBrowserPayload(
         "localBrowserContext": localBrowserContext,
         "localBrowserCommentMetadata": localBrowserCommentMetadata,
         "localBrowserAttachedImages": [],
-        "localBrowserDesignChange": NSNull(),
+        "localBrowserDesignChange": localBrowserDesignChange,
+        "localBrowserRuntimeState": runtimeState.map { $0 as Any } ?? NSNull(),
         "localBrowserScreenshot": screenshotPayload
     ]
 

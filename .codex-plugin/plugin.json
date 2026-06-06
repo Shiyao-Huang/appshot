@@ -1,6 +1,6 @@
 {
   "name": "appshot",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Capture frontmost macOS app context as AppShot JSON with optional screenshots.",
   "author": {
     "name": "copizzah"

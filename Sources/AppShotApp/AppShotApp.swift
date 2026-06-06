@@ -60,6 +60,10 @@ final class AppShotAppDelegate: NSObject, NSApplicationDelegate {
 final class AppShotModel: ObservableObject {
     private static let globalShortcutEnabledKey = "AppShot.globalShortcut.enabled"
     private static let browserAnnotationScreenshotsModeKey = "AppShot.browserAnnotationScreenshotsMode"
+    private static let browserAnnotationEditorModeKey = "AppShot.browserAnnotationEditorMode"
+    private static let browserOriginalViewEnabledKey = "AppShot.browserOriginalViewEnabled"
+    private static let browserDesignModifierPressedKey = "AppShot.browserDesignModifierPressed"
+    private static let browserTweaksEditorOpenKey = "AppShot.browserTweaksEditorOpen"
     private let optionShortcutMonitor = OptionPairShortcutMonitor()
 
     @Published var state: String = "checking"
@@ -99,6 +103,43 @@ final class AppShotModel: ObservableObject {
                 return
             }
             UserDefaults.standard.set(browserAnnotationScreenshotsMode, forKey: Self.browserAnnotationScreenshotsModeKey)
+        }
+    }
+    @Published var browserAnnotationEditorMode: String = AppShotModel.defaultBrowserAnnotationEditorMode() {
+        didSet {
+            let normalized = normalizedBrowserAnnotationEditorMode(browserAnnotationEditorMode)
+            if browserAnnotationEditorMode != normalized {
+                browserAnnotationEditorMode = normalized
+                return
+            }
+            guard browserAnnotationEditorMode != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(browserAnnotationEditorMode, forKey: Self.browserAnnotationEditorModeKey)
+        }
+    }
+    @Published var browserOriginalViewEnabled: Bool = AppShotModel.defaultBrowserOriginalViewEnabled() {
+        didSet {
+            guard browserOriginalViewEnabled != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(browserOriginalViewEnabled, forKey: Self.browserOriginalViewEnabledKey)
+        }
+    }
+    @Published var browserDesignModifierPressed: Bool = AppShotModel.defaultBrowserDesignModifierPressed() {
+        didSet {
+            guard browserDesignModifierPressed != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(browserDesignModifierPressed, forKey: Self.browserDesignModifierPressedKey)
+        }
+    }
+    @Published var browserTweaksEditorOpen: Bool = AppShotModel.defaultBrowserTweaksEditorOpen() {
+        didSet {
+            guard browserTweaksEditorOpen != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(browserTweaksEditorOpen, forKey: Self.browserTweaksEditorOpenKey)
         }
     }
     @Published var isAutoRefreshEnabled = false
@@ -224,6 +265,10 @@ final class AppShotModel: ObservableObject {
         browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(mode)
     }
 
+    func setBrowserAnnotationEditorMode(_ mode: String) {
+        browserAnnotationEditorMode = normalizedBrowserAnnotationEditorMode(mode)
+    }
+
     func clearFrontAppTrail() {
         frontAppTrail.removeAll()
     }
@@ -245,6 +290,22 @@ final class AppShotModel: ObservableObject {
 
     private static func defaultBrowserAnnotationScreenshotsMode() -> String {
         normalizedBrowserAnnotationScreenshotsMode(UserDefaults.standard.string(forKey: browserAnnotationScreenshotsModeKey))
+    }
+
+    private static func defaultBrowserAnnotationEditorMode() -> String {
+        normalizedBrowserAnnotationEditorMode(UserDefaults.standard.string(forKey: browserAnnotationEditorModeKey))
+    }
+
+    private static func defaultBrowserOriginalViewEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: browserOriginalViewEnabledKey)
+    }
+
+    private static func defaultBrowserDesignModifierPressed() -> Bool {
+        UserDefaults.standard.bool(forKey: browserDesignModifierPressedKey)
+    }
+
+    private static func defaultBrowserTweaksEditorOpen() -> Bool {
+        UserDefaults.standard.bool(forKey: browserTweaksEditorOpenKey)
     }
 
     private func configureGlobalShortcut() {
@@ -311,6 +372,10 @@ final class AppShotModel: ObservableObject {
         captureRequestSerial += 1
         let requestID = captureRequestSerial
         let browserAnnotationScreenshotsMode = self.browserAnnotationScreenshotsMode
+        let browserAnnotationEditorMode = self.browserAnnotationEditorMode
+        let browserOriginalViewEnabled = self.browserOriginalViewEnabled
+        let browserDesignModifierPressed = self.browserDesignModifierPressed
+        let browserTweaksEditorOpen = self.browserTweaksEditorOpen
         isCapturing = true
         lastError = nil
 
@@ -320,6 +385,10 @@ final class AppShotModel: ObservableObject {
                 let payload = try AppShotCore.capture(options: AppShotCaptureOptions(
                     includeScreenshot: includeScreenshot,
                     browserAnnotationScreenshotsMode: browserAnnotationScreenshotsMode,
+                    browserAnnotationEditorMode: browserAnnotationEditorMode,
+                    browserIsDesignModifierPressed: browserDesignModifierPressed,
+                    browserIsOriginalViewEnabled: browserOriginalViewEnabled,
+                    browserIsTweaksEditorOpen: browserTweaksEditorOpen,
                     maxDepth: 60,
                     maxChildren: 240,
                     includeOCR: includeOCR,
@@ -909,6 +978,27 @@ struct AppShotSettingsView: View {
                 Text("Always").tag(browserAnnotationScreenshotsModeAlways)
             }
             .pickerStyle(.segmented)
+
+            Picker("Browser Editor", selection: Binding(
+                get: { model.browserAnnotationEditorMode },
+                set: { model.setBrowserAnnotationEditorMode($0) }
+            )) {
+                Text("Comment").tag(browserAnnotationEditorModeComment)
+                Text("Design").tag(browserAnnotationEditorModeDesign)
+            }
+            .pickerStyle(.segmented)
+
+            Toggle(isOn: $model.browserOriginalViewEnabled) {
+                Label("Original View", systemImage: "rectangle.lefthalf.inset.filled")
+            }
+
+            Toggle(isOn: $model.browserDesignModifierPressed) {
+                Label("Design Modifier", systemImage: "option")
+            }
+
+            Toggle(isOn: $model.browserTweaksEditorOpen) {
+                Label("Tweaks Editor", systemImage: "slider.horizontal.3")
+            }
 
             Divider()
 

@@ -43,6 +43,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Shared shortcut cache: left+right Option writes the latest capture so CLI/MCP can return it immediately; use `--ignore-cache`, `--no-cache`, or `--fresh` for a direct capture.
 - Codex browser-comment payload adapter: JSON captures include `codexBrowserPayload` with `localBrowserContext`, `localBrowserCommentMetadata`, `localBrowserAttachedImages`, `localBrowserDesignChange`, and `localBrowserScreenshot` field names for Codex/Claude consumers.
 - Codex browser screenshot policy: `--browser-annotation-screenshots-mode always|necessary`, MCP `browserAnnotationScreenshotsMode`, and App Settings `Browser Screenshots` write `browser-annotation-screenshots-mode` into `codexBrowserSettings`; `always` captures a screenshot for `codexBrowserPayload` by default.
+- Codex browser runtime state adapter: JSON captures include `codexBrowserRuntimeState` with Codex `browser-sidebar-runtime-sync` field names such as `interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, and `activeDesignChange`.
 
 ### Build And Run
 
@@ -58,8 +59,8 @@ For a complete local release package:
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.4
-open dist/AppShot-macOS-0.1.4/AppShot.app
+scripts/build_release.sh 0.1.5
+open dist/AppShot-macOS-0.1.5/AppShot.app
 ```
 
 For a public macOS release, sign with a `Developer ID Application` identity and notarize the DMG:
@@ -68,7 +69,7 @@ For a public macOS release, sign with a `Developer ID Application` identity and 
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.4
+scripts/build_release.sh 0.1.5
 ```
 
 The public release path refuses Apple Development or ad-hoc signatures, submits the DMG to Apple notarization, staples the ticket, and runs Gatekeeper assessment.
@@ -100,6 +101,8 @@ scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot
 Accessibility output includes both `accessibility.text` for full AX/document text and `accessibility.visibleText` for coordinate-sorted visible UI text. When a large text control exposes `AXBoundsForRange`, AppShot uses line fragments so editor/body text can join the visible reading stream.
 
 JSON capture output also includes `codexBrowserPayload`, a native AppShot adapter for Codex browser-comment payload fields. It maps app/window/AX/screenshot evidence into the same `localBrowser*` names Codex uses, without claiming AppShot implements Codex's embedded browser design editor or image-drag runtime. Use `--browser-annotation-screenshots-mode always` when a Codex/Claude consumer should receive a `localBrowserScreenshot` by default.
+
+For Codex browser runtime-state parity, JSON capture includes `codexBrowserRuntimeState` and mirrors `activeDesignChange` into `codexBrowserPayload.localBrowserDesignChange`. CLI and MCP calls can set those adapter fields with options such as `--browser-annotation-editor-mode design`, `--browser-original-view-enabled`, `--browser-design-modifier-pressed`, `--browser-tweaks-editor-open`, and `--browser-active-design-change-json '{"id":"design","declarations":[]}'`. This is a native adapter surface for Codex/Claude consumers; it does not run Codex's embedded browser DOM/preload design editor or image-drag instrumentation.
 
 ### Permissions
 
@@ -172,6 +175,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - 共享快捷键缓存：左 Option + 右 Option 会写入最近一次捕捉，CLI/MCP 可以立即读取；需要直接重新捕捉时使用 `--ignore-cache`、`--no-cache` 或 `--fresh`。
 - Codex browser-comment payload adapter：JSON capture 会包含 `codexBrowserPayload`，内部使用 `localBrowserContext`、`localBrowserCommentMetadata`、`localBrowserAttachedImages`、`localBrowserDesignChange`、`localBrowserScreenshot` 这些 Codex/Claude 消费侧字段名。
 - Codex browser screenshot policy：`--browser-annotation-screenshots-mode always|necessary`、MCP `browserAnnotationScreenshotsMode`、App Settings `Browser Screenshots` 会把 `browser-annotation-screenshots-mode` 写入 `codexBrowserSettings`；`always` 会默认给 `codexBrowserPayload` 捕捉截图。
+- Codex browser runtime state adapter：JSON capture 会包含 `codexBrowserRuntimeState`，使用 Codex `browser-sidebar-runtime-sync` 同名字段，例如 `interactionMode`、`annotationEditorMode`、`isOriginalViewEnabled`、`isDesignModifierPressed`、`isTweaksEditorOpen`、`activeDesignChange`。
 
 ### 构建和运行
 
@@ -187,8 +191,8 @@ xcodebuild -project AppShot.xcodeproj -scheme AppShot -configuration Release bui
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.4
-open dist/AppShot-macOS-0.1.4/AppShot.app
+scripts/build_release.sh 0.1.5
+open dist/AppShot-macOS-0.1.5/AppShot.app
 ```
 
 公开 macOS 发布包需要 `Developer ID Application` 证书并完成 DMG 公证：
@@ -197,7 +201,7 @@ open dist/AppShot-macOS-0.1.4/AppShot.app
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.4
+scripts/build_release.sh 0.1.5
 ```
 
 公开发布路径会拒绝 Apple Development 或 ad-hoc 签名，提交 Apple notarization，staple 公证票据，并运行 Gatekeeper 校验。
@@ -229,6 +233,8 @@ scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot
 Accessibility 输出同时包含完整 AX/document 文本 `accessibility.text`，以及按坐标排序的可见 UI 文本 `accessibility.visibleText`。当大块文本控件暴露 `AXBoundsForRange` 时，AppShot 会使用行级片段，让编辑器/正文文本也进入可见阅读流。
 
 JSON capture 还会包含 `codexBrowserPayload`，这是 AppShot 原生捕捉到 Codex browser-comment payload 字段的适配层。它会把 App/window/AX/screenshot 证据映射到 Codex 使用的 `localBrowser*` 字段名，但不声称 AppShot 已经实现 Codex 内置浏览器的 design editor 或 image-drag runtime。需要默认给 Codex/Claude 消费侧提供 `localBrowserScreenshot` 时，使用 `--browser-annotation-screenshots-mode always`。
+
+为了靠近 Codex browser runtime state，JSON capture 还会包含 `codexBrowserRuntimeState`，并把 `activeDesignChange` 镜像到 `codexBrowserPayload.localBrowserDesignChange`。CLI 和 MCP 可以通过 `--browser-annotation-editor-mode design`、`--browser-original-view-enabled`、`--browser-design-modifier-pressed`、`--browser-tweaks-editor-open`、`--browser-active-design-change-json '{"id":"design","declarations":[]}'` 设置这些 adapter 字段。它是给 Codex/Claude 消费侧使用的原生适配层，不等于已经运行 Codex 内置浏览器的 DOM/preload design editor 或 image-drag instrumentation。
 
 ### 权限
 

@@ -112,11 +112,17 @@ for anchor in \
   "localBrowserAttachedImages" \
   "localBrowserDesignChange" \
   "codexBrowserPayload" \
+  "codexBrowserRuntimeState" \
+  "codex-browser-runtime-state-adapter" \
   "codex-browser-comment-payload-adapter" \
   "browser-annotation-screenshots-mode" \
   "Browser annotation screenshot policy" \
+  "Browser runtime state adapter" \
   "browser-sidebar-runtime-open-design-editor" \
   "browser-sidebar-runtime-image-drag-started" \
+  "isOriginalViewEnabled" \
+  "isDesignModifierPressed" \
+  "activeDesignChange" \
   "scripts/qa_app_capture.py" \
   "target-window screenshot metadata" \
   "window-bound image dimensions" \
@@ -162,7 +168,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.4"
+expected = "0.1.5"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
@@ -203,14 +209,15 @@ for name, text, pattern in [
         raise SystemExit(f"{name} is not aligned to {expected}")
 
 for name, text, needles in [
-    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode"]),
+    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
+    ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -227,24 +234,27 @@ PY
 STATUS_JSON="$(mktemp)"
 CAPTURE_JSON="$(mktemp)"
 POLICY_JSON="$(mktemp)"
+RUNTIME_JSON="$(mktemp)"
 CODEX_TXT="$(mktemp)"
 MCP_JSONL="$(mktemp)"
-trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
 
 log "checking CLI status/capture schema"
 "$APP_BIN" status --pretty >"$STATUS_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --pretty >"$POLICY_JSON"
+"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT"
 
-"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
 status = json.load(open(sys.argv[1]))
 capture = json.load(open(sys.argv[2]))
 policy = json.load(open(sys.argv[3]))
-codex_text = open(sys.argv[4]).read()
+runtime = json.load(open(sys.argv[4]))
+codex_text = open(sys.argv[5]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -259,7 +269,7 @@ require_keys(
 require_keys(
     "capture",
     capture,
-    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload"],
+    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState"],
 )
 
 if isinstance(capture.get("primaryWindow"), dict):
@@ -281,6 +291,10 @@ if codex.get("hasBrowserPayload") is not True:
     raise SystemExit("capture codex summary does not report hasBrowserPayload")
 if codex.get("browserPayloadFormat") != "codex-browser-comment-payload-adapter":
     raise SystemExit(f"unexpected browser payload format: {codex.get('browserPayloadFormat')!r}")
+if codex.get("hasBrowserRuntimeState") is not True:
+    raise SystemExit("capture codex summary does not report hasBrowserRuntimeState")
+if codex.get("browserRuntimeStateFormat") != "codex-browser-runtime-state-adapter":
+    raise SystemExit(f"unexpected browser runtime state format: {codex.get('browserRuntimeStateFormat')!r}")
 if not codex.get("text", "").startswith("<appshot "):
     raise SystemExit("capture codex text does not start with <appshot")
 if "Window:" not in codex.get("text", ""):
@@ -303,6 +317,23 @@ require_keys("capture localBrowserCommentMetadata", metadata, ["kind", "annotati
 if metadata.get("kind") != "appshot-native":
     raise SystemExit(f"unexpected browser metadata kind: {metadata.get('kind')!r}")
 
+runtime_state = capture.get("codexBrowserRuntimeState", {})
+require_keys(
+    "capture codexBrowserRuntimeState",
+    runtime_state,
+    ["format", "source", "type", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "comments", "activeDesignChange", "viewportScale", "zoomPercent"],
+)
+if runtime_state.get("format") != "codex-browser-runtime-state-adapter":
+    raise SystemExit(f"unexpected runtime state format: {runtime_state.get('format')!r}")
+if runtime_state.get("type") != "browser-sidebar-runtime-sync":
+    raise SystemExit(f"unexpected runtime state type: {runtime_state.get('type')!r}")
+if runtime_state.get("interactionMode") != "comment" or runtime_state.get("annotationEditorMode") != "comment":
+    raise SystemExit("default runtime state did not preserve Codex comment mode defaults")
+if runtime_state.get("canUseTweaks") is not True:
+    raise SystemExit("default runtime state should allow tweaks")
+if runtime_state.get("isDesignModifierPressed") or runtime_state.get("isOriginalViewEnabled") or runtime_state.get("isTweaksEditorOpen"):
+    raise SystemExit("default runtime state should keep design/original/tweaks flags off")
+
 settings = capture.get("codexBrowserSettings", {})
 require_keys("capture codexBrowserSettings", settings, ["browser-annotation-screenshots-mode", "annotationScreenshotsMode", "description", "schema"])
 if settings.get("browser-annotation-screenshots-mode") != "necessary":
@@ -320,6 +351,25 @@ if policy_metadata.get("annotationScreenshotsMode") != "always":
 if "screenshot" not in policy:
     raise SystemExit("policy capture did not attempt a screenshot for always mode")
 
+runtime_state = runtime.get("codexBrowserRuntimeState", {})
+runtime_payload = runtime.get("codexBrowserPayload", {})
+runtime_metadata = runtime_payload.get("localBrowserCommentMetadata", {})
+require_keys("runtime codexBrowserRuntimeState", runtime_state, ["annotationEditorMode", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange"])
+if runtime_state.get("annotationEditorMode") != "design":
+    raise SystemExit("runtime capture did not preserve design annotation editor mode")
+if runtime_state.get("isDesignModifierPressed") is not True:
+    raise SystemExit("runtime capture did not preserve design modifier")
+if runtime_state.get("isOriginalViewEnabled") is not True:
+    raise SystemExit("runtime capture did not preserve original view")
+if runtime_state.get("isTweaksEditorOpen") is not True:
+    raise SystemExit("runtime capture did not preserve tweaks editor")
+if runtime_state.get("activeDesignChange", {}).get("id") != "verifier-design":
+    raise SystemExit("runtime capture did not preserve activeDesignChange")
+if runtime_payload.get("localBrowserDesignChange", {}).get("id") != "verifier-design":
+    raise SystemExit("runtime browser payload did not mirror activeDesignChange")
+if runtime_metadata.get("runtimeState", {}).get("isOriginalViewEnabled") is not True:
+    raise SystemExit("runtime browser metadata did not embed runtimeState")
+
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})
     require_keys(f"{name} permissions", permissions, ["accessibility", "screenRecording", "identity", "stability"])
@@ -335,7 +385,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
-  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always"}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
   | APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL"
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -369,12 +419,23 @@ mcp_policy = json.loads(lines[4]["result"]["content"][0]["text"])
 mcp_policy_settings = mcp_policy.get("codexBrowserSettings", {})
 mcp_policy_payload = mcp_policy.get("codexBrowserPayload", {})
 mcp_policy_metadata = mcp_policy_payload.get("localBrowserCommentMetadata", {})
+mcp_runtime_state = mcp_policy.get("codexBrowserRuntimeState", {})
 if mcp_policy_settings.get("browser-annotation-screenshots-mode") != "always":
     raise SystemExit("MCP policy capture did not preserve always mode")
 if mcp_policy_metadata.get("annotationScreenshotsMode") != "always":
     raise SystemExit("MCP policy metadata did not preserve always mode")
 if "screenshot" not in mcp_policy:
     raise SystemExit("MCP policy capture did not attempt screenshot for always mode")
+if mcp_runtime_state.get("annotationEditorMode") != "design":
+    raise SystemExit("MCP runtime capture did not preserve design annotation editor mode")
+if mcp_runtime_state.get("isOriginalViewEnabled") is not True:
+    raise SystemExit("MCP runtime capture did not preserve original view")
+if mcp_runtime_state.get("isDesignModifierPressed") is not True:
+    raise SystemExit("MCP runtime capture did not preserve design modifier")
+if mcp_runtime_state.get("isTweaksEditorOpen") is not True:
+    raise SystemExit("MCP runtime capture did not preserve tweaks editor")
+if mcp_runtime_state.get("activeDesignChange", {}).get("id") != "mcp-design":
+    raise SystemExit("MCP runtime capture did not preserve activeDesignChange")
 PY
 
 log "ok"
