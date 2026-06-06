@@ -2276,6 +2276,7 @@ private func codexElementLine(_ element: JSONObject) -> String {
 private func codexDescriptionLabel(_ description: String, role: String) -> String {
     let rawDescriptionRoles = Set([
         "cell",
+        "container",
         "list",
         "outline",
         "outline row",
@@ -2286,6 +2287,7 @@ private func codexDescriptionLabel(_ description: String, role: String) -> Strin
         "tab group",
         "toolbar",
         "单元格",
+        "组",
         "内容列表",
         "列表",
         "大纲",
