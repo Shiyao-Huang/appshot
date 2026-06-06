@@ -2782,9 +2782,6 @@ private func codexIsSelected(_ element: JSONObject) -> Bool {
     if let selectedRows = element["selectedRows"] as? [Any], !selectedRows.isEmpty {
         return true
     }
-    if let selectedChildren = element["selectedChildren"] as? [Any], !selectedChildren.isEmpty {
-        return true
-    }
     return false
 }
 
