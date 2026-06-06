@@ -246,7 +246,7 @@ for name, text, needles in [
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
-    ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
+    ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
     ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
@@ -270,15 +270,19 @@ RUNTIME_JSON="$(mktemp)"
 DOM_JSON="$(mktemp)"
 CODEX_TXT="$(mktemp)"
 MCP_JSONL="$(mktemp)"
-trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
+RUN_DIR="$(mktemp -d)"
+POLICY_SCREENSHOT="$RUN_DIR/policy.png"
+MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
+MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
+trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
 
 log "checking CLI status/capture schema"
-"$APP_BIN" status --pretty >"$STATUS_JSON"
-"$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON"
-"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --pretty >"$POLICY_JSON"
-"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON"
-"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.8","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON"
-"$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT"
+(cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.8","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
 
 "$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" <<'PY'
 import json
@@ -441,8 +445,8 @@ if runtime_state.get("isTweaksEditorOpen") is not True:
     raise SystemExit("runtime capture did not preserve tweaks editor")
 if runtime_state.get("activeDesignChange", {}).get("id") != "verifier-design":
     raise SystemExit("runtime capture did not preserve activeDesignChange")
-if runtime_payload.get("localBrowserDesignChange", {}).get("id") != "verifier-design":
-    raise SystemExit("runtime browser payload did not mirror activeDesignChange")
+if runtime_payload.get("localBrowserDesignChange", {}).get("group", {}).get("id") != "verifier-design":
+    raise SystemExit("runtime browser payload did not mirror activeDesignChange as a Codex design group")
 if runtime_metadata.get("runtimeState", {}).get("isOriginalViewEnabled") is not True:
     raise SystemExit("runtime browser metadata did not embed runtimeState")
 
@@ -490,6 +494,22 @@ if dom_browser_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEven
     raise SystemExit("browser DOM bridge event was not first in codexBrowserPayload runtime events")
 if dom_browser_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("browser DOM bridge availability was not mirrored into codexBrowserPayload runtime protocol")
+dom_context = dom_browser_payload.get("localBrowserContext", {})
+dom_metadata = dom_browser_payload.get("localBrowserCommentMetadata", {})
+if dom_context.get("pageUrl") != "https://example.test/page":
+    raise SystemExit("browser DOM payload did not preserve real pageUrl")
+if dom_context.get("frameUrl") != "https://example.test/page":
+    raise SystemExit("browser DOM payload did not preserve real frameUrl")
+if dom_context.get("targetSelector") != "button.cta":
+    raise SystemExit("browser DOM payload did not preserve target selector")
+if dom_context.get("targetImmediateText") != "Buy":
+    raise SystemExit("browser DOM payload did not preserve target immediate text")
+if dom_metadata.get("kind") != "browser":
+    raise SystemExit("browser DOM payload did not switch metadata kind to browser")
+if dom_metadata.get("markerViewportPoint", {}).get("x") is None:
+    raise SystemExit("browser DOM payload did not expose markerViewportPoint")
+if dom_metadata.get("browserDOMIntegration", {}).get("liveEventStreamAvailable") is not True:
+    raise SystemExit("browser DOM metadata did not mirror liveEventStreamAvailable")
 
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})
@@ -506,9 +526,9 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
-  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","screenshotPath":'"$MCP_POLICY_SCREENSHOT_JSON"',"browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
   '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.8","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
-  | APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL"
+  | (cd "$RUN_DIR" && APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL")
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
 import json
@@ -558,6 +578,8 @@ if mcp_runtime_state.get("isTweaksEditorOpen") is not True:
     raise SystemExit("MCP runtime capture did not preserve tweaks editor")
 if mcp_runtime_state.get("activeDesignChange", {}).get("id") != "mcp-design":
     raise SystemExit("MCP runtime capture did not preserve activeDesignChange")
+if mcp_policy_payload.get("localBrowserDesignChange", {}).get("group", {}).get("id") != "mcp-design":
+    raise SystemExit("MCP runtime capture did not mirror activeDesignChange as a Codex design group")
 
 mcp_dom = json.loads(lines[5]["result"]["content"][0]["text"])
 mcp_dom_integration = mcp_dom.get("codexBrowserDOMIntegration", {})
@@ -582,6 +604,18 @@ if mcp_dom_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEvent") 
     raise SystemExit("MCP DOM fixture did not put bridge event into payload")
 if mcp_dom_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("MCP DOM fixture did not mirror liveEventStreamAvailable into payload protocol")
+mcp_dom_context = mcp_dom_payload.get("localBrowserContext", {})
+mcp_dom_metadata = mcp_dom_payload.get("localBrowserCommentMetadata", {})
+if mcp_dom_context.get("pageUrl") != "https://example.test/mcp":
+    raise SystemExit("MCP DOM payload did not preserve real pageUrl")
+if mcp_dom_context.get("targetSelector") != "a.primary":
+    raise SystemExit("MCP DOM payload did not preserve target selector")
+if mcp_dom_context.get("targetImmediateText") != "Open":
+    raise SystemExit("MCP DOM payload did not preserve target immediate text")
+if mcp_dom_metadata.get("kind") != "browser":
+    raise SystemExit("MCP DOM payload did not switch metadata kind to browser")
+if mcp_dom_metadata.get("markerViewportPoint", {}).get("x") is None:
+    raise SystemExit("MCP DOM payload did not expose markerViewportPoint")
 PY
 
 log "ok"

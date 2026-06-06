@@ -64,7 +64,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```
 10. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`.
 11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
-    When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`.
+    When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`. For browser DOM captures, inspect exact Codex-shaped values such as `localBrowserContext.pageUrl`, `frameUrl`, `targetSelector`, `targetImmediateText`, `targetPath`, `localBrowserCommentMetadata.markerViewportPoint`, and `localBrowserDesignChange.group`.
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
@@ -131,9 +131,16 @@ The CLI returns JSON with:
 - `codexBrowserDOMIntegration.localBrowserAttachedImages`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
+- `codexBrowserPayload.localBrowserContext.pageUrl`
+- `codexBrowserPayload.localBrowserContext.frameUrl`
+- `codexBrowserPayload.localBrowserContext.targetSelector`
+- `codexBrowserPayload.localBrowserContext.targetImmediateText`
+- `codexBrowserPayload.localBrowserContext.targetPath`
 - `codexBrowserPayload.localBrowserCommentMetadata`
+- `codexBrowserPayload.localBrowserCommentMetadata.markerViewportPoint`
 - `codexBrowserPayload.localBrowserAttachedImages`
 - `codexBrowserPayload.localBrowserDesignChange`
+- `codexBrowserPayload.localBrowserDesignChange.group`
 - `codexBrowserPayload.localBrowserRuntimeState`
 - `codexBrowserPayload.localBrowserRuntimeProtocol`
 - `codexBrowserPayload.localBrowserRuntimeEvents`

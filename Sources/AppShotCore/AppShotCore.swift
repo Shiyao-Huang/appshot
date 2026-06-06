@@ -3334,34 +3334,55 @@ public func codexBrowserPayload(
     let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
     let bundleIdentifier = codexTrimmedString(app["bundleIdentifier"]) ?? ""
     let windowTitle = codexTrimmedString(window?["title"]) ?? codexTrimmedString(root?["title"]) ?? appName
-    let pageURL = codexAppShotURL(bundleIdentifier: bundleIdentifier, appName: appName, windowTitle: windowTitle)
-    let nearbyText = codexNearbyText(from: accessibility)
+    let domTarget = codexBrowserDOMPrimaryTarget(from: browserDOMIntegration)
+    let domPageURL = codexTrimmedString(browserDOMIntegration?["pageUrl"])
+    let pageURL = domPageURL ?? codexAppShotURL(bundleIdentifier: bundleIdentifier, appName: appName, windowTitle: windowTitle)
+    let targetText = codexTrimmedString(domTarget?["text"])
+    let nearbyText = codexBrowserNearbyText(
+        accessibility: accessibility,
+        domTitle: codexTrimmedString(browserDOMIntegration?["title"]),
+        targetText: targetText
+    )
     let documentContext = codexDocumentContext(from: accessibility)
-    let screenshotPayload: Any = screenshot.map { $0 as Any } ?? NSNull()
+    let targetSelector = codexTrimmedString(domTarget?["selector"])
+        ?? (bundleIdentifier.isEmpty ? "app:\(appName)" : "bundle:\(bundleIdentifier)")
+    let targetName = targetText ?? codexTrimmedString(root?["title"]) ?? windowTitle
+    let targetDescription = codexTrimmedString(browserDOMIntegration?["title"]) ?? windowTitle
+    let targetRole = codexTrimmedString(domTarget?["role"]) ?? codexTrimmedString(root?["role"]) ?? "AXWindow"
 
     var localBrowserContext: JSONObject = [
         "pageUrl": pageURL,
         "framePath": [],
         "frameUrl": pageURL,
-        "targetDescription": windowTitle,
-        "targetRole": codexTrimmedString(root?["role"]) ?? "AXWindow",
-        "targetName": codexTrimmedString(root?["title"]) ?? windowTitle,
-        "targetSelector": bundleIdentifier.isEmpty ? "app:\(appName)" : "bundle:\(bundleIdentifier)",
-        "targetPath": codexTargetPath(from: root, appName: appName, windowTitle: windowTitle),
+        "targetDescription": targetDescription,
+        "targetRole": targetRole,
+        "targetName": targetName,
+        "targetSelector": targetSelector,
+        "targetPath": codexBrowserTargetPath(
+            domTarget: domTarget,
+            pageURL: pageURL,
+            fallback: codexTargetPath(from: root, appName: appName, windowTitle: windowTitle)
+        ),
         "nearbyText": nearbyText
     ]
+    if let targetText {
+        localBrowserContext["targetImmediateText"] = targetText
+    }
     if !documentContext.isEmpty {
         localBrowserContext["documentContext"] = documentContext
     }
 
     var localBrowserCommentMetadata: JSONObject = [
-        "kind": "appshot-native",
+        "kind": browserDOMIntegration == nil ? "appshot-native" : "browser",
         "bundleIdentifier": bundleIdentifier,
         "applicationName": appName,
         "windowTitle": windowTitle,
         "annotationScreenshotsMode": normalizedBrowserAnnotationScreenshotsMode(annotationScreenshotsMode)
     ]
-    if let viewportSize = codexViewportSize(from: window) {
+    if let markerViewportPoint = codexBrowserDOMMarkerViewportPoint(from: browserDOMIntegration) {
+        localBrowserCommentMetadata["markerViewportPoint"] = markerViewportPoint
+    }
+    if let viewportSize = codexBrowserDOMViewportSize(from: browserDOMIntegration) ?? codexViewportSize(from: window) {
         localBrowserCommentMetadata["viewportSize"] = viewportSize
     }
     if let windowID = window?["windowID"] {
@@ -3376,15 +3397,22 @@ public func codexBrowserPayload(
             "source": browserDOMIntegration["source"] ?? "",
             "imageCount": browserDOMIntegration["imageCount"] ?? 0,
             "designTargetCount": browserDOMIntegration["designTargetCount"] ?? 0,
-            "browserRuntimeEventCount": browserDOMIntegration["browserRuntimeEventCount"] ?? 0
+            "browserRuntimeEventCount": browserDOMIntegration["browserRuntimeEventCount"] ?? 0,
+            "browserRuntimeBridgeEventCount": browserDOMIntegration["browserRuntimeBridgeEventCount"] ?? 0,
+            "browserRuntimeCandidateEventCount": browserDOMIntegration["browserRuntimeCandidateEventCount"] ?? 0,
+            "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false
         ]
     }
 
-    let localBrowserDesignChange: Any = runtimeState?["activeDesignChange"] ?? NSNull()
+    let localBrowserDesignChange = codexBrowserLocalDesignChange(from: runtimeState)
     let localBrowserAttachedImages = browserDOMIntegration?["localBrowserAttachedImages"] as? [JSONObject] ?? []
     let localBrowserRuntimeEvents: Any = browserDOMIntegration?["browserRuntimeEvents"] ?? []
+    let localBrowserScreenshot = codexBrowserLocalScreenshot(
+        screenshot: screenshot,
+        runtimeState: runtimeState
+    )
 
-    var out: JSONObject = [
+    let out: JSONObject = [
         "format": "codex-browser-comment-payload-adapter",
         "source": "appshot-native-adapter",
         "type": "comment",
@@ -3396,7 +3424,7 @@ public func codexBrowserPayload(
         ],
         "position": [
             "side": "right",
-            "path": "browser:\(windowTitle.isEmpty ? appName : windowTitle)",
+            "path": codexBrowserPositionPath(pageURL: pageURL, title: targetDescription, fallback: windowTitle.isEmpty ? appName : windowTitle),
             "line": 1
         ],
         "localBrowserContext": localBrowserContext,
@@ -3406,14 +3434,115 @@ public func codexBrowserPayload(
         "localBrowserRuntimeState": runtimeState.map { $0 as Any } ?? NSNull(),
         "localBrowserRuntimeProtocol": runtimeProtocol.map { $0 as Any } ?? NSNull(),
         "localBrowserRuntimeEvents": localBrowserRuntimeEvents,
-        "localBrowserScreenshot": screenshotPayload
+        "localBrowserScreenshot": localBrowserScreenshot
     ]
-
-    if let screenshot,
-       screenshot["captured"] as? Bool == true {
-        out["localBrowserScreenshot"] = screenshot
-    }
     return out
+}
+
+private func codexBrowserDOMPrimaryTarget(from integration: JSONObject?) -> JSONObject? {
+    if let designTargets = integration?["designTargets"] as? [JSONObject],
+       let first = designTargets.first {
+        return first
+    }
+    if let events = integration?["browserRuntimeEvents"] as? [JSONObject] {
+        for event in events {
+            if let anchor = (event["anchorState"] as? JSONObject)?["anchor"] as? JSONObject {
+                return [
+                    "selector": codexTrimmedString(anchor["selector"]) ?? "",
+                    "role": codexTrimmedString(anchor["role"]) ?? "",
+                    "text": codexTrimmedString(anchor["text"]) ?? ""
+                ]
+            }
+        }
+    }
+    return nil
+}
+
+private func codexBrowserNearbyText(
+    accessibility: JSONObject?,
+    domTitle: String?,
+    targetText: String?
+) -> String {
+    let axText = codexNearbyText(from: accessibility)
+    let domLines = [domTitle, targetText].compactMap { codexTrimmedString($0) }
+    guard !domLines.isEmpty else {
+        return axText
+    }
+    if axText.isEmpty {
+        return domLines.joined(separator: "\n")
+    }
+    return (domLines + [axText]).joined(separator: "\n")
+}
+
+private func codexBrowserTargetPath(domTarget: JSONObject?, pageURL: String, fallback: Any) -> Any {
+    if let elementPath = domTarget?["elementPath"] {
+        return elementPath
+    }
+    if let selector = codexTrimmedString(domTarget?["selector"]) {
+        return ["browser", pageURL, selector]
+    }
+    return fallback
+}
+
+private func codexBrowserDOMMarkerViewportPoint(from integration: JSONObject?) -> JSONObject? {
+    if let events = integration?["browserRuntimeEvents"] as? [JSONObject] {
+        for event in events {
+            if let point = (event["anchorState"] as? JSONObject)?["markerViewportPoint"] as? JSONObject {
+                return point
+            }
+            if let point = event["point"] as? JSONObject {
+                return point
+            }
+        }
+    }
+    if let target = codexBrowserDOMPrimaryTarget(from: integration),
+       let rect = target["rect"] as? JSONObject {
+        return codexBrowserViewportPoint(from: rect)
+    }
+    return nil
+}
+
+private func codexBrowserDOMViewportSize(from integration: JSONObject?) -> JSONObject? {
+    let viewport = integration?["viewportSize"] as? JSONObject
+    guard let width = codexNumber(viewport?["width"]),
+          let height = codexNumber(viewport?["height"]) else {
+        return nil
+    }
+    return [
+        "width": width,
+        "height": height
+    ]
+}
+
+private func codexBrowserLocalDesignChange(from runtimeState: JSONObject?) -> Any {
+    guard let activeDesignChange = runtimeState?["activeDesignChange"] as? JSONObject else {
+        return NSNull()
+    }
+    return ["group": activeDesignChange]
+}
+
+private func codexBrowserLocalScreenshot(screenshot: JSONObject?, runtimeState: JSONObject?) -> Any {
+    guard var screenshotPayload = screenshot else {
+        return NSNull()
+    }
+    if let activeDesignChange = runtimeState?["activeDesignChange"] as? JSONObject,
+       let commentID = codexTrimmedString(activeDesignChange["id"]) {
+        screenshotPayload["commentId"] = commentID
+    }
+    return screenshotPayload
+}
+
+private func codexBrowserPositionPath(pageURL: String, title: String, fallback: String) -> String {
+    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedTitle.isEmpty {
+        return "browser:\(trimmedTitle)"
+    }
+    if let url = URL(string: pageURL),
+       let host = url.host {
+        let path = url.path == "/" ? "" : url.path
+        return "browser:\(host)\(path)"
+    }
+    return "browser:\(fallback)"
 }
 
 private func codexAppShotURL(bundleIdentifier: String, appName: String, windowTitle: String) -> String {
