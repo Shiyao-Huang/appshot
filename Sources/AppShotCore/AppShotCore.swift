@@ -2214,7 +2214,7 @@ private func codexElementLine(_ element: JSONObject) -> String {
 
     let title = codexTrimmedString(element["title"])
     let description = codexTrimmedString(element["description"])
-    let value = codexTrimmedString(element["value"])
+    let value = codexDisplayValueString(element["value"])
     let textContent = codexTrimmedString(element["textContent"])
     let placeholder = codexTrimmedString(element["placeholderValue"])
     let identifier = codexTrimmedString(element["identifier"])
@@ -2245,12 +2245,17 @@ private func codexElementLine(_ element: JSONObject) -> String {
     }
 
     if !["text", "文本"].contains(role),
-       settableAnnotation == nil,
+       !codexSettableAnnotationConsumesValue(element),
        let value,
        value != title,
        value != description,
-       value != textContent {
-        parts.append("Value: \(value)")
+       value != textContent,
+       codexShouldRenderValue(element) {
+        if parts.count > 1, let last = parts.popLast() {
+            parts.append("\(last), Value: \(value)")
+        } else {
+            parts.append("Value: \(value)")
+        }
     }
     if let placeholder,
        settableAnnotation == nil || placeholder != codexSettableValueString(element) {
@@ -2351,8 +2356,9 @@ private func codexShouldRenderIdentifier(_ identifier: String, role: String) -> 
 }
 
 private func codexSettableAnnotation(_ element: JSONObject) -> String? {
-    guard let attributes = element["settableAttributes"] as? [String],
-          attributes.contains("value") else {
+    let isExplicitlySettable = (element["settableAttributes"] as? [String])?.contains("value") == true
+    let isImplicitSettable = codexIsImplicitSettableValueElement(element)
+    guard isExplicitlySettable || isImplicitSettable else {
         return nil
     }
 
@@ -2360,7 +2366,29 @@ private func codexSettableAnnotation(_ element: JSONObject) -> String? {
         return nil
     }
 
+    if isImplicitSettable {
+        return "(settable, integer)"
+    }
+
     return "(settable, \(codexValueTypeName(rawValue))) \(codexScalarString(rawValue))"
+}
+
+private func codexSettableAnnotationConsumesValue(_ element: JSONObject) -> Bool {
+    codexSettableAnnotation(element) != nil && !codexIsImplicitSettableValueElement(element)
+}
+
+private func codexIsImplicitSettableValueElement(_ element: JSONObject) -> Bool {
+    let role = codexRoleName(element)
+    guard ["radio button", "标签", "单选按钮"].contains(role),
+          !codexIsSelected(element),
+          codexSettableRawValue(element) != nil else {
+        return false
+    }
+    return true
+}
+
+private func codexShouldRenderValue(_ element: JSONObject) -> Bool {
+    ["radio button", "标签", "单选按钮"].contains(codexRoleName(element))
 }
 
 private func codexSettableRawValue(_ element: JSONObject) -> Any? {
@@ -2394,10 +2422,30 @@ private func codexValueTypeName(_ value: Any) -> String {
     if value is String {
         return "string"
     }
-    if value is Int || value is Double || value is Float || value is CGFloat || value is NSNumber {
+    if value is Int {
+        return "integer"
+    }
+    if let number = value as? NSNumber {
+        let doubleValue = number.doubleValue
+        return doubleValue.rounded() == doubleValue ? "integer" : "float"
+    }
+    if value is Double || value is Float || value is CGFloat {
         return "float"
     }
     return "value"
+}
+
+private func codexDisplayValueString(_ value: Any?) -> String? {
+    if let string = codexTrimmedString(value) {
+        return string
+    }
+    if let bool = value as? Bool {
+        return bool ? "1" : "0"
+    }
+    if let number = value as? NSNumber {
+        return number.stringValue
+    }
+    return nil
 }
 
 private func codexScalarString(_ value: Any) -> String {
@@ -2422,7 +2470,7 @@ private func codexShouldIncludeElementLine(_ element: JSONObject) -> Bool {
        codexTrimmedString(element["roleDescription"]) == nil,
        codexTrimmedString(element["title"]) == nil,
        codexTrimmedString(element["description"]) == nil,
-       codexTrimmedString(element["value"]) == nil,
+       codexDisplayValueString(element["value"]) == nil,
        codexTrimmedString(element["identifier"]) == nil,
        element["truncatedByTimeout"] as? Bool == true {
         return false
@@ -2463,7 +2511,7 @@ private func codexIsStructuralShell(_ element: JSONObject) -> Bool {
     return structuralShellRoles.contains(role)
         && codexTrimmedString(element["title"]) == nil
         && codexTrimmedString(element["description"]) == nil
-        && codexTrimmedString(element["value"]) == nil
+        && codexDisplayValueString(element["value"]) == nil
         && codexTrimmedString(element["textContent"]) == nil
         && codexTrimmedString(element["identifier"]) == nil
         && !codexIsSelected(element)
@@ -2522,7 +2570,7 @@ private func codexChildIdentity(_ element: JSONObject) -> String {
         codexTrimmedString(element["roleDescription"]) ?? "",
         codexTrimmedString(element["title"]) ?? "",
         codexTrimmedString(element["description"]) ?? "",
-        codexTrimmedString(element["value"]) ?? "",
+        codexDisplayValueString(element["value"]) ?? "",
         codexTrimmedString(element["textContent"]) ?? "",
         codexTrimmedString(element["identifier"]) ?? ""
     ]
@@ -2614,7 +2662,7 @@ private func codexPrimaryDescendantLabel(_ element: JSONObject) -> String? {
             found = "Description: \(description)"
             return
         }
-        if let valueText = codexTrimmedString(value["value"]) ?? codexTrimmedString(value["textContent"]) {
+        if let valueText = codexDisplayValueString(value["value"]) ?? codexTrimmedString(value["textContent"]) {
             found = valueText
             return
         }
@@ -2637,7 +2685,7 @@ private func codexElementDigest(_ element: JSONObject) -> String {
         codexRoleName(element),
         codexTrimmedString(element["title"]) ?? "",
         codexTrimmedString(element["description"]) ?? "",
-        codexTrimmedString(element["value"]) ?? "",
+        codexDisplayValueString(element["value"]) ?? "",
         codexTrimmedString(element["textContent"]) ?? "",
         codexTrimmedString(element["identifier"]) ?? "",
         codexPrimaryDescendantLabel(element) ?? ""
