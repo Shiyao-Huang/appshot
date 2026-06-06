@@ -65,14 +65,28 @@ require_file "$TCC_SCRIPT"
 require_file "$SKILL_FILE"
 
 for event in \
+  browser-sidebar-runtime-clear-comment-screenshot \
+  browser-sidebar-runtime-close-comment-preview \
+  browser-sidebar-runtime-close-editor \
   browser-sidebar-runtime-prepare-comment-screenshot \
   browser-sidebar-runtime-comment-screenshot-ready \
+  browser-sidebar-runtime-create-comment-at-point \
+  browser-sidebar-runtime-design-modifier-state \
+  browser-sidebar-runtime-design-scrub-changed \
+  browser-sidebar-runtime-exit-comment-mode \
+  browser-sidebar-runtime-focus-editor \
+  browser-sidebar-runtime-image-drag-ended \
+  browser-sidebar-runtime-image-drag-started \
+  browser-sidebar-runtime-message \
+  browser-sidebar-runtime-mouse-navigation \
+  browser-sidebar-runtime-open-comment-preview \
   browser-sidebar-runtime-open-editor \
   browser-sidebar-runtime-open-design-editor \
   browser-sidebar-runtime-open-design-editor-at-point \
-  browser-sidebar-runtime-design-scrub-changed \
-  browser-sidebar-runtime-image-drag-started \
-  browser-sidebar-runtime-image-drag-ended
+  browser-sidebar-runtime-restore-editor \
+  browser-sidebar-runtime-select-comment \
+  browser-sidebar-runtime-sync \
+  browser-sidebar-runtime-update-anchor
 do
   require_contains "$EVENTS" "$event"
 done
@@ -113,8 +127,10 @@ for anchor in \
   "localBrowserDesignChange" \
   "codexBrowserPayload" \
   "codexBrowserRuntimeState" \
+  "codexBrowserRuntimeProtocol" \
   "codexBrowserDOMIntegration" \
   "codex-browser-runtime-state-adapter" \
+  "codex-browser-runtime-protocol-adapter" \
   "codex-browser-dom-integration" \
   "codex-browser-comment-payload-adapter" \
   "browser-annotation-screenshots-mode" \
@@ -123,6 +139,9 @@ for anchor in \
   "browser-sidebar-runtime-open-design-editor" \
   "browser-sidebar-runtime-image-drag-started" \
   "browser-sidebar-runtime-image-drag-ended" \
+  "browser-sidebar-runtime-create-comment-at-point" \
+  "browser-sidebar-runtime-update-anchor" \
+  "browser-sidebar-runtime-design-modifier-state" \
   "isOriginalViewEnabled" \
   "isDesignModifierPressed" \
   "activeDesignChange" \
@@ -171,7 +190,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.6"
+expected = "0.1.7"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
@@ -221,7 +240,8 @@ for name, text, needles in [
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
-    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "anchorState", "designEditorState"]),
+    ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
+    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -276,7 +296,7 @@ require_keys(
 require_keys(
     "capture",
     capture,
-    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState"],
+    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
 )
 
 if isinstance(capture.get("primaryWindow"), dict):
@@ -313,7 +333,7 @@ browser_payload = capture.get("codexBrowserPayload", {})
 require_keys(
     "capture codexBrowserPayload",
     browser_payload,
-    ["format", "source", "type", "content", "position", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot"],
+    ["format", "source", "type", "content", "position", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserRuntimeProtocol", "localBrowserScreenshot"],
 )
 if browser_payload.get("format") != "codex-browser-comment-payload-adapter":
     raise SystemExit(f"unexpected codexBrowserPayload format: {browser_payload.get('format')!r}")
@@ -340,6 +360,47 @@ if runtime_state.get("canUseTweaks") is not True:
     raise SystemExit("default runtime state should allow tweaks")
 if runtime_state.get("isDesignModifierPressed") or runtime_state.get("isOriginalViewEnabled") or runtime_state.get("isTweaksEditorOpen"):
     raise SystemExit("default runtime state should keep design/original/tweaks flags off")
+
+runtime_protocol = capture.get("codexBrowserRuntimeProtocol", {})
+require_keys(
+    "capture codexBrowserRuntimeProtocol",
+    runtime_protocol,
+    ["format", "source", "channel", "hostMessageAPI", "syncEventType", "eventTypes", "eventTypeCount", "payloadKeys", "runtimeState", "liveEventStreamAvailable"],
+)
+if runtime_protocol.get("format") != "codex-browser-runtime-protocol-adapter":
+    raise SystemExit(f"unexpected runtime protocol format: {runtime_protocol.get('format')!r}")
+expected_runtime_events = [
+    "browser-sidebar-runtime-clear-comment-screenshot",
+    "browser-sidebar-runtime-close-comment-preview",
+    "browser-sidebar-runtime-close-editor",
+    "browser-sidebar-runtime-comment-screenshot-ready",
+    "browser-sidebar-runtime-create-comment-at-point",
+    "browser-sidebar-runtime-design-modifier-state",
+    "browser-sidebar-runtime-design-scrub-changed",
+    "browser-sidebar-runtime-exit-comment-mode",
+    "browser-sidebar-runtime-focus-editor",
+    "browser-sidebar-runtime-image-drag-ended",
+    "browser-sidebar-runtime-image-drag-started",
+    "browser-sidebar-runtime-message",
+    "browser-sidebar-runtime-mouse-navigation",
+    "browser-sidebar-runtime-open-comment-preview",
+    "browser-sidebar-runtime-open-design-editor",
+    "browser-sidebar-runtime-open-design-editor-at-point",
+    "browser-sidebar-runtime-open-editor",
+    "browser-sidebar-runtime-prepare-comment-screenshot",
+    "browser-sidebar-runtime-restore-editor",
+    "browser-sidebar-runtime-select-comment",
+    "browser-sidebar-runtime-sync",
+    "browser-sidebar-runtime-update-anchor",
+]
+if runtime_protocol.get("eventTypes") != expected_runtime_events:
+    raise SystemExit("runtime protocol eventTypes do not match Codex 522 evidence")
+if runtime_protocol.get("eventTypeCount") != len(expected_runtime_events):
+    raise SystemExit("runtime protocol eventTypeCount is wrong")
+if runtime_protocol.get("liveEventStreamAvailable") is not False:
+    raise SystemExit("runtime protocol should not claim a live preload stream")
+if browser_payload.get("localBrowserRuntimeProtocol", {}).get("eventTypeCount") != len(expected_runtime_events):
+    raise SystemExit("browser payload did not mirror runtime protocol")
 
 settings = capture.get("codexBrowserSettings", {})
 require_keys("capture codexBrowserSettings", settings, ["browser-annotation-screenshots-mode", "annotationScreenshotsMode", "description", "schema"])
@@ -379,29 +440,27 @@ if runtime_metadata.get("runtimeState", {}).get("isOriginalViewEnabled") is not 
 
 dom_integration = dom.get("codexBrowserDOMIntegration", {})
 dom_browser_payload = dom.get("codexBrowserPayload", {})
-require_keys("dom codexBrowserDOMIntegration", dom_integration, ["format", "source", "available", "images", "designTargets", "browserRuntimeEvents", "localBrowserAttachedImages"])
+require_keys("dom codexBrowserDOMIntegration", dom_integration, ["format", "source", "available", "images", "designTargets", "browserRuntimeEvents", "browserRuntimeEventTypes", "browserRuntimeProtocol", "localBrowserAttachedImages"])
 if dom_integration.get("format") != "codex-browser-dom-integration":
     raise SystemExit(f"unexpected browser DOM integration format: {dom_integration.get('format')!r}")
 if dom_integration.get("available") is not True:
     raise SystemExit("browser DOM fixture integration should be available")
 event_types = [event.get("type") for event in dom_integration.get("browserRuntimeEvents", [])]
-for expected_event in [
-    "browser-sidebar-runtime-image-drag-started",
-    "browser-sidebar-runtime-image-drag-ended",
-    "browser-sidebar-runtime-open-design-editor",
-]:
+for expected_event in expected_runtime_events:
     if expected_event not in event_types:
         raise SystemExit(f"browser DOM integration missing event: {expected_event}")
-started = dom_integration["browserRuntimeEvents"][0]
+if sorted(dom_integration.get("browserRuntimeEventTypes", [])) != sorted(set(event_types)):
+    raise SystemExit("browser DOM integration event type summary does not match runtime events")
+started = next(event for event in dom_integration["browserRuntimeEvents"] if event.get("type") == "browser-sidebar-runtime-image-drag-started")
 if started.get("sourceUrl") != "https://example.test/hero.png":
     raise SystemExit("browser DOM image drag event did not preserve sourceUrl")
-design_event = dom_integration["browserRuntimeEvents"][-1]
+design_event = next(event for event in dom_integration["browserRuntimeEvents"] if event.get("type") == "browser-sidebar-runtime-open-design-editor")
 require_keys("dom design event", design_event, ["anchorState", "designEditorState"])
 if design_event["anchorState"].get("anchor", {}).get("selector") != "button.cta":
     raise SystemExit("browser DOM design event did not preserve selector anchor")
 if len(dom_browser_payload.get("localBrowserAttachedImages", [])) != 1:
     raise SystemExit("browser DOM attached images were not mirrored into codexBrowserPayload")
-if len(dom_browser_payload.get("localBrowserRuntimeEvents", [])) != 3:
+if len(dom_browser_payload.get("localBrowserRuntimeEvents", [])) != len(expected_runtime_events):
     raise SystemExit("browser DOM runtime events were not mirrored into codexBrowserPayload")
 
 for name, payload in [("status", status), ("capture", capture)]:
@@ -477,10 +536,14 @@ mcp_dom_integration = mcp_dom.get("codexBrowserDOMIntegration", {})
 mcp_dom_payload = mcp_dom.get("codexBrowserPayload", {})
 if mcp_dom_integration.get("format") != "codex-browser-dom-integration":
     raise SystemExit("MCP DOM fixture did not return codex browser DOM integration")
-if mcp_dom_integration.get("browserRuntimeEvents", [{}])[0].get("sourceUrl") != "https://example.test/mcp.png":
+events = mcp_dom_integration.get("browserRuntimeEvents", [])
+event_by_type = {event.get("type"): event for event in events}
+if event_by_type.get("browser-sidebar-runtime-image-drag-started", {}).get("sourceUrl") != "https://example.test/mcp.png":
     raise SystemExit("MCP DOM fixture did not preserve image sourceUrl")
-if mcp_dom_payload.get("localBrowserRuntimeEvents", [{}])[-1].get("anchorState", {}).get("anchor", {}).get("selector") != "a.primary":
+if event_by_type.get("browser-sidebar-runtime-open-design-editor", {}).get("anchorState", {}).get("anchor", {}).get("selector") != "a.primary":
     raise SystemExit("MCP DOM fixture did not mirror design event into payload")
+if len(mcp_dom_payload.get("localBrowserRuntimeEvents", [])) != 22:
+    raise SystemExit("MCP DOM fixture did not mirror the full Codex runtime candidate event set")
 PY
 
 log "ok"

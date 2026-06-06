@@ -20,6 +20,30 @@ public let browserAnnotationEditorModeValues = [
     browserAnnotationEditorModeComment,
     browserAnnotationEditorModeDesign
 ]
+public let codexBrowserRuntimeEventTypes = [
+    "browser-sidebar-runtime-clear-comment-screenshot",
+    "browser-sidebar-runtime-close-comment-preview",
+    "browser-sidebar-runtime-close-editor",
+    "browser-sidebar-runtime-comment-screenshot-ready",
+    "browser-sidebar-runtime-create-comment-at-point",
+    "browser-sidebar-runtime-design-modifier-state",
+    "browser-sidebar-runtime-design-scrub-changed",
+    "browser-sidebar-runtime-exit-comment-mode",
+    "browser-sidebar-runtime-focus-editor",
+    "browser-sidebar-runtime-image-drag-ended",
+    "browser-sidebar-runtime-image-drag-started",
+    "browser-sidebar-runtime-message",
+    "browser-sidebar-runtime-mouse-navigation",
+    "browser-sidebar-runtime-open-comment-preview",
+    "browser-sidebar-runtime-open-design-editor",
+    "browser-sidebar-runtime-open-design-editor-at-point",
+    "browser-sidebar-runtime-open-editor",
+    "browser-sidebar-runtime-prepare-comment-screenshot",
+    "browser-sidebar-runtime-restore-editor",
+    "browser-sidebar-runtime-select-comment",
+    "browser-sidebar-runtime-sync",
+    "browser-sidebar-runtime-update-anchor"
+]
 
 public struct AppShotCaptureOptions {
     public var screenshotPath: String?
@@ -216,6 +240,7 @@ public enum AppShotCore {
             )
         }
         payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
+        payload["codexBrowserRuntimeProtocol"] = codexBrowserRuntimeProtocolPayload(options: options)
         if options.includeBrowserDOM || options.browserDOMFixture != nil {
             payload["codexBrowserDOMIntegration"] = codexBrowserDOMIntegrationPayload(
                 application: app,
@@ -2446,12 +2471,7 @@ public func codexBrowserRuntimeStatePayload(options: AppShotCaptureOptions) -> J
         "activeDesignChange": options.browserActiveDesignChange.map { $0 as Any } ?? NSNull(),
         "viewportScale": options.browserViewportScale,
         "zoomPercent": options.browserZoomPercent.map { $0 as Any } ?? NSNull(),
-        "evidenceEvents": [
-            "browser-sidebar-runtime-sync",
-            "browser-sidebar-runtime-open-design-editor",
-            "browser-sidebar-runtime-open-design-editor-at-point",
-            "browser-sidebar-runtime-design-scrub-changed"
-        ],
+        "evidenceEvents": codexBrowserRuntimeEventTypes,
         "adapterOnly": true,
         "warning": "Adapter state only; AppShot does not run Codex browser DOM/preload design editor or tweaks IPC."
     ]
@@ -2462,6 +2482,43 @@ public func codexBrowserRuntimeStatePayload(options: AppShotCaptureOptions) -> J
         out["localBrowserDesignChange"] = NSNull()
     }
     return out
+}
+
+public func codexBrowserRuntimeProtocolPayload(options: AppShotCaptureOptions) -> JSONObject {
+    [
+        "format": "codex-browser-runtime-protocol-adapter",
+        "source": "codex-macapp-522-evidence",
+        "adapterSource": "appshot-native-adapter",
+        "channel": "codex_desktop:browser-sidebar-runtime-message",
+        "hostMessageAPI": [
+            "send": "sendMessageToHost",
+            "subscribe": "subscribeToHostMessages"
+        ],
+        "syncEventType": "browser-sidebar-runtime-sync",
+        "eventTypes": codexBrowserRuntimeEventTypes,
+        "eventTypeCount": codexBrowserRuntimeEventTypes.count,
+        "settingsKeys": [
+            browserAnnotationScreenshotsModeSettingKey
+        ],
+        "payloadKeys": [
+            "localBrowserContext",
+            "localBrowserCommentMetadata",
+            "localBrowserAttachedImages",
+            "localBrowserDesignChange",
+            "localBrowserRuntimeProtocol",
+            "localBrowserRuntimeEvents",
+            "localBrowserScreenshot"
+        ],
+        "runtimeState": codexBrowserRuntimeStatePayload(options: options),
+        "liveEventStreamAvailable": false,
+        "adapterOnly": true,
+        "evidence": [
+            "../codex-522/mac-app/artifacts/comment-preload-runtime-events-522.txt",
+            "../codex-522/mac-app/appshots-evidence/522-appshots-snippets.js",
+            "../codex-522/mac-app/appshots-evidence/522-app-session-appshots-snippets.js"
+        ],
+        "warning": "Protocol evidence and AppShot candidate events only; a true Codex live browser preload stream requires an embedded browser/preload or extension helper."
+    ]
 }
 
 public func codexBrowserDOMIntegrationPayload(
@@ -2476,6 +2533,7 @@ public func codexBrowserDOMIntegrationPayload(
             fromDOMSnapshot: fixture,
             appName: appName,
             bundleIdentifier: bundleIdentifier,
+            options: options,
             source: "fixture"
         )
     }
@@ -2557,6 +2615,7 @@ public func codexBrowserDOMIntegrationPayload(
         fromDOMSnapshot: domSnapshot,
         appName: appName,
         bundleIdentifier: bundleIdentifier,
+        options: options,
         source: "browser-apple-events-dom-probe"
     )
 }
@@ -2617,6 +2676,7 @@ private func codexBrowserDOMIntegrationPayload(
     fromDOMSnapshot domSnapshot: JSONObject,
     appName: String,
     bundleIdentifier: String,
+    options: AppShotCaptureOptions,
     source: String
 ) -> JSONObject {
     let pageURL = codexTrimmedString(domSnapshot["pageUrl"])
@@ -2635,54 +2695,15 @@ private func codexBrowserDOMIntegrationPayload(
         ]
     }.filter { !(codexTrimmedString($0["sourceUrl"]) ?? "").isEmpty }
 
-    let imageDragEvents = attachedImages.prefix(12).flatMap { image -> [JSONObject] in
-        let sourceURL = codexTrimmedString(image["sourceUrl"]) ?? ""
-        return [
-            [
-                "type": "browser-sidebar-runtime-image-drag-started",
-                "sourceUrl": sourceURL,
-                "image": image
-            ],
-            [
-                "type": "browser-sidebar-runtime-image-drag-ended",
-                "sourceUrl": sourceURL
-            ]
-        ]
-    }
-
-    let designEvents = designTargets.prefix(12).enumerated().map { index, target -> JSONObject in
-        let selector = codexTrimmedString(target["selector"]) ?? ""
-        let rect = target["rect"] as? JSONObject ?? [:]
-        let role = codexTrimmedString(target["role"]) ?? codexTrimmedString(target["tagName"]) ?? "element"
-        let text = codexTrimmedString(target["text"]) ?? codexTrimmedString(target["label"]) ?? ""
-        let anchorState: JSONObject = [
-            "anchor": [
-                "kind": "element",
-                "selector": selector,
-                "role": role,
-                "text": text
-            ],
-            "framePath": [],
-            "frameUrl": pageURL,
-            "viewportSize": domSnapshot["viewportSize"] as? JSONObject ?? [:],
-            "cardViewportRect": rect
-        ]
-        let designEditorState: JSONObject = [
-            "id": "appshot-design-\(index)",
-            "selector": selector,
-            "role": role,
-            "text": text,
-            "rect": rect,
-            "declarations": []
-        ]
-        return [
-            "type": "browser-sidebar-runtime-open-design-editor",
-            "anchorState": anchorState,
-            "designEditorState": designEditorState
-        ]
-    }
-
-    let runtimeEvents = Array(imageDragEvents) + Array(designEvents)
+    let runtimeEvents = codexBrowserRuntimeEventCandidates(
+        domSnapshot: domSnapshot,
+        pageURL: pageURL,
+        title: title,
+        attachedImages: attachedImages,
+        designTargets: designTargets,
+        options: options
+    )
+    let runtimeEventTypes = runtimeEvents.compactMap { codexTrimmedString($0["type"]) }
     return [
         "format": "codex-browser-dom-integration",
         "source": source,
@@ -2700,7 +2721,184 @@ private func codexBrowserDOMIntegrationPayload(
         "designTargetCount": designTargets.count,
         "browserRuntimeEvents": runtimeEvents,
         "browserRuntimeEventCount": runtimeEvents.count,
+        "browserRuntimeEventTypes": runtimeEventTypes,
+        "browserRuntimeProtocol": codexBrowserRuntimeProtocolPayload(options: options),
         "localBrowserAttachedImages": attachedImages
+    ]
+}
+
+private func codexBrowserRuntimeEventCandidates(
+    domSnapshot: JSONObject,
+    pageURL: String,
+    title: String,
+    attachedImages: [JSONObject],
+    designTargets: [JSONObject],
+    options: AppShotCaptureOptions
+) -> [JSONObject] {
+    let viewportSize = domSnapshot["viewportSize"] as? JSONObject ?? [:]
+    let firstTarget = designTargets.first ?? [
+        "selector": "document",
+        "role": "document",
+        "text": title,
+        "rect": ["x": 0, "y": 0, "width": viewportSize["width"] ?? 0, "height": viewportSize["height"] ?? 0]
+    ]
+    let anchorState = codexBrowserAnchorState(target: firstTarget, pageURL: pageURL, viewportSize: viewportSize)
+    let designEditorState = codexBrowserDesignEditorState(target: firstTarget, index: 0)
+    let point = codexBrowserViewportPoint(from: firstTarget["rect"] as? JSONObject ?? [:])
+    let commentID = "appshot-comment-0"
+    let runtimeState = codexBrowserRuntimeStatePayload(options: options)
+    var events: [JSONObject] = []
+
+    func append(_ type: String, _ fields: JSONObject = [:]) {
+        var event: JSONObject = [
+            "type": type,
+            "candidate": true,
+            "adapterOnly": true
+        ]
+        for (key, value) in fields {
+            event[key] = value
+        }
+        events.append(event)
+    }
+
+    append("browser-sidebar-runtime-sync", [
+        "state": runtimeState
+    ])
+    append("browser-sidebar-runtime-message", [
+        "message": [
+            "type": "browser-sidebar-runtime-sync",
+            "state": runtimeState
+        ]
+    ])
+    append("browser-sidebar-runtime-design-modifier-state", [
+        "isDesignModifierPressed": options.browserIsDesignModifierPressed
+    ])
+    append("browser-sidebar-runtime-prepare-comment-screenshot", [
+        "annotationScreenshotsMode": normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode),
+        "anchorState": anchorState
+    ])
+    append("browser-sidebar-runtime-open-editor", [
+        "anchorState": anchorState,
+        "editorMode": normalizedBrowserAnnotationEditorMode(options.browserAnnotationEditorMode)
+    ])
+    append("browser-sidebar-runtime-create-comment-at-point", [
+        "point": point,
+        "anchorState": anchorState,
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-update-anchor", [
+        "anchorState": anchorState,
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-focus-editor", [
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-open-comment-preview", [
+        "anchorState": anchorState,
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-comment-screenshot-ready", [
+        "commentId": commentID,
+        "screenshot": NSNull()
+    ])
+    append("browser-sidebar-runtime-restore-editor", [
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-select-comment", [
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-close-comment-preview", [
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-close-editor", [
+        "commentId": commentID
+    ])
+    append("browser-sidebar-runtime-exit-comment-mode")
+    append("browser-sidebar-runtime-mouse-navigation", [
+        "point": point,
+        "anchorState": anchorState
+    ])
+    append("browser-sidebar-runtime-open-design-editor", [
+        "anchorState": anchorState,
+        "designEditorState": designEditorState
+    ])
+    append("browser-sidebar-runtime-open-design-editor-at-point", [
+        "point": point,
+        "anchorState": anchorState,
+        "designEditorState": designEditorState
+    ])
+    append("browser-sidebar-runtime-design-scrub-changed", [
+        "anchorState": anchorState,
+        "designEditorState": designEditorState,
+        "designChange": options.browserActiveDesignChange.map { $0 as Any } ?? designEditorState
+    ])
+
+    for image in attachedImages.prefix(12) {
+        let sourceURL = codexTrimmedString(image["sourceUrl"]) ?? ""
+        append("browser-sidebar-runtime-image-drag-started", [
+            "sourceUrl": sourceURL,
+            "image": image
+        ])
+        append("browser-sidebar-runtime-image-drag-ended", [
+            "sourceUrl": sourceURL,
+            "image": image
+        ])
+    }
+
+    append("browser-sidebar-runtime-clear-comment-screenshot", [
+        "commentId": commentID
+    ])
+
+    return events
+}
+
+private func codexBrowserAnchorState(
+    target: JSONObject,
+    pageURL: String,
+    viewportSize: JSONObject
+) -> JSONObject {
+    let selector = codexTrimmedString(target["selector"]) ?? ""
+    let rect = target["rect"] as? JSONObject ?? [:]
+    let role = codexTrimmedString(target["role"]) ?? codexTrimmedString(target["tagName"]) ?? "element"
+    let text = codexTrimmedString(target["text"]) ?? codexTrimmedString(target["label"]) ?? ""
+    return [
+        "anchor": [
+            "kind": "element",
+            "selector": selector,
+            "role": role,
+            "text": text
+        ],
+        "framePath": [],
+        "frameUrl": pageURL,
+        "viewportSize": viewportSize,
+        "cardViewportRect": rect,
+        "markerViewportPoint": codexBrowserViewportPoint(from: rect)
+    ]
+}
+
+private func codexBrowserDesignEditorState(target: JSONObject, index: Int) -> JSONObject {
+    let selector = codexTrimmedString(target["selector"]) ?? ""
+    let rect = target["rect"] as? JSONObject ?? [:]
+    let role = codexTrimmedString(target["role"]) ?? codexTrimmedString(target["tagName"]) ?? "element"
+    let text = codexTrimmedString(target["text"]) ?? codexTrimmedString(target["label"]) ?? ""
+    return [
+        "id": "appshot-design-\(index)",
+        "selector": selector,
+        "role": role,
+        "text": text,
+        "rect": rect,
+        "declarations": []
+    ]
+}
+
+private func codexBrowserViewportPoint(from rect: JSONObject) -> JSONObject {
+    let x = codexNumber(rect["x"]) ?? 0
+    let y = codexNumber(rect["y"]) ?? 0
+    let width = codexNumber(rect["width"]) ?? 0
+    let height = codexNumber(rect["height"]) ?? 0
+    return [
+        "x": x + (width / 2),
+        "y": y + (height / 2)
     ]
 }
 
@@ -2902,6 +3100,7 @@ public func codexBrowserPayload(
     let root = accessibility?["root"] as? JSONObject
     let screenshot = payload["screenshot"] as? JSONObject
     let runtimeState = payload["codexBrowserRuntimeState"] as? JSONObject
+    let runtimeProtocol = payload["codexBrowserRuntimeProtocol"] as? JSONObject
     let browserDOMIntegration = payload["codexBrowserDOMIntegration"] as? JSONObject
 
     let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
@@ -2977,6 +3176,7 @@ public func codexBrowserPayload(
         "localBrowserAttachedImages": localBrowserAttachedImages,
         "localBrowserDesignChange": localBrowserDesignChange,
         "localBrowserRuntimeState": runtimeState.map { $0 as Any } ?? NSNull(),
+        "localBrowserRuntimeProtocol": runtimeProtocol.map { $0 as Any } ?? NSNull(),
         "localBrowserRuntimeEvents": localBrowserRuntimeEvents,
         "localBrowserScreenshot": screenshotPayload
     ]

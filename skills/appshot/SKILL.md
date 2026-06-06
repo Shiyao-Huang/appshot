@@ -66,7 +66,8 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
 11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
     When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`.
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
-    For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including image-drag `sourceUrl` events and design-editor `anchorState` / `designEditorState` candidates.
+    For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
+    For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
 12. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 13. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
 14. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
@@ -115,8 +116,13 @@ The CLI returns JSON with:
 - `codexBrowserRuntimeState.isDesignModifierPressed`
 - `codexBrowserRuntimeState.isTweaksEditorOpen`
 - `codexBrowserRuntimeState.activeDesignChange`
+- `codexBrowserRuntimeProtocol`
+- `codexBrowserRuntimeProtocol.eventTypes`
+- `codexBrowserRuntimeProtocol.channel`
+- `codexBrowserRuntimeProtocol.liveEventStreamAvailable`
 - `codexBrowserDOMIntegration`
 - `codexBrowserDOMIntegration.browserRuntimeEvents`
+- `codexBrowserDOMIntegration.browserRuntimeEventTypes`
 - `codexBrowserDOMIntegration.localBrowserAttachedImages`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
@@ -124,6 +130,7 @@ The CLI returns JSON with:
 - `codexBrowserPayload.localBrowserAttachedImages`
 - `codexBrowserPayload.localBrowserDesignChange`
 - `codexBrowserPayload.localBrowserRuntimeState`
+- `codexBrowserPayload.localBrowserRuntimeProtocol`
 - `codexBrowserPayload.localBrowserRuntimeEvents`
 - `codexBrowserPayload.localBrowserScreenshot`
 - `accessibility.root`
