@@ -6,9 +6,18 @@ import Vision
 
 public typealias JSONObject = [String: Any]
 
+public let browserAnnotationScreenshotsModeSettingKey = "browser-annotation-screenshots-mode"
+public let browserAnnotationScreenshotsModeAlways = "always"
+public let browserAnnotationScreenshotsModeNecessary = "necessary"
+public let browserAnnotationScreenshotsModeValues = [
+    browserAnnotationScreenshotsModeAlways,
+    browserAnnotationScreenshotsModeNecessary
+]
+
 public struct AppShotCaptureOptions {
     public var screenshotPath: String?
     public var includeScreenshot: Bool
+    public var browserAnnotationScreenshotsMode: String
     public var maxDepth: Int
     public var maxChildren: Int
     public var includeOCR: Bool
@@ -26,6 +35,7 @@ public struct AppShotCaptureOptions {
     public init(
         screenshotPath: String? = nil,
         includeScreenshot: Bool = false,
+        browserAnnotationScreenshotsMode: String = browserAnnotationScreenshotsModeNecessary,
         maxDepth: Int = 60,
         maxChildren: Int = 240,
         includeOCR: Bool = false,
@@ -42,6 +52,7 @@ public struct AppShotCaptureOptions {
     ) {
         self.screenshotPath = screenshotPath
         self.includeScreenshot = includeScreenshot
+        self.browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(browserAnnotationScreenshotsMode)
         self.maxDepth = maxDepth
         self.maxChildren = maxChildren
         self.includeOCR = includeOCR
@@ -108,8 +119,10 @@ public enum AppShotCore {
         let windows = target.windows
         let primaryWindow = target.window ?? windows.first
         let windowID = primaryWindow?["windowID"] as? UInt32
+        let browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode)
+        let includeBrowserAnnotationScreenshot = browserAnnotationScreenshotsMode == browserAnnotationScreenshotsModeAlways
         let screenshot = try maybeCaptureScreenshot(
-            include: options.includeScreenshot || options.screenshotPath != nil || options.includeOCR,
+            include: options.includeScreenshot || includeBrowserAnnotationScreenshot || options.screenshotPath != nil || options.includeOCR,
             requestedPath: options.screenshotPath,
             windowID: windowID,
             timeoutSeconds: options.screenshotTimeoutSeconds
@@ -122,6 +135,7 @@ public enum AppShotCore {
             "frontmostApplication": appInfo(frontmostApp ?? app),
             "currentApplication": appInfo(app),
             "targetApplication": appInfo(app),
+            "codexBrowserSettings": codexBrowserSettingsPayload(annotationScreenshotsMode: browserAnnotationScreenshotsMode),
             "windows": windows,
             "accessibility": accessibilitySnapshot(
                 pid: pid,
@@ -155,7 +169,7 @@ public enum AppShotCore {
                 maxObservations: options.maxOCRObservations
             )
         }
-        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload)
+        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: browserAnnotationScreenshotsMode)
         if options.writeCache {
             payload = try payloadByWritingCaptureCache(
                 payload,
@@ -382,13 +396,21 @@ public enum AppShotCore {
             metadata["writtenAt"] = ISO8601DateFormatter().string(from: writtenAt)
         }
         payload["captureCache"] = metadata
-        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload)
+        let mode = codexBrowserAnnotationScreenshotsMode(from: payload)
+        payload["codexBrowserSettings"] = codexBrowserSettingsPayload(annotationScreenshotsMode: mode)
+        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: mode)
         payload["codex"] = codexSummaryPayload(from: payload)
         return payload
     }
 
     private static func captureCacheSatisfies(options: AppShotCaptureOptions, payload: JSONObject) -> Bool {
-        if options.includeScreenshot {
+        let requestedMode = normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode)
+        let payloadMode = codexBrowserAnnotationScreenshotsMode(from: payload)
+        guard payloadMode == requestedMode else {
+            return false
+        }
+
+        if options.includeScreenshot || requestedMode == browserAnnotationScreenshotsModeAlways {
             guard let screenshot = payload["screenshot"] as? JSONObject,
                   screenshot["captured"] as? Bool == true,
                   let path = screenshot["path"] as? String,
@@ -424,7 +446,9 @@ public enum AppShotCore {
             reason: "written",
             servedAt: nil
         )
-        cachedPayload["codexBrowserPayload"] = codexBrowserPayload(from: cachedPayload)
+        let mode = codexBrowserAnnotationScreenshotsMode(from: cachedPayload)
+        cachedPayload["codexBrowserSettings"] = codexBrowserSettingsPayload(annotationScreenshotsMode: mode)
+        cachedPayload["codexBrowserPayload"] = codexBrowserPayload(from: cachedPayload, annotationScreenshotsMode: mode)
         cachedPayload["codex"] = codexSummaryPayload(from: cachedPayload)
 
         do {
@@ -2293,6 +2317,43 @@ public func ocrSnapshot(
     ]
 }
 
+public func normalizedBrowserAnnotationScreenshotsMode(_ mode: String?) -> String {
+    let candidate = mode?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return browserAnnotationScreenshotsModeValues.contains(candidate)
+        ? candidate
+        : browserAnnotationScreenshotsModeNecessary
+}
+
+public func isValidBrowserAnnotationScreenshotsMode(_ mode: String) -> Bool {
+    browserAnnotationScreenshotsModeValues.contains(mode)
+}
+
+public func codexBrowserSettingsPayload(annotationScreenshotsMode: String) -> JSONObject {
+    [
+        browserAnnotationScreenshotsModeSettingKey: normalizedBrowserAnnotationScreenshotsMode(annotationScreenshotsMode),
+        "annotationScreenshotsMode": normalizedBrowserAnnotationScreenshotsMode(annotationScreenshotsMode),
+        "description": "When browser annotation screenshots are included",
+        "schema": browserAnnotationScreenshotsModeValues
+    ]
+}
+
+public func codexBrowserAnnotationScreenshotsMode(from payload: JSONObject) -> String {
+    if let settings = payload["codexBrowserSettings"] as? JSONObject {
+        if let mode = codexTrimmedString(settings[browserAnnotationScreenshotsModeSettingKey]) {
+            return normalizedBrowserAnnotationScreenshotsMode(mode)
+        }
+        if let mode = codexTrimmedString(settings["annotationScreenshotsMode"]) {
+            return normalizedBrowserAnnotationScreenshotsMode(mode)
+        }
+    }
+    if let browserPayload = payload["codexBrowserPayload"] as? JSONObject,
+       let metadata = browserPayload["localBrowserCommentMetadata"] as? JSONObject,
+       let mode = codexTrimmedString(metadata["annotationScreenshotsMode"]) {
+        return normalizedBrowserAnnotationScreenshotsMode(mode)
+    }
+    return browserAnnotationScreenshotsModeNecessary
+}
+
 public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 420) -> JSONObject {
     let text = codexSummaryText(from: payload, maxTreeLines: maxTreeLines)
     let accessibility = payload["accessibility"] as? JSONObject
@@ -2314,7 +2375,10 @@ public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 42
     ]
 }
 
-public func codexBrowserPayload(from payload: JSONObject) -> JSONObject {
+public func codexBrowserPayload(
+    from payload: JSONObject,
+    annotationScreenshotsMode: String = browserAnnotationScreenshotsModeNecessary
+) -> JSONObject {
     let app = payload["targetApplication"] as? JSONObject
         ?? payload["currentApplication"] as? JSONObject
         ?? payload["frontmostApplication"] as? JSONObject
@@ -2354,7 +2418,7 @@ public func codexBrowserPayload(from payload: JSONObject) -> JSONObject {
         "bundleIdentifier": bundleIdentifier,
         "applicationName": appName,
         "windowTitle": windowTitle,
-        "annotationScreenshotsMode": "necessary"
+        "annotationScreenshotsMode": normalizedBrowserAnnotationScreenshotsMode(annotationScreenshotsMode)
     ]
     if let viewportSize = codexViewportSize(from: window) {
         localBrowserCommentMetadata["viewportSize"] = viewportSize

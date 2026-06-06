@@ -59,6 +59,7 @@ final class AppShotAppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class AppShotModel: ObservableObject {
     private static let globalShortcutEnabledKey = "AppShot.globalShortcut.enabled"
+    private static let browserAnnotationScreenshotsModeKey = "AppShot.browserAnnotationScreenshotsMode"
     private let optionShortcutMonitor = OptionPairShortcutMonitor()
 
     @Published var state: String = "checking"
@@ -85,6 +86,19 @@ final class AppShotModel: ObservableObject {
             }
             UserDefaults.standard.set(isGlobalShortcutEnabled, forKey: Self.globalShortcutEnabledKey)
             configureGlobalShortcut()
+        }
+    }
+    @Published var browserAnnotationScreenshotsMode: String = AppShotModel.defaultBrowserAnnotationScreenshotsMode() {
+        didSet {
+            let normalized = normalizedBrowserAnnotationScreenshotsMode(browserAnnotationScreenshotsMode)
+            if browserAnnotationScreenshotsMode != normalized {
+                browserAnnotationScreenshotsMode = normalized
+                return
+            }
+            guard browserAnnotationScreenshotsMode != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(browserAnnotationScreenshotsMode, forKey: Self.browserAnnotationScreenshotsModeKey)
         }
     }
     @Published var isAutoRefreshEnabled = false
@@ -206,6 +220,10 @@ final class AppShotModel: ObservableObject {
         isGlobalShortcutEnabled = enabled
     }
 
+    func setBrowserAnnotationScreenshotsMode(_ mode: String) {
+        browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(mode)
+    }
+
     func clearFrontAppTrail() {
         frontAppTrail.removeAll()
     }
@@ -223,6 +241,10 @@ final class AppShotModel: ObservableObject {
             return true
         }
         return UserDefaults.standard.bool(forKey: globalShortcutEnabledKey)
+    }
+
+    private static func defaultBrowserAnnotationScreenshotsMode() -> String {
+        normalizedBrowserAnnotationScreenshotsMode(UserDefaults.standard.string(forKey: browserAnnotationScreenshotsModeKey))
     }
 
     private func configureGlobalShortcut() {
@@ -288,6 +310,7 @@ final class AppShotModel: ObservableObject {
         }
         captureRequestSerial += 1
         let requestID = captureRequestSerial
+        let browserAnnotationScreenshotsMode = self.browserAnnotationScreenshotsMode
         isCapturing = true
         lastError = nil
 
@@ -296,6 +319,7 @@ final class AppShotModel: ObservableObject {
             do {
                 let payload = try AppShotCore.capture(options: AppShotCaptureOptions(
                     includeScreenshot: includeScreenshot,
+                    browserAnnotationScreenshotsMode: browserAnnotationScreenshotsMode,
                     maxDepth: 60,
                     maxChildren: 240,
                     includeOCR: includeOCR,
@@ -680,6 +704,10 @@ struct AppShotDashboardView: View {
                 StatusTile(title: "Shortcut", value: model.isGlobalShortcutEnabled ? model.globalShortcutLabel : "Off", symbol: "keyboard", good: model.isGlobalShortcutEnabled)
                 StatusTile(title: "Shortcut Cache", value: model.captureCacheSummary, symbol: "tray.and.arrow.down", good: model.captureCacheSummary != "Empty")
             }
+            GridRow {
+                StatusTile(title: "Browser Screenshots", value: model.browserAnnotationScreenshotsMode, symbol: "rectangle.on.rectangle.angled", good: true)
+                Color.clear.frame(height: 0)
+            }
         }
     }
 
@@ -872,6 +900,15 @@ struct AppShotSettingsView: View {
             Text("Press both Option keys together to capture into the shared CLI and MCP cache.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            Picker("Browser Screenshots", selection: Binding(
+                get: { model.browserAnnotationScreenshotsMode },
+                set: { model.setBrowserAnnotationScreenshotsMode($0) }
+            )) {
+                Text("Necessary").tag(browserAnnotationScreenshotsModeNecessary)
+                Text("Always").tag(browserAnnotationScreenshotsModeAlways)
+            }
+            .pickerStyle(.segmented)
 
             Divider()
 

@@ -54,6 +54,10 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 60 --accessibility-timeout 20
    ```
+   When a Codex/Claude consumer should receive browser-comment-shaped screenshot metadata by default, use Codex's browser annotation screenshot policy:
+   ```sh
+   "$APPSHOT_BIN" capture --pretty --browser-annotation-screenshots-mode always --max-depth 60 --accessibility-timeout 20
+   ```
 9. For complex apps such as Xcode, raise the Accessibility timeout instead of treating a slow AX tree as missing data:
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 60 --accessibility-timeout 30
@@ -100,6 +104,8 @@ The CLI returns JSON with:
 - `currentWindow`
 - `windows`
 - `captureCache`
+- `codexBrowserSettings`
+- `codexBrowserSettings.browser-annotation-screenshots-mode`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
 - `codexBrowserPayload.localBrowserCommentMetadata`

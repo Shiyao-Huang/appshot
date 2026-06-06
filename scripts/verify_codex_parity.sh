@@ -113,6 +113,8 @@ for anchor in \
   "localBrowserDesignChange" \
   "codexBrowserPayload" \
   "codex-browser-comment-payload-adapter" \
+  "browser-annotation-screenshots-mode" \
+  "Browser annotation screenshot policy" \
   "browser-sidebar-runtime-open-design-editor" \
   "browser-sidebar-runtime-image-drag-started" \
   "scripts/qa_app_capture.py" \
@@ -201,14 +203,14 @@ for name, text, pattern in [
         raise SystemExit(f"{name} is not aligned to {expected}")
 
 for name, text, needles in [
-    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache"]),
+    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
-    ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot"]),
+    ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -224,22 +226,25 @@ PY
 
 STATUS_JSON="$(mktemp)"
 CAPTURE_JSON="$(mktemp)"
+POLICY_JSON="$(mktemp)"
 CODEX_TXT="$(mktemp)"
 MCP_JSONL="$(mktemp)"
-trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
 
 log "checking CLI status/capture schema"
 "$APP_BIN" status --pretty >"$STATUS_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON"
+"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --pretty >"$POLICY_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT"
 
-"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
 status = json.load(open(sys.argv[1]))
 capture = json.load(open(sys.argv[2]))
-codex_text = open(sys.argv[3]).read()
+policy = json.load(open(sys.argv[3]))
+codex_text = open(sys.argv[4]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -254,7 +259,7 @@ require_keys(
 require_keys(
     "capture",
     capture,
-    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserPayload"],
+    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload"],
 )
 
 if isinstance(capture.get("primaryWindow"), dict):
@@ -298,6 +303,23 @@ require_keys("capture localBrowserCommentMetadata", metadata, ["kind", "annotati
 if metadata.get("kind") != "appshot-native":
     raise SystemExit(f"unexpected browser metadata kind: {metadata.get('kind')!r}")
 
+settings = capture.get("codexBrowserSettings", {})
+require_keys("capture codexBrowserSettings", settings, ["browser-annotation-screenshots-mode", "annotationScreenshotsMode", "description", "schema"])
+if settings.get("browser-annotation-screenshots-mode") != "necessary":
+    raise SystemExit(f"unexpected default browser annotation screenshots mode: {settings.get('browser-annotation-screenshots-mode')!r}")
+
+policy_settings = policy.get("codexBrowserSettings", {})
+policy_browser_payload = policy.get("codexBrowserPayload", {})
+policy_metadata = policy_browser_payload.get("localBrowserCommentMetadata", {})
+require_keys("policy codexBrowserSettings", policy_settings, ["browser-annotation-screenshots-mode", "schema"])
+require_keys("policy codexBrowserPayload", policy_browser_payload, ["localBrowserScreenshot", "localBrowserCommentMetadata"])
+if policy_settings.get("browser-annotation-screenshots-mode") != "always":
+    raise SystemExit(f"policy capture did not preserve always mode: {policy_settings.get('browser-annotation-screenshots-mode')!r}")
+if policy_metadata.get("annotationScreenshotsMode") != "always":
+    raise SystemExit(f"policy metadata did not preserve always mode: {policy_metadata.get('annotationScreenshotsMode')!r}")
+if "screenshot" not in policy:
+    raise SystemExit("policy capture did not attempt a screenshot for always mode")
+
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})
     require_keys(f"{name} permissions", permissions, ["accessibility", "screenRecording", "identity", "stability"])
@@ -313,6 +335,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always"}}}' \
   | APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL"
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -320,8 +343,8 @@ import json
 import sys
 
 lines = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-if [line.get("id") for line in lines] != [1, 2, 3, 4]:
-    raise SystemExit("MCP response ids are not [1, 2, 3, 4]")
+if [line.get("id") for line in lines] != [1, 2, 3, 4, 5]:
+    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5]")
 
 tools = {tool["name"] for tool in lines[1]["result"]["tools"]}
 expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows"}
@@ -341,6 +364,17 @@ for key in ["identity", "stability"]:
 codex_text = lines[3]["result"]["content"][0]["text"]
 if not codex_text.startswith("<appshot ") or "Window:" not in codex_text or "</appshot>" not in codex_text:
     raise SystemExit("MCP codex capture did not return a complete appshot block")
+
+mcp_policy = json.loads(lines[4]["result"]["content"][0]["text"])
+mcp_policy_settings = mcp_policy.get("codexBrowserSettings", {})
+mcp_policy_payload = mcp_policy.get("codexBrowserPayload", {})
+mcp_policy_metadata = mcp_policy_payload.get("localBrowserCommentMetadata", {})
+if mcp_policy_settings.get("browser-annotation-screenshots-mode") != "always":
+    raise SystemExit("MCP policy capture did not preserve always mode")
+if mcp_policy_metadata.get("annotationScreenshotsMode") != "always":
+    raise SystemExit("MCP policy metadata did not preserve always mode")
+if "screenshot" not in mcp_policy:
+    raise SystemExit("MCP policy capture did not attempt screenshot for always mode")
 PY
 
 log "ok"

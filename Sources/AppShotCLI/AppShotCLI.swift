@@ -6,6 +6,7 @@ struct CLIOptions {
     var outputPath: String?
     var screenshotPath: String?
     var includeScreenshot = false
+    var browserAnnotationScreenshotsMode = browserAnnotationScreenshotsModeNecessary
     var includeOCR = false
     var pretty = false
     var format = "json"
@@ -41,6 +42,7 @@ struct AppShotCLI {
                 payload = try AppShotCore.capture(options: AppShotCaptureOptions(
                     screenshotPath: options.screenshotPath,
                     includeScreenshot: options.includeScreenshot,
+                    browserAnnotationScreenshotsMode: options.browserAnnotationScreenshotsMode,
                     maxDepth: options.maxDepth,
                     maxChildren: options.maxChildren,
                     includeOCR: options.includeOCR,
@@ -101,6 +103,12 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.screenshotPath = try nextValue()
         case "--include-screenshot":
             options.includeScreenshot = true
+        case "--browser-annotation-screenshots-mode":
+            let rawMode = try nextValue().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard isValidBrowserAnnotationScreenshotsMode(rawMode) else {
+                throw AppShotError.usage("Unknown browser annotation screenshots mode: \(rawMode)")
+            }
+            options.browserAnnotationScreenshotsMode = rawMode
         case "--include-ocr":
             options.includeOCR = true
         case "--pretty":
@@ -178,7 +186,7 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -189,6 +197,7 @@ func printHelp() {
       Use list-windows first. Then pass the chosen windowID, pid, or bundleID to capture.
       Accessibility permission is required for rich text/UI trees.
       Screen Recording permission is required for screenshots.
+      --browser-annotation-screenshots-mode always captures a screenshot for codexBrowserPayload by default.
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
       --format codex prints a compact AppShot block similar to Codex built-in appshots.

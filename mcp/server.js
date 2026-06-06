@@ -83,6 +83,7 @@ function tools() {
         type: "object",
         properties: {
           includeScreenshot: { type: "boolean", default: false },
+          browserAnnotationScreenshotsMode: { type: "string", enum: ["always", "necessary"], default: "necessary" },
           includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
           windowID: { type: "number" },
@@ -138,6 +139,7 @@ function callTool(params = {}) {
   if (name === "appshot_capture") {
     cliArgs.push("capture", "--pretty");
     if (args.includeScreenshot) cliArgs.push("--include-screenshot");
+    if (args.browserAnnotationScreenshotsMode) cliArgs.push("--browser-annotation-screenshots-mode", String(args.browserAnnotationScreenshotsMode));
     if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
