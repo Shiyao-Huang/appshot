@@ -63,7 +63,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    "$APPSHOT_BIN" capture --pretty --max-depth 60 --accessibility-timeout 30
    ```
 10. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`.
-11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
+11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, `accessibility.electronAccessibility`, and `accessibility.documentReferences[].textPreview`.
     When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`. For browser DOM captures, inspect exact Codex-shaped values such as `localBrowserContext.pageUrl`, `frameUrl`, `targetSelector`, `targetImmediateText`, `targetPath`, `localBrowserCommentMetadata.markerViewportPoint`, and `localBrowserDesignChange.group`.
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
@@ -147,6 +147,8 @@ The CLI returns JSON with:
 - `codexBrowserPayload.localBrowserScreenshot`
 - `accessibility.root`
 - `accessibility.focusedElement`
+- `accessibility.electronAccessibility`
+- `accessibility.electronAccessibility.attempts`
 - `accessibility.text`
 - `accessibility.documentReferences`
 - `codex.format`

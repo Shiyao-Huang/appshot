@@ -194,6 +194,7 @@ release = (root / "scripts/build_release.sh").read_text()
 app = (root / "Sources/AppShotApp/AppShotApp.swift").read_text()
 cli = (root / "Sources/AppShotCLI/AppShotCLI.swift").read_text()
 core = (root / "Sources/AppShotCore/AppShotCore.swift").read_text()
+parity = (root / "docs/codex-parity.md").read_text()
 qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
@@ -250,6 +251,7 @@ for name, text, needles in [
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
     ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
+    ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -316,11 +318,23 @@ if isinstance(capture.get("primaryWindow"), dict):
     require_keys("capture", capture, ["frontmostWindow", "currentWindow"])
 
 accessibility = capture.get("accessibility", {})
-require_keys("capture accessibility", accessibility, ["trusted", "rootSource", "root", "text", "textLineCount", "visibleText", "visibleTextLineCount"])
+require_keys("capture accessibility", accessibility, ["trusted", "rootSource", "root", "text", "textLineCount", "visibleText", "visibleTextLineCount", "electronAccessibility"])
 if accessibility.get("rootSource") not in {"targetWindow", "focusedWindow", "application"}:
     raise SystemExit(f"unexpected accessibility.rootSource: {accessibility.get('rootSource')!r}")
 if accessibility.get("trusted") and accessibility.get("visibleTextLineCount", 0) <= 0:
     raise SystemExit("trusted accessibility capture has no visibleText lines")
+electron_accessibility = accessibility.get("electronAccessibility", {})
+require_keys("capture electronAccessibility", electron_accessibility, ["requested", "enabled", "attempts", "enhancedUserInterface"])
+attempts = electron_accessibility.get("attempts", [])
+if not isinstance(attempts, list) or len(attempts) < 2:
+    raise SystemExit("electronAccessibility did not record both AX unlock attempts")
+attempt_attributes = {attempt.get("attribute") for attempt in attempts if isinstance(attempt, dict)}
+if {"AXManualAccessibility", "AXEnhancedUserInterface"} - attempt_attributes:
+    raise SystemExit("electronAccessibility missing manual/enhanced AX attempts")
+for attempt in attempts:
+    if not isinstance(attempt, dict):
+        raise SystemExit("electronAccessibility attempt was not an object")
+    require_keys("electronAccessibility attempt", attempt, ["attribute", "requested", "result", "enabled"])
 
 codex = capture.get("codex", {})
 require_keys("capture codex", codex, ["format", "text", "treeLineCount", "selectedLineCount", "hasFocusedElement", "hasBrowserPayload", "browserPayloadFormat"])
