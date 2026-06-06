@@ -2112,7 +2112,7 @@ private func codexElementLine(_ element: JSONObject) -> String {
 
     if let title {
         parts.append(title)
-    } else if role == "text",
+    } else if ["text", "文本"].contains(role),
               let text = value ?? textContent ?? description {
         parts.append(text)
     } else if let description {
@@ -2123,7 +2123,7 @@ private func codexElementLine(_ element: JSONObject) -> String {
         parts.append(descendantLabel)
     }
 
-    if role != "text",
+    if !["text", "文本"].contains(role),
        settableAnnotation == nil,
        let value,
        value != title,
@@ -2157,13 +2157,18 @@ private func codexElementLine(_ element: JSONObject) -> String {
 
 private func codexDescriptionLabel(_ description: String, role: String) -> String {
     let rawDescriptionRoles = Set([
+        "cell",
         "list",
         "outline",
+        "outline row",
+        "row",
         "scroll area",
         "split group",
         "toolbar",
+        "单元格",
         "列表",
         "大纲",
+        "外框行",
         "滚动区",
         "分离组",
         "工具栏"
@@ -2277,7 +2282,7 @@ private func codexShouldIncludeElementLine(_ element: JSONObject) -> Bool {
     }
 
     let role = codexRoleName(element)
-    if ["element", "组", "group", "cell"].contains(role),
+    if ["element", "container", "组", "group", "cell", "application", "应用"].contains(role),
         codexTrimmedString(element["title"]) == nil,
        codexTrimmedString(element["description"]) == nil,
        codexTrimmedString(element["value"]) == nil,
@@ -2469,13 +2474,21 @@ private func codexRoleName(_ element: JSONObject) -> String {
             return "row"
         case "AXCell":
             return "cell"
+        case "AXGroup":
+            return "container"
         case "AXStaticText":
+            if let roleDescription = codexTrimmedString(element["roleDescription"]) {
+                return roleDescription
+            }
             return "text"
         default:
             break
         }
     }
     if let roleDescription = codexTrimmedString(element["roleDescription"]) {
+        if ["group", "组"].contains(roleDescription) {
+            return "container"
+        }
         if ["outline row", "外框行"].contains(roleDescription) {
             return "row"
         }
