@@ -73,6 +73,7 @@ final class AppShotModel: ObservableObject {
     @Published var blockers: [String] = []
     @Published var advisories: [String] = []
     @Published var lastCaptureSummary = "No capture yet"
+    @Published var captureCacheSummary = "Empty"
     @Published var lastJSON = "{}"
     @Published var lastError: String?
     @Published var isCapturing = false
@@ -236,7 +237,13 @@ final class AppShotModel: ObservableObject {
         guard isGlobalShortcutEnabled, !isCapturing else {
             return
         }
-        capture(includeScreenshot: true)
+        capture(
+            includeScreenshot: true,
+            includeOCR: false,
+            preferRecentCache: false,
+            writeCache: true,
+            cacheTrigger: "left-right-option"
+        )
     }
 
     private func startAutoRefreshTimer() {
@@ -269,7 +276,13 @@ final class AppShotModel: ObservableObject {
         }
     }
 
-    func capture(includeScreenshot: Bool = true, includeOCR: Bool = false) {
+    func capture(
+        includeScreenshot: Bool = true,
+        includeOCR: Bool = false,
+        preferRecentCache: Bool = false,
+        writeCache: Bool = false,
+        cacheTrigger: String? = nil
+    ) {
         guard !isCapturing else {
             return
         }
@@ -287,7 +300,11 @@ final class AppShotModel: ObservableObject {
                     maxChildren: 240,
                     includeOCR: includeOCR,
                     accessibilityTimeoutSeconds: 20.0,
-                    screenshotTimeoutSeconds: 3.0
+                    screenshotTimeoutSeconds: 3.0,
+                    preferRecentCache: preferRecentCache,
+                    writeCache: writeCache,
+                    cacheMaxAgeSeconds: 15.0,
+                    cacheTrigger: cacheTrigger
                 ))
                 result = .success(try AppShotCore.jsonString(payload, pretty: true))
             } catch {
@@ -327,6 +344,7 @@ final class AppShotModel: ObservableObject {
         assignIfChanged(&blockers, payload["blockers"] as? [String] ?? [])
         assignIfChanged(&advisories, payload["advisories"] as? [String] ?? [])
         assignIfChanged(&windowCount, payload["windowCount"] as? Int ?? 0)
+        assignIfChanged(&captureCacheSummary, Self.captureCacheSummary(from: payload["captureCache"] as? JSONObject))
 
         if let permissions = payload["permissions"] as? JSONObject {
             assignIfChanged(&accessibility, permissions["accessibility"] as? Bool ?? false)
@@ -389,6 +407,7 @@ final class AppShotModel: ObservableObject {
         }
         let windows = payload["windows"] as? [JSONObject] ?? []
         windowCount = windows.count
+        captureCacheSummary = Self.captureCacheSummary(from: payload["captureCache"] as? JSONObject)
         if let window = payload["primaryWindow"] as? JSONObject {
             let title = window["title"] as? String ?? ""
             primaryWindowTitle = title.isEmpty ? "(untitled window)" : title
@@ -404,6 +423,9 @@ final class AppShotModel: ObservableObject {
             lastCaptureSummary = captured ? "Captured screenshot: \(path)\(axSuffix)" : "Capture ran but screenshot failed"
         } else {
             lastCaptureSummary = "Captured app context without screenshot"
+        }
+        if captureCacheSummary != "Empty" {
+            lastCaptureSummary += " | Cache: \(captureCacheSummary)"
         }
         blockers = []
         state = accessibility && screenRecording ? "ready" : "needsAttention"
@@ -458,6 +480,42 @@ final class AppShotModel: ObservableObject {
             return []
         }
         return [warning]
+    }
+
+    private static func captureCacheSummary(from cache: JSONObject?) -> String {
+        guard let cache else {
+            return "Empty"
+        }
+        if cache["available"] as? Bool == false {
+            return "Empty"
+        }
+
+        let age = (cache["ageSeconds"] as? Double).map { "\($0)s" }
+            ?? (cache["ageSeconds"] as? Int).map { "\($0)s" }
+        let trigger = cache["trigger"] as? String
+        let suffix = [
+            trigger.map { "via \($0)" },
+            age
+        ].compactMap { $0 }.joined(separator: ", ")
+
+        if let hit = cache["hit"] as? Bool {
+            let reason = cache["reason"] as? String
+            if hit {
+                return suffix.isEmpty ? "Hit" : "Hit, \(suffix)"
+            }
+            if reason == "written" {
+                return suffix.isEmpty ? "Updated" : "Updated, \(suffix)"
+            }
+            if let reason, reason != "miss" {
+                return "Bypassed, \(reason)"
+            }
+            return "Miss"
+        }
+
+        if cache["recent"] as? Bool == true {
+            return suffix.isEmpty ? "Recent" : "Recent, \(suffix)"
+        }
+        return suffix.isEmpty ? "Stale" : "Stale, \(suffix)"
     }
 
     private func assignIfChanged<T: Equatable>(_ value: inout T, _ nextValue: T) {
@@ -618,6 +676,10 @@ struct AppShotDashboardView: View {
                 StatusTile(title: "Permission Identity", value: model.permissionMode, symbol: "person.crop.rectangle.stack", good: model.permissionMode == "stableInstalledApp")
                 StatusTile(title: "Permission Executable", value: model.permissionExecutable, symbol: "terminal", good: model.permissionExecutable.hasSuffix("/Applications/AppShot.app/Contents/MacOS/AppShot"))
             }
+            GridRow {
+                StatusTile(title: "Shortcut", value: model.isGlobalShortcutEnabled ? model.globalShortcutLabel : "Off", symbol: "keyboard", good: model.isGlobalShortcutEnabled)
+                StatusTile(title: "Shortcut Cache", value: model.captureCacheSummary, symbol: "tray.and.arrow.down", good: model.captureCacheSummary != "Empty")
+            }
         }
     }
 
@@ -759,6 +821,7 @@ struct MenuBarView: View {
             StatusLine(label: "Front App", value: model.frontmostName, good: model.frontmostName != "-")
             StatusLine(label: "Auto Refresh", value: model.isAutoRefreshEnabled ? "\(Int(model.samplingIntervalSeconds))s" : "Off", good: model.isAutoRefreshEnabled)
             StatusLine(label: "Shortcut", value: model.isGlobalShortcutEnabled ? model.globalShortcutLabel : "Off", good: model.isGlobalShortcutEnabled)
+            StatusLine(label: "Cache", value: model.captureCacheSummary, good: model.captureCacheSummary != "Empty")
             HStack {
                 Button("Refresh") {
                     model.refreshStatus()
@@ -802,7 +865,11 @@ struct AppShotSettingsView: View {
                     .font(.body.monospacedDigit())
             }
 
-            Text("Use both left and right Option keys together.")
+            LabeledContent("Shortcut Cache") {
+                Text(model.captureCacheSummary)
+            }
+
+            Text("Press both Option keys together to capture into the shared CLI and MCP cache.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 

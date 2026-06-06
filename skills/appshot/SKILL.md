@@ -45,7 +45,8 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    tccutil reset ScreenCapture com.qppshot.AppShot
    open ~/Applications/AppShot.app
    ```
-7. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex, Claude Code, or the user:
+7. If AppShot.app is running and the user can trigger the window they mean, have them press both left and right Option keys together. That writes the current capture into the shared shortcut cache. CLI and MCP capture calls use this recent cache by default when no explicit `windowID`, `pid`, `bundleID`, or screenshot path is passed. Add `--ignore-cache` when you need a fresh direct capture.
+8. Capture context only after both permissions are enabled. Default to the Codex-style appshot block when the result will be shown to Codex, Claude Code, or the user:
    ```sh
    "$APPSHOT_BIN" capture --format codex --max-depth 30 --accessibility-timeout 20
    ```
@@ -53,16 +54,16 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 30 --accessibility-timeout 20
    ```
-8. For complex apps such as Xcode, raise the Accessibility timeout instead of treating a slow AX tree as missing data:
+9. For complex apps such as Xcode, raise the Accessibility timeout instead of treating a slow AX tree as missing data:
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 30 --accessibility-timeout 30
    ```
-9. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 30 --accessibility-timeout 20`.
-10. Read `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
-11. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
-12. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
-13. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
-14. For parity QA against a real app/window, use the repo QA script when available:
+10. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 30 --accessibility-timeout 20`.
+11. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, and `accessibility.documentReferences[].textPreview`.
+12. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
+13. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
+14. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
+15. For parity QA against a real app/window, use the repo QA script when available:
    ```sh
    scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot —' --accessibility-timeout 20 --expect-hierarchy 'Source Editor'
    ```
@@ -79,7 +80,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
 
 ## MCP Tools
 
-- `appshot_capture`: frontmost app metadata, windows, accessibility tree/text, optional screenshot, and optional OCR fallback.
+- `appshot_capture`: frontmost app metadata, windows, accessibility tree/text, optional screenshot, optional OCR fallback, and optional recent shortcut-cache reuse.
 - `appshot_permissions`: Accessibility and Screen Recording permission state.
 - `appshot_status`: frontmost app metadata, current window, and permission state.
 - `appshot_list_windows`: visible windows grouped by running app.
@@ -97,6 +98,7 @@ The CLI returns JSON with:
 - `frontmostWindow`
 - `currentWindow`
 - `windows`
+- `captureCache`
 - `accessibility.root`
 - `accessibility.focusedElement`
 - `accessibility.text`

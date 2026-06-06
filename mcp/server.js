@@ -78,7 +78,7 @@ function tools() {
   return [
     {
       name: "appshot_capture",
-      description: "Capture the frontmost macOS app as JSON or Codex-style appshot text with app/window metadata, accessibility text tree, optional screenshot, and optional OCR fallback.",
+      description: "Capture the frontmost macOS app as JSON or Codex-style appshot text with app/window metadata, accessibility text tree, optional screenshot, and optional OCR fallback. By default, uses a recent AppShot.app left+right Option shortcut cache when available.",
       inputSchema: {
         type: "object",
         properties: {
@@ -93,7 +93,9 @@ function tools() {
           maxChildren: { type: "number", default: 240 },
           maxOCRObservations: { type: "number", default: 240 },
           accessibilityTimeout: { type: "number", default: 20 },
-          screenshotTimeout: { type: "number", default: 3 }
+          screenshotTimeout: { type: "number", default: 3 },
+          useRecentCache: { type: "boolean", default: true },
+          cacheMaxAge: { type: "number", default: 15 }
         }
       }
     },
@@ -138,6 +140,8 @@ function callTool(params = {}) {
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
     if (args.pid != null) cliArgs.push("--pid", String(args.pid));
     if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
+    if (args.useRecentCache === false) cliArgs.push("--ignore-cache");
+    if (args.cacheMaxAge != null) cliArgs.push("--cache-max-age", String(args.cacheMaxAge));
     if (args.format === "codex") cliArgs.push("--format", "codex");
     cliArgs.push("--max-depth", String(args.maxDepth ?? 30));
     cliArgs.push("--max-children", String(args.maxChildren ?? 240));

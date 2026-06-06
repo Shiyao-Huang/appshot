@@ -116,6 +116,10 @@ for anchor in \
   "window-bound image dimensions" \
   "TCC identity diagnosis" \
   "Permission identity JSON" \
+  "Shortcut capture cache" \
+  "captureCache" \
+  "--ignore-cache" \
+  "useRecentCache" \
   "Codex appshot text block" \
   "codex-appshot-text" \
   "--format codex" \
@@ -190,18 +194,19 @@ for name, text, pattern in [
         raise SystemExit(f"{name} is not aligned to {expected}")
 
 for name, text, needles in [
-    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\""]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format"]),
+    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "cacheMaxAge", "--ignore-cache"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
+    ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange"]),
     ("QA capture checks", qa, ["--expect-ax", "--expect-visible", "--expect-ocr", "--expect-hierarchy", "screenshot captured", "screenshot matches target window", "screenshot size matches window bounds", "visible text available", "accessibility root is target window", "hierarchy contains"]),
     ("TCC identity diagnostics", tcc, ["CDHash", "Signature", "TeamIdentifier", "ad-hoc", "APPSHOT_CODESIGN_IDENTITY", "security find-identity", "permissions.identity", "permissions.stability", "running app bundle"]),
     ("Permission identity JSON", core, ["permissionIdentity", "permissionStability", "recommendedGrantTarget", "currentExecutablePath", "stableInstalledApp", "commandLineTool"]),
-    ("Codex skill workflow", skill, ["--accessibility-timeout 20", "scripts/qa_app_capture.py", "scripts/diagnose_tcc_identity.sh", "tccutil reset Accessibility", "permissions.identity", "permissions.stability", "target-window screenshot metadata", "appshot_status", "currentApplication", "targetApplication", "frontmostWindow", "currentWindow"]),
+    ("Codex skill workflow", skill, ["--accessibility-timeout 20", "--ignore-cache", "left and right Option", "captureCache", "scripts/qa_app_capture.py", "scripts/diagnose_tcc_identity.sh", "tccutil reset Accessibility", "permissions.identity", "permissions.stability", "target-window screenshot metadata", "appshot_status", "currentApplication", "targetApplication", "frontmostWindow", "currentWindow"]),
 ]:
     missing = [needle for needle in needles if needle not in text]
     if missing:
@@ -216,8 +221,8 @@ trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
 
 log "checking CLI status/capture schema"
 "$APP_BIN" status --pretty >"$STATUS_JSON"
-"$APP_BIN" capture --max-depth 1 --pretty >"$CAPTURE_JSON"
-"$APP_BIN" capture --max-depth 1 --format codex >"$CODEX_TXT"
+"$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON"
+"$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT"
 
 "$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$CODEX_TXT" <<'PY'
 import json
@@ -235,7 +240,7 @@ def require_keys(name, payload, keys):
 require_keys(
     "status",
     status,
-    ["schemaVersion", "permissions", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"],
+    ["schemaVersion", "permissions", "captureCache", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"],
 )
 require_keys(
     "capture",
@@ -279,7 +284,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
-  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1}}}' \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
   | APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL"
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -297,7 +302,7 @@ if missing:
     raise SystemExit(f"MCP missing tools: {', '.join(missing)}")
 
 status = json.loads(lines[2]["result"]["content"][0]["text"])
-for key in ["frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"]:
+for key in ["captureCache", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"]:
     if key not in status:
         raise SystemExit(f"MCP status missing key: {key}")
 permissions = status.get("permissions", {})

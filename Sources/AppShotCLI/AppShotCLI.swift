@@ -14,6 +14,10 @@ struct CLIOptions {
     var maxOCRObservations = 240
     var accessibilityTimeoutSeconds = 20.0
     var screenshotTimeoutSeconds = 3.0
+    var preferRecentCache = true
+    var writeCache = false
+    var cacheMaxAgeSeconds = 15.0
+    var cacheTrigger: String?
     var promptPermissions = false
     var windowID: UInt32?
     var pid: pid_t?
@@ -43,6 +47,10 @@ struct AppShotCLI {
                     maxOCRObservations: options.maxOCRObservations,
                     accessibilityTimeoutSeconds: options.accessibilityTimeoutSeconds,
                     screenshotTimeoutSeconds: options.screenshotTimeoutSeconds,
+                    preferRecentCache: options.preferRecentCache,
+                    writeCache: options.writeCache,
+                    cacheMaxAgeSeconds: options.cacheMaxAgeSeconds,
+                    cacheTrigger: options.cacheTrigger,
                     targetWindowID: options.windowID,
                     targetProcessIdentifier: options.pid,
                     targetBundleIdentifier: options.bundleID
@@ -115,6 +123,14 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.accessibilityTimeoutSeconds = Double(try nextValue()) ?? options.accessibilityTimeoutSeconds
         case "--screenshot-timeout":
             options.screenshotTimeoutSeconds = Double(try nextValue()) ?? options.screenshotTimeoutSeconds
+        case "--ignore-cache", "--no-cache", "--fresh":
+            options.preferRecentCache = false
+        case "--write-cache":
+            options.writeCache = true
+        case "--cache-max-age":
+            options.cacheMaxAgeSeconds = Double(try nextValue()) ?? options.cacheMaxAgeSeconds
+        case "--cache-trigger":
+            options.cacheTrigger = try nextValue()
         case "--window-id":
             options.windowID = UInt32(try nextValue())
         case "--pid":
@@ -162,11 +178,14 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
     Notes:
+      By default, capture may use a recent AppShot.app shortcut cache when no explicit target is passed.
+      Use --ignore-cache, --no-cache, or --fresh to force a fresh frontmost-window capture.
+      AppShot.app writes the shortcut cache when both left and right Option keys are pressed together.
       Use list-windows first. Then pass the chosen windowID, pid, or bundleID to capture.
       Accessibility permission is required for rich text/UI trees.
       Screen Recording permission is required for screenshots.

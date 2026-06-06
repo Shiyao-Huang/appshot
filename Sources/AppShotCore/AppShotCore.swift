@@ -15,6 +15,10 @@ public struct AppShotCaptureOptions {
     public var maxOCRObservations: Int
     public var accessibilityTimeoutSeconds: TimeInterval
     public var screenshotTimeoutSeconds: TimeInterval
+    public var preferRecentCache: Bool
+    public var writeCache: Bool
+    public var cacheMaxAgeSeconds: TimeInterval
+    public var cacheTrigger: String?
     public var targetWindowID: UInt32?
     public var targetProcessIdentifier: pid_t?
     public var targetBundleIdentifier: String?
@@ -28,6 +32,10 @@ public struct AppShotCaptureOptions {
         maxOCRObservations: Int = 240,
         accessibilityTimeoutSeconds: TimeInterval = 20.0,
         screenshotTimeoutSeconds: TimeInterval = 3.0,
+        preferRecentCache: Bool = true,
+        writeCache: Bool = false,
+        cacheMaxAgeSeconds: TimeInterval = 15.0,
+        cacheTrigger: String? = nil,
         targetWindowID: UInt32? = nil,
         targetProcessIdentifier: pid_t? = nil,
         targetBundleIdentifier: String? = nil
@@ -40,6 +48,10 @@ public struct AppShotCaptureOptions {
         self.maxOCRObservations = maxOCRObservations
         self.accessibilityTimeoutSeconds = accessibilityTimeoutSeconds
         self.screenshotTimeoutSeconds = screenshotTimeoutSeconds
+        self.preferRecentCache = preferRecentCache
+        self.writeCache = writeCache
+        self.cacheMaxAgeSeconds = cacheMaxAgeSeconds
+        self.cacheTrigger = cacheTrigger
         self.targetWindowID = targetWindowID
         self.targetProcessIdentifier = targetProcessIdentifier
         self.targetBundleIdentifier = targetBundleIdentifier
@@ -80,6 +92,11 @@ public enum AppShotError: Error, CustomStringConvertible {
 // @sm:evidence swift build && .build/debug/appshot status --pretty
 public enum AppShotCore {
     public static func capture(options: AppShotCaptureOptions = AppShotCaptureOptions()) throws -> JSONObject {
+        if shouldReadRecentCaptureCache(options),
+           let cachedPayload = recentCaptureCache(options: options) {
+            return cachedPayload
+        }
+
         let target = try resolveCaptureTarget(
             windowID: options.targetWindowID,
             processIdentifier: options.targetProcessIdentifier,
@@ -136,6 +153,23 @@ public enum AppShotCore {
                 screenshotPath: path,
                 screenshotCaptured: screenshot?["captured"] as? Bool ?? false,
                 maxObservations: options.maxOCRObservations
+            )
+        }
+        if options.writeCache {
+            payload = try payloadByWritingCaptureCache(
+                payload,
+                trigger: options.cacheTrigger ?? "capture",
+                maxAgeSeconds: options.cacheMaxAgeSeconds
+            )
+        } else if options.preferRecentCache {
+            payload["captureCache"] = captureCacheMetadata(
+                hit: false,
+                trigger: nil,
+                writtenAt: nil,
+                ageSeconds: nil,
+                maxAgeSeconds: options.cacheMaxAgeSeconds,
+                reason: shouldReadRecentCaptureCache(options) ? "miss" : cacheBypassReason(options),
+                servedAt: nil
             )
         }
         payload["codex"] = codexSummaryPayload(from: payload)
@@ -217,6 +251,7 @@ public enum AppShotCore {
             "windowCount": windows.count,
             "blockers": blockers,
             "advisories": advisories,
+            "captureCache": captureCacheStatus(),
             "frontmostApplication": NSNull(),
             "currentApplication": NSNull(),
             "primaryWindow": NSNull(),
@@ -236,6 +271,45 @@ public enum AppShotCore {
         return payload
     }
 
+    public static func captureCacheStatus(maxAgeSeconds: TimeInterval = 15.0) -> JSONObject {
+        let url = captureCacheURL()
+        var payload: JSONObject = [
+            "path": url.path,
+            "available": false,
+            "recent": false,
+            "maxAgeSeconds": maxAgeSeconds
+        ]
+
+        guard let entry = readCaptureCache() else {
+            return payload
+        }
+
+        let ageSeconds = entry.writtenAt.map { max(0, Date().timeIntervalSince($0)) }
+        let metadata = entry.payload["captureCache"] as? JSONObject
+        payload["available"] = true
+        payload["recent"] = ageSeconds.map { $0 <= maxAgeSeconds } ?? false
+        if let ageSeconds {
+            payload["ageSeconds"] = roundedSeconds(ageSeconds)
+        }
+        if let writtenAt = metadata?["writtenAt"] {
+            payload["writtenAt"] = writtenAt
+        }
+        if let trigger = metadata?["trigger"] {
+            payload["trigger"] = trigger
+        }
+        if let app = entry.payload["targetApplication"] as? JSONObject
+            ?? entry.payload["currentApplication"] as? JSONObject
+            ?? entry.payload["frontmostApplication"] as? JSONObject {
+            payload["targetApplication"] = app
+        }
+        if let window = entry.payload["primaryWindow"] as? JSONObject
+            ?? entry.payload["currentWindow"] as? JSONObject
+            ?? entry.payload["frontmostWindow"] as? JSONObject {
+            payload["primaryWindow"] = window
+        }
+        return payload
+    }
+
     public static func jsonString(_ payload: JSONObject, pretty: Bool = true) throws -> String {
         var options: JSONSerialization.WritingOptions = [.withoutEscapingSlashes]
         if pretty {
@@ -248,6 +322,182 @@ public enum AppShotCore {
             throw AppShotError.jsonEncoding
         }
         return string
+    }
+
+    private static func shouldReadRecentCaptureCache(_ options: AppShotCaptureOptions) -> Bool {
+        options.preferRecentCache
+            && !options.writeCache
+            && options.screenshotPath == nil
+            && options.targetWindowID == nil
+            && options.targetProcessIdentifier == nil
+            && options.targetBundleIdentifier == nil
+    }
+
+    private static func cacheBypassReason(_ options: AppShotCaptureOptions) -> String {
+        if options.writeCache {
+            return "writeRequested"
+        }
+        if !options.preferRecentCache {
+            return "disabled"
+        }
+        if options.screenshotPath != nil {
+            return "explicitScreenshotPath"
+        }
+        if options.targetWindowID != nil {
+            return "explicitWindowID"
+        }
+        if options.targetProcessIdentifier != nil {
+            return "explicitProcessIdentifier"
+        }
+        if options.targetBundleIdentifier != nil {
+            return "explicitBundleIdentifier"
+        }
+        return "unknown"
+    }
+
+    private static func recentCaptureCache(options: AppShotCaptureOptions) -> JSONObject? {
+        guard let entry = readCaptureCache(),
+              let writtenAt = entry.writtenAt else {
+            return nil
+        }
+
+        let ageSeconds = Date().timeIntervalSince(writtenAt)
+        guard ageSeconds >= 0, ageSeconds <= options.cacheMaxAgeSeconds else {
+            return nil
+        }
+        guard captureCacheSatisfies(options: options, payload: entry.payload) else {
+            return nil
+        }
+
+        var payload = entry.payload
+        var metadata = (payload["captureCache"] as? JSONObject) ?? [:]
+        metadata["hit"] = true
+        metadata["path"] = entry.url.path
+        metadata["ageSeconds"] = roundedSeconds(ageSeconds)
+        metadata["maxAgeSeconds"] = options.cacheMaxAgeSeconds
+        metadata["reason"] = "recent"
+        metadata["servedAt"] = ISO8601DateFormatter().string(from: Date())
+        if metadata["writtenAt"] == nil {
+            metadata["writtenAt"] = ISO8601DateFormatter().string(from: writtenAt)
+        }
+        payload["captureCache"] = metadata
+        payload["codex"] = codexSummaryPayload(from: payload)
+        return payload
+    }
+
+    private static func captureCacheSatisfies(options: AppShotCaptureOptions, payload: JSONObject) -> Bool {
+        if options.includeScreenshot {
+            guard let screenshot = payload["screenshot"] as? JSONObject,
+                  screenshot["captured"] as? Bool == true,
+                  let path = screenshot["path"] as? String,
+                  FileManager.default.fileExists(atPath: path) else {
+                return false
+            }
+        }
+
+        if options.includeOCR {
+            guard let ocr = payload["ocr"] as? JSONObject,
+                  ocr["available"] as? Bool == true else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private static func payloadByWritingCaptureCache(
+        _ payload: JSONObject,
+        trigger: String,
+        maxAgeSeconds: TimeInterval
+    ) throws -> JSONObject {
+        let url = captureCacheURL()
+        let writtenAt = ISO8601DateFormatter().string(from: Date())
+        var cachedPayload = payload
+        cachedPayload["captureCache"] = captureCacheMetadata(
+            hit: false,
+            trigger: trigger,
+            writtenAt: writtenAt,
+            ageSeconds: 0,
+            maxAgeSeconds: maxAgeSeconds,
+            reason: "written",
+            servedAt: nil
+        )
+        cachedPayload["codex"] = codexSummaryPayload(from: cachedPayload)
+
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            guard let data = try jsonString(cachedPayload, pretty: true).data(using: .utf8) else {
+                throw AppShotError.jsonEncoding
+            }
+            try data.write(to: url, options: .atomic)
+        } catch {
+            throw AppShotError.writeFailed(url.path)
+        }
+
+        return cachedPayload
+    }
+
+    private static func captureCacheMetadata(
+        hit: Bool,
+        trigger: String?,
+        writtenAt: String?,
+        ageSeconds: TimeInterval?,
+        maxAgeSeconds: TimeInterval,
+        reason: String?,
+        servedAt: String?
+    ) -> JSONObject {
+        var metadata: JSONObject = [
+            "hit": hit,
+            "path": captureCacheURL().path,
+            "maxAgeSeconds": maxAgeSeconds
+        ]
+        if let trigger {
+            metadata["trigger"] = trigger
+        }
+        if let writtenAt {
+            metadata["writtenAt"] = writtenAt
+        }
+        if let ageSeconds {
+            metadata["ageSeconds"] = roundedSeconds(ageSeconds)
+        }
+        if let reason {
+            metadata["reason"] = reason
+        }
+        if let servedAt {
+            metadata["servedAt"] = servedAt
+        }
+        return metadata
+    }
+
+    private static func readCaptureCache() -> (payload: JSONObject, url: URL, writtenAt: Date?)? {
+        let url = captureCacheURL()
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let payload = object as? JSONObject else {
+            return nil
+        }
+
+        let metadata = payload["captureCache"] as? JSONObject
+        let writtenAtString = metadata?["writtenAt"] as? String
+        let writtenAt = writtenAtString.flatMap { ISO8601DateFormatter().date(from: $0) }
+            ?? ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date)
+        return (payload, url, writtenAt)
+    }
+
+    private static func captureCacheURL() -> URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        return base
+            .appendingPathComponent("AppShot", isDirectory: true)
+            .appendingPathComponent("CapturePool", isDirectory: true)
+            .appendingPathComponent("latest.json")
+    }
+
+    private static func roundedSeconds(_ value: TimeInterval) -> Double {
+        (value * 1000).rounded() / 1000
     }
 }
 
