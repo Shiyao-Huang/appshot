@@ -64,6 +64,7 @@ final class AppShotModel: ObservableObject {
     private static let browserOriginalViewEnabledKey = "AppShot.browserOriginalViewEnabled"
     private static let browserDesignModifierPressedKey = "AppShot.browserDesignModifierPressed"
     private static let browserTweaksEditorOpenKey = "AppShot.browserTweaksEditorOpen"
+    private static let includeBrowserDOMKey = "AppShot.includeBrowserDOM"
     private let optionShortcutMonitor = OptionPairShortcutMonitor()
 
     @Published var state: String = "checking"
@@ -140,6 +141,14 @@ final class AppShotModel: ObservableObject {
                 return
             }
             UserDefaults.standard.set(browserTweaksEditorOpen, forKey: Self.browserTweaksEditorOpenKey)
+        }
+    }
+    @Published var includeBrowserDOM: Bool = AppShotModel.defaultIncludeBrowserDOM() {
+        didSet {
+            guard includeBrowserDOM != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(includeBrowserDOM, forKey: Self.includeBrowserDOMKey)
         }
     }
     @Published var isAutoRefreshEnabled = false
@@ -308,6 +317,10 @@ final class AppShotModel: ObservableObject {
         UserDefaults.standard.bool(forKey: browserTweaksEditorOpenKey)
     }
 
+    private static func defaultIncludeBrowserDOM() -> Bool {
+        UserDefaults.standard.bool(forKey: includeBrowserDOMKey)
+    }
+
     private func configureGlobalShortcut() {
         if isGlobalShortcutEnabled {
             optionShortcutMonitor.start()
@@ -376,6 +389,7 @@ final class AppShotModel: ObservableObject {
         let browserOriginalViewEnabled = self.browserOriginalViewEnabled
         let browserDesignModifierPressed = self.browserDesignModifierPressed
         let browserTweaksEditorOpen = self.browserTweaksEditorOpen
+        let includeBrowserDOM = self.includeBrowserDOM
         isCapturing = true
         lastError = nil
 
@@ -389,6 +403,7 @@ final class AppShotModel: ObservableObject {
                     browserIsDesignModifierPressed: browserDesignModifierPressed,
                     browserIsOriginalViewEnabled: browserOriginalViewEnabled,
                     browserIsTweaksEditorOpen: browserTweaksEditorOpen,
+                    includeBrowserDOM: includeBrowserDOM,
                     maxDepth: 60,
                     maxChildren: 240,
                     includeOCR: includeOCR,
@@ -775,7 +790,7 @@ struct AppShotDashboardView: View {
             }
             GridRow {
                 StatusTile(title: "Browser Screenshots", value: model.browserAnnotationScreenshotsMode, symbol: "rectangle.on.rectangle.angled", good: true)
-                Color.clear.frame(height: 0)
+                StatusTile(title: "Browser DOM", value: model.includeBrowserDOM ? "On" : "Off", symbol: "safari", good: model.includeBrowserDOM)
             }
         }
     }
@@ -998,6 +1013,10 @@ struct AppShotSettingsView: View {
 
             Toggle(isOn: $model.browserTweaksEditorOpen) {
                 Label("Tweaks Editor", systemImage: "slider.horizontal.3")
+            }
+
+            Toggle(isOn: $model.includeBrowserDOM) {
+                Label("Browser DOM", systemImage: "safari")
             }
 
             Divider()

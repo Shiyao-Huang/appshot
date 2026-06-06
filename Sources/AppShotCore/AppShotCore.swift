@@ -35,6 +35,9 @@ public struct AppShotCaptureOptions {
     public var browserViewportScale: Double
     public var browserZoomPercent: Double?
     public var browserActiveDesignChange: JSONObject?
+    public var includeBrowserDOM: Bool
+    public var browserDOMTimeoutSeconds: TimeInterval
+    public var browserDOMFixture: JSONObject?
     public var maxDepth: Int
     public var maxChildren: Int
     public var includeOCR: Bool
@@ -63,6 +66,9 @@ public struct AppShotCaptureOptions {
         browserViewportScale: Double = 1.0,
         browserZoomPercent: Double? = nil,
         browserActiveDesignChange: JSONObject? = nil,
+        includeBrowserDOM: Bool = false,
+        browserDOMTimeoutSeconds: TimeInterval = 1.5,
+        browserDOMFixture: JSONObject? = nil,
         maxDepth: Int = 60,
         maxChildren: Int = 240,
         includeOCR: Bool = false,
@@ -90,6 +96,9 @@ public struct AppShotCaptureOptions {
         self.browserViewportScale = browserViewportScale
         self.browserZoomPercent = browserZoomPercent
         self.browserActiveDesignChange = browserActiveDesignChange
+        self.includeBrowserDOM = includeBrowserDOM
+        self.browserDOMTimeoutSeconds = browserDOMTimeoutSeconds
+        self.browserDOMFixture = browserDOMFixture
         self.maxDepth = maxDepth
         self.maxChildren = maxChildren
         self.includeOCR = includeOCR
@@ -207,6 +216,12 @@ public enum AppShotCore {
             )
         }
         payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
+        if options.includeBrowserDOM || options.browserDOMFixture != nil {
+            payload["codexBrowserDOMIntegration"] = codexBrowserDOMIntegrationPayload(
+                application: app,
+                options: options
+            )
+        }
         payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: browserAnnotationScreenshotsMode)
         if options.writeCache {
             payload = try payloadByWritingCaptureCache(
@@ -381,6 +396,8 @@ public enum AppShotCore {
         options.preferRecentCache
             && !options.writeCache
             && options.screenshotPath == nil
+            && !options.includeBrowserDOM
+            && options.browserDOMFixture == nil
             && options.targetWindowID == nil
             && options.targetProcessIdentifier == nil
             && options.targetBundleIdentifier == nil
@@ -395,6 +412,9 @@ public enum AppShotCore {
         }
         if options.screenshotPath != nil {
             return "explicitScreenshotPath"
+        }
+        if options.includeBrowserDOM || options.browserDOMFixture != nil {
+            return "browserDOMRequested"
         }
         if options.targetWindowID != nil {
             return "explicitWindowID"
@@ -2444,6 +2464,406 @@ public func codexBrowserRuntimeStatePayload(options: AppShotCaptureOptions) -> J
     return out
 }
 
+public func codexBrowserDOMIntegrationPayload(
+    application: NSRunningApplication,
+    options: AppShotCaptureOptions
+) -> JSONObject {
+    let bundleIdentifier = application.bundleIdentifier ?? ""
+    let appName = application.localizedName ?? bundleIdentifier
+
+    if let fixture = options.browserDOMFixture {
+        return codexBrowserDOMIntegrationPayload(
+            fromDOMSnapshot: fixture,
+            appName: appName,
+            bundleIdentifier: bundleIdentifier,
+            source: "fixture"
+        )
+    }
+
+    guard options.includeBrowserDOM else {
+        return [
+            "format": "codex-browser-dom-integration",
+            "source": "browser-apple-events-dom-probe",
+            "available": false,
+            "browserRuntimeEvents": [],
+            "reason": "notRequested"
+        ]
+    }
+
+    guard let script = browserDOMProbeScript(bundleIdentifier: bundleIdentifier) else {
+        return [
+            "format": "codex-browser-dom-integration",
+            "source": "browser-apple-events-dom-probe",
+            "available": false,
+            "supported": false,
+            "browserBundleIdentifier": bundleIdentifier,
+            "applicationName": appName,
+            "browserRuntimeEvents": [],
+            "reason": "unsupportedBrowser"
+        ]
+    }
+
+    let result = runProcess(
+        executablePath: "/usr/bin/osascript",
+        arguments: ["-l", "JavaScript", "-e", script],
+        timeoutSeconds: options.browserDOMTimeoutSeconds
+    )
+
+    guard !result.timedOut else {
+        return [
+            "format": "codex-browser-dom-integration",
+            "source": "browser-apple-events-dom-probe",
+            "available": false,
+            "supported": true,
+            "browserBundleIdentifier": bundleIdentifier,
+            "applicationName": appName,
+            "browserRuntimeEvents": [],
+            "timedOut": true,
+            "timeoutSeconds": options.browserDOMTimeoutSeconds,
+            "reason": "timedOut"
+        ]
+    }
+
+    guard result.exitStatus == 0 else {
+        return [
+            "format": "codex-browser-dom-integration",
+            "source": "browser-apple-events-dom-probe",
+            "available": false,
+            "supported": true,
+            "browserBundleIdentifier": bundleIdentifier,
+            "applicationName": appName,
+            "browserRuntimeEvents": [],
+            "exitStatus": result.exitStatus,
+            "stderr": result.stderr,
+            "reason": "scriptFailed"
+        ]
+    }
+
+    guard let domSnapshot = parseJSONObject(result.stdout) else {
+        return [
+            "format": "codex-browser-dom-integration",
+            "source": "browser-apple-events-dom-probe",
+            "available": false,
+            "supported": true,
+            "browserBundleIdentifier": bundleIdentifier,
+            "applicationName": appName,
+            "browserRuntimeEvents": [],
+            "stdoutPreview": String(result.stdout.prefix(500)),
+            "reason": "invalidJSON"
+        ]
+    }
+
+    return codexBrowserDOMIntegrationPayload(
+        fromDOMSnapshot: domSnapshot,
+        appName: appName,
+        bundleIdentifier: bundleIdentifier,
+        source: "browser-apple-events-dom-probe"
+    )
+}
+
+private struct ProcessRunResult {
+    let exitStatus: Int32
+    let timedOut: Bool
+    let stdout: String
+    let stderr: String
+}
+
+private func runProcess(
+    executablePath: String,
+    arguments: [String],
+    timeoutSeconds: TimeInterval
+) -> ProcessRunResult {
+    let process = Process()
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: executablePath)
+    process.arguments = arguments
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
+
+    do {
+        try process.run()
+    } catch {
+        return ProcessRunResult(
+            exitStatus: -1,
+            timedOut: false,
+            stdout: "",
+            stderr: String(describing: error)
+        )
+    }
+
+    let deadline = Date().addingTimeInterval(timeoutSeconds)
+    while process.isRunning && Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+
+    let timedOut = process.isRunning
+    if timedOut {
+        process.terminate()
+    }
+    process.waitUntilExit()
+
+    let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+    let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+    return ProcessRunResult(
+        exitStatus: process.terminationStatus,
+        timedOut: timedOut,
+        stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+        stderr: String(data: stderrData, encoding: .utf8) ?? ""
+    )
+}
+
+private func codexBrowserDOMIntegrationPayload(
+    fromDOMSnapshot domSnapshot: JSONObject,
+    appName: String,
+    bundleIdentifier: String,
+    source: String
+) -> JSONObject {
+    let pageURL = codexTrimmedString(domSnapshot["pageUrl"])
+        ?? codexTrimmedString(domSnapshot["url"])
+        ?? ""
+    let title = codexTrimmedString(domSnapshot["title"]) ?? ""
+    let images = (domSnapshot["images"] as? [JSONObject]) ?? []
+    let designTargets = (domSnapshot["designTargets"] as? [JSONObject]) ?? []
+    let attachedImages = images.prefix(24).map { image -> JSONObject in
+        [
+            "sourceUrl": codexTrimmedString(image["sourceUrl"]) ?? codexTrimmedString(image["src"]) ?? "",
+            "alt": codexTrimmedString(image["alt"]) ?? "",
+            "selector": codexTrimmedString(image["selector"]) ?? "",
+            "rect": image["rect"] as? JSONObject ?? [:],
+            "naturalSize": image["naturalSize"] as? JSONObject ?? [:]
+        ]
+    }.filter { !(codexTrimmedString($0["sourceUrl"]) ?? "").isEmpty }
+
+    let imageDragEvents = attachedImages.prefix(12).flatMap { image -> [JSONObject] in
+        let sourceURL = codexTrimmedString(image["sourceUrl"]) ?? ""
+        return [
+            [
+                "type": "browser-sidebar-runtime-image-drag-started",
+                "sourceUrl": sourceURL,
+                "image": image
+            ],
+            [
+                "type": "browser-sidebar-runtime-image-drag-ended",
+                "sourceUrl": sourceURL
+            ]
+        ]
+    }
+
+    let designEvents = designTargets.prefix(12).enumerated().map { index, target -> JSONObject in
+        let selector = codexTrimmedString(target["selector"]) ?? ""
+        let rect = target["rect"] as? JSONObject ?? [:]
+        let role = codexTrimmedString(target["role"]) ?? codexTrimmedString(target["tagName"]) ?? "element"
+        let text = codexTrimmedString(target["text"]) ?? codexTrimmedString(target["label"]) ?? ""
+        let anchorState: JSONObject = [
+            "anchor": [
+                "kind": "element",
+                "selector": selector,
+                "role": role,
+                "text": text
+            ],
+            "framePath": [],
+            "frameUrl": pageURL,
+            "viewportSize": domSnapshot["viewportSize"] as? JSONObject ?? [:],
+            "cardViewportRect": rect
+        ]
+        let designEditorState: JSONObject = [
+            "id": "appshot-design-\(index)",
+            "selector": selector,
+            "role": role,
+            "text": text,
+            "rect": rect,
+            "declarations": []
+        ]
+        return [
+            "type": "browser-sidebar-runtime-open-design-editor",
+            "anchorState": anchorState,
+            "designEditorState": designEditorState
+        ]
+    }
+
+    let runtimeEvents = Array(imageDragEvents) + Array(designEvents)
+    return [
+        "format": "codex-browser-dom-integration",
+        "source": source,
+        "available": domSnapshot["available"] as? Bool ?? true,
+        "supported": true,
+        "browserBundleIdentifier": bundleIdentifier,
+        "applicationName": appName,
+        "pageUrl": pageURL,
+        "title": title,
+        "viewportSize": domSnapshot["viewportSize"] as? JSONObject ?? [:],
+        "devicePixelRatio": domSnapshot["devicePixelRatio"] ?? NSNull(),
+        "images": attachedImages,
+        "imageCount": attachedImages.count,
+        "designTargets": Array(designTargets.prefix(24)),
+        "designTargetCount": designTargets.count,
+        "browserRuntimeEvents": runtimeEvents,
+        "browserRuntimeEventCount": runtimeEvents.count,
+        "localBrowserAttachedImages": attachedImages
+    ]
+}
+
+private func browserDOMProbeScript(bundleIdentifier: String) -> String? {
+    let appName: String
+    let chromeLike: Bool
+    switch bundleIdentifier {
+    case "com.apple.Safari":
+        appName = "Safari"
+        chromeLike = false
+    case "com.google.Chrome":
+        appName = "Google Chrome"
+        chromeLike = true
+    case "com.google.Chrome.canary":
+        appName = "Google Chrome Canary"
+        chromeLike = true
+    case "com.microsoft.edgemac":
+        appName = "Microsoft Edge"
+        chromeLike = true
+    case "com.brave.Browser":
+        appName = "Brave Browser"
+        chromeLike = true
+    default:
+        return nil
+    }
+
+    let pageProbe = browserDOMPageProbeJavaScript()
+    return """
+    const appName = \(javaScriptStringLiteral(appName));
+    const domJS = \(javaScriptStringLiteral(pageProbe));
+    const app = Application(appName);
+    function fail(reason) {
+      return JSON.stringify({ available: false, reason, pageUrl: "", title: "", images: [], designTargets: [] });
+    }
+    if (!app.running()) {
+      fail("browserNotRunning");
+    } else if (app.windows.length === 0) {
+      fail("noBrowserWindows");
+    } else {
+      const tab = app.windows[0].\(chromeLike ? "activeTab" : "currentTab")();
+      \(chromeLike ? "tab.execute({ javascript: domJS });" : "app.doJavaScript(domJS, { in: tab });")
+    }
+    """
+}
+
+private func browserDOMPageProbeJavaScript() -> String {
+    #"""
+    JSON.stringify((function() {
+      function textOf(element) {
+        return (element.innerText || element.alt || element.getAttribute("aria-label") || element.title || element.value || "").replace(/\s+/g, " ").trim().slice(0, 240);
+      }
+      function rectOf(element) {
+        const rect = element.getBoundingClientRect();
+        return {
+          x: rect.x,
+          y: rect.y,
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height
+        };
+      }
+      function cssEscape(value) {
+        return String(value).replace(/[^a-zA-Z0-9_-]/g, function(ch) {
+          return "\\" + ch.charCodeAt(0).toString(16) + " ";
+        });
+      }
+      function selectorFor(element) {
+        if (element.id) return "#" + cssEscape(element.id);
+        const testId = element.getAttribute("data-testid") || element.getAttribute("data-test-id");
+        if (testId) return element.tagName.toLowerCase() + "[data-testid=\"" + String(testId).replace(/"/g, "\\\"") + "\"]";
+        const parts = [];
+        let current = element;
+        while (current && current.nodeType === 1 && parts.length < 5) {
+          let part = current.tagName.toLowerCase();
+          if (current.classList && current.classList.length > 0) {
+            part += "." + Array.from(current.classList).slice(0, 2).map(cssEscape).join(".");
+          }
+          const parent = current.parentElement;
+          if (parent) {
+            const siblings = Array.from(parent.children).filter(function(child) { return child.tagName === current.tagName; });
+            if (siblings.length > 1) part += ":nth-of-type(" + (siblings.indexOf(current) + 1) + ")";
+          }
+          parts.unshift(part);
+          current = parent;
+        }
+        return parts.join(" > ");
+      }
+      const viewportSize = { width: window.innerWidth, height: window.innerHeight };
+      const images = Array.from(document.images).filter(function(img) {
+        return Boolean(img.currentSrc || img.src);
+      }).slice(0, 40).map(function(img, index) {
+        return {
+          index: index,
+          sourceUrl: img.currentSrc || img.src,
+          alt: img.alt || "",
+          selector: selectorFor(img),
+          text: textOf(img),
+          rect: rectOf(img),
+          naturalSize: { width: img.naturalWidth || 0, height: img.naturalHeight || 0 }
+        };
+      });
+      const designSelector = "a,button,input,textarea,select,img,[role],[data-testid],h1,h2,h3,h4,p,main,nav,section,article";
+      const designTargets = Array.from(document.querySelectorAll(designSelector)).filter(function(element) {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      }).slice(0, 80).map(function(element, index) {
+        return {
+          index: index,
+          tagName: element.tagName.toLowerCase(),
+          role: element.getAttribute("role") || element.tagName.toLowerCase(),
+          selector: selectorFor(element),
+          text: textOf(element),
+          rect: rectOf(element)
+        };
+      });
+      return {
+        available: true,
+        pageUrl: location.href,
+        title: document.title,
+        viewportSize: viewportSize,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        images: images,
+        designTargets: designTargets
+      };
+    })())
+    """#
+}
+
+private func javaScriptStringLiteral(_ value: String) -> String {
+    var out = "\""
+    for scalar in value.unicodeScalars {
+        switch scalar.value {
+        case 0x22:
+            out += "\\\""
+        case 0x5C:
+            out += "\\\\"
+        case 0x0A:
+            out += "\\n"
+        case 0x0D:
+            out += "\\r"
+        case 0x09:
+            out += "\\t"
+        default:
+            out.unicodeScalars.append(scalar)
+        }
+    }
+    out += "\""
+    return out
+}
+
+private func parseJSONObject(_ text: String) -> JSONObject? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let data = trimmed.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data),
+          let payload = object as? JSONObject else {
+        return nil
+    }
+    return payload
+}
+
 public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 420) -> JSONObject {
     let text = codexSummaryText(from: payload, maxTreeLines: maxTreeLines)
     let accessibility = payload["accessibility"] as? JSONObject
@@ -2482,6 +2902,7 @@ public func codexBrowserPayload(
     let root = accessibility?["root"] as? JSONObject
     let screenshot = payload["screenshot"] as? JSONObject
     let runtimeState = payload["codexBrowserRuntimeState"] as? JSONObject
+    let browserDOMIntegration = payload["codexBrowserDOMIntegration"] as? JSONObject
 
     let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
     let bundleIdentifier = codexTrimmedString(app["bundleIdentifier"]) ?? ""
@@ -2522,8 +2943,19 @@ public func codexBrowserPayload(
     if let runtimeState {
         localBrowserCommentMetadata["runtimeState"] = runtimeState
     }
+    if let browserDOMIntegration {
+        localBrowserCommentMetadata["browserDOMIntegration"] = [
+            "available": browserDOMIntegration["available"] ?? false,
+            "source": browserDOMIntegration["source"] ?? "",
+            "imageCount": browserDOMIntegration["imageCount"] ?? 0,
+            "designTargetCount": browserDOMIntegration["designTargetCount"] ?? 0,
+            "browserRuntimeEventCount": browserDOMIntegration["browserRuntimeEventCount"] ?? 0
+        ]
+    }
 
     let localBrowserDesignChange: Any = runtimeState?["activeDesignChange"] ?? NSNull()
+    let localBrowserAttachedImages = browserDOMIntegration?["localBrowserAttachedImages"] as? [JSONObject] ?? []
+    let localBrowserRuntimeEvents: Any = browserDOMIntegration?["browserRuntimeEvents"] ?? []
 
     var out: JSONObject = [
         "format": "codex-browser-comment-payload-adapter",
@@ -2542,9 +2974,10 @@ public func codexBrowserPayload(
         ],
         "localBrowserContext": localBrowserContext,
         "localBrowserCommentMetadata": localBrowserCommentMetadata,
-        "localBrowserAttachedImages": [],
+        "localBrowserAttachedImages": localBrowserAttachedImages,
         "localBrowserDesignChange": localBrowserDesignChange,
         "localBrowserRuntimeState": runtimeState.map { $0 as Any } ?? NSNull(),
+        "localBrowserRuntimeEvents": localBrowserRuntimeEvents,
         "localBrowserScreenshot": screenshotPayload
     ]
 

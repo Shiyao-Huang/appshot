@@ -58,7 +58,7 @@ function handleLine(line) {
       respond(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "appshot", version: "0.1.5" }
+        serverInfo: { name: "appshot", version: "0.1.6" }
       });
     } else if (method === "tools/list") {
       respond(id, { tools: tools() });
@@ -94,6 +94,9 @@ function tools() {
           browserViewportScale: { type: "number", default: 1 },
           browserZoomPercent: { type: "number" },
           browserActiveDesignChange: { type: "object" },
+          includeBrowserDOM: { type: "boolean", default: false },
+          browserDOMTimeout: { type: "number", default: 1.5 },
+          browserDOMFixture: { type: "object" },
           includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
           windowID: { type: "number" },
@@ -160,6 +163,9 @@ function callTool(params = {}) {
     if (args.browserViewportScale != null) cliArgs.push("--browser-viewport-scale", String(args.browserViewportScale));
     if (args.browserZoomPercent != null) cliArgs.push("--browser-zoom-percent", String(args.browserZoomPercent));
     if (args.browserActiveDesignChange != null) cliArgs.push("--browser-active-design-change-json", JSON.stringify(args.browserActiveDesignChange));
+    if (args.includeBrowserDOM) cliArgs.push("--include-browser-dom");
+    if (args.browserDOMTimeout != null) cliArgs.push("--browser-dom-timeout", String(args.browserDOMTimeout));
+    if (args.browserDOMFixture != null) cliArgs.push("--browser-dom-fixture-json", JSON.stringify(args.browserDOMFixture));
     if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));

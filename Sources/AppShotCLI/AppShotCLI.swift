@@ -17,6 +17,9 @@ struct CLIOptions {
     var browserViewportScale = 1.0
     var browserZoomPercent: Double?
     var browserActiveDesignChange: JSONObject?
+    var includeBrowserDOM = false
+    var browserDOMTimeoutSeconds = 1.5
+    var browserDOMFixture: JSONObject?
     var includeOCR = false
     var pretty = false
     var format = "json"
@@ -63,6 +66,9 @@ struct AppShotCLI {
                     browserViewportScale: options.browserViewportScale,
                     browserZoomPercent: options.browserZoomPercent,
                     browserActiveDesignChange: options.browserActiveDesignChange,
+                    includeBrowserDOM: options.includeBrowserDOM,
+                    browserDOMTimeoutSeconds: options.browserDOMTimeoutSeconds,
+                    browserDOMFixture: options.browserDOMFixture,
                     maxDepth: options.maxDepth,
                     maxChildren: options.maxChildren,
                     includeOCR: options.includeOCR,
@@ -153,6 +159,13 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.browserZoomPercent = Double(try nextValue())
         case "--browser-active-design-change-json":
             options.browserActiveDesignChange = try parseJSONObject(try nextValue(), optionName: arg)
+        case "--include-browser-dom":
+            options.includeBrowserDOM = true
+        case "--browser-dom-timeout":
+            options.browserDOMTimeoutSeconds = Double(try nextValue()) ?? options.browserDOMTimeoutSeconds
+        case "--browser-dom-fixture-json":
+            options.browserDOMFixture = try parseJSONObject(try nextValue(), optionName: arg)
+            options.includeBrowserDOM = true
         case "--include-ocr":
             options.includeOCR = true
         case "--pretty":
@@ -247,7 +260,7 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -260,6 +273,7 @@ func printHelp() {
       Screen Recording permission is required for screenshots.
       --browser-annotation-screenshots-mode always captures a screenshot for codexBrowserPayload by default.
       Browser runtime options populate codexBrowserRuntimeState using Codex browser-sidebar-runtime-sync field names.
+      --include-browser-dom adds a timed Safari/Chrome DOM probe for image-drag sourceUrl and design-editor anchor candidates when Apple Events allows it.
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
       --format codex prints a compact AppShot block similar to Codex built-in appshots.

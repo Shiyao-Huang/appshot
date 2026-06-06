@@ -113,13 +113,16 @@ for anchor in \
   "localBrowserDesignChange" \
   "codexBrowserPayload" \
   "codexBrowserRuntimeState" \
+  "codexBrowserDOMIntegration" \
   "codex-browser-runtime-state-adapter" \
+  "codex-browser-dom-integration" \
   "codex-browser-comment-payload-adapter" \
   "browser-annotation-screenshots-mode" \
   "Browser annotation screenshot policy" \
   "Browser runtime state adapter" \
   "browser-sidebar-runtime-open-design-editor" \
   "browser-sidebar-runtime-image-drag-started" \
+  "browser-sidebar-runtime-image-drag-ended" \
   "isOriginalViewEnabled" \
   "isDesignModifierPressed" \
   "activeDesignChange" \
@@ -168,7 +171,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.5"
+expected = "0.1.6"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
@@ -209,15 +212,16 @@ for name, text, pattern in [
         raise SystemExit(f"{name} is not aligned to {expected}")
 
 for name, text, needles in [
-    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange"]),
+    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
+    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "anchorState", "designEditorState"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -235,18 +239,20 @@ STATUS_JSON="$(mktemp)"
 CAPTURE_JSON="$(mktemp)"
 POLICY_JSON="$(mktemp)"
 RUNTIME_JSON="$(mktemp)"
+DOM_JSON="$(mktemp)"
 CODEX_TXT="$(mktemp)"
 MCP_JSONL="$(mktemp)"
-trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"' EXIT
 
 log "checking CLI status/capture schema"
 "$APP_BIN" status --pretty >"$STATUS_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --pretty >"$POLICY_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON"
+"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT"
 
-"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
@@ -254,7 +260,8 @@ status = json.load(open(sys.argv[1]))
 capture = json.load(open(sys.argv[2]))
 policy = json.load(open(sys.argv[3]))
 runtime = json.load(open(sys.argv[4]))
-codex_text = open(sys.argv[5]).read()
+dom = json.load(open(sys.argv[5]))
+codex_text = open(sys.argv[6]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -370,6 +377,33 @@ if runtime_payload.get("localBrowserDesignChange", {}).get("id") != "verifier-de
 if runtime_metadata.get("runtimeState", {}).get("isOriginalViewEnabled") is not True:
     raise SystemExit("runtime browser metadata did not embed runtimeState")
 
+dom_integration = dom.get("codexBrowserDOMIntegration", {})
+dom_browser_payload = dom.get("codexBrowserPayload", {})
+require_keys("dom codexBrowserDOMIntegration", dom_integration, ["format", "source", "available", "images", "designTargets", "browserRuntimeEvents", "localBrowserAttachedImages"])
+if dom_integration.get("format") != "codex-browser-dom-integration":
+    raise SystemExit(f"unexpected browser DOM integration format: {dom_integration.get('format')!r}")
+if dom_integration.get("available") is not True:
+    raise SystemExit("browser DOM fixture integration should be available")
+event_types = [event.get("type") for event in dom_integration.get("browserRuntimeEvents", [])]
+for expected_event in [
+    "browser-sidebar-runtime-image-drag-started",
+    "browser-sidebar-runtime-image-drag-ended",
+    "browser-sidebar-runtime-open-design-editor",
+]:
+    if expected_event not in event_types:
+        raise SystemExit(f"browser DOM integration missing event: {expected_event}")
+started = dom_integration["browserRuntimeEvents"][0]
+if started.get("sourceUrl") != "https://example.test/hero.png":
+    raise SystemExit("browser DOM image drag event did not preserve sourceUrl")
+design_event = dom_integration["browserRuntimeEvents"][-1]
+require_keys("dom design event", design_event, ["anchorState", "designEditorState"])
+if design_event["anchorState"].get("anchor", {}).get("selector") != "button.cta":
+    raise SystemExit("browser DOM design event did not preserve selector anchor")
+if len(dom_browser_payload.get("localBrowserAttachedImages", [])) != 1:
+    raise SystemExit("browser DOM attached images were not mirrored into codexBrowserPayload")
+if len(dom_browser_payload.get("localBrowserRuntimeEvents", [])) != 3:
+    raise SystemExit("browser DOM runtime events were not mirrored into codexBrowserPayload")
+
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})
     require_keys(f"{name} permissions", permissions, ["accessibility", "screenRecording", "identity", "stability"])
@@ -386,6 +420,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
+  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
   | APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL"
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -393,8 +428,8 @@ import json
 import sys
 
 lines = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-if [line.get("id") for line in lines] != [1, 2, 3, 4, 5]:
-    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5]")
+if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6]:
+    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6]")
 
 tools = {tool["name"] for tool in lines[1]["result"]["tools"]}
 expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows"}
@@ -436,6 +471,16 @@ if mcp_runtime_state.get("isTweaksEditorOpen") is not True:
     raise SystemExit("MCP runtime capture did not preserve tweaks editor")
 if mcp_runtime_state.get("activeDesignChange", {}).get("id") != "mcp-design":
     raise SystemExit("MCP runtime capture did not preserve activeDesignChange")
+
+mcp_dom = json.loads(lines[5]["result"]["content"][0]["text"])
+mcp_dom_integration = mcp_dom.get("codexBrowserDOMIntegration", {})
+mcp_dom_payload = mcp_dom.get("codexBrowserPayload", {})
+if mcp_dom_integration.get("format") != "codex-browser-dom-integration":
+    raise SystemExit("MCP DOM fixture did not return codex browser DOM integration")
+if mcp_dom_integration.get("browserRuntimeEvents", [{}])[0].get("sourceUrl") != "https://example.test/mcp.png":
+    raise SystemExit("MCP DOM fixture did not preserve image sourceUrl")
+if mcp_dom_payload.get("localBrowserRuntimeEvents", [{}])[-1].get("anchorState", {}).get("anchor", {}).get("selector") != "a.primary":
+    raise SystemExit("MCP DOM fixture did not mirror design event into payload")
 PY
 
 log "ok"
