@@ -26,7 +26,7 @@ public struct AppShotCaptureOptions {
     public init(
         screenshotPath: String? = nil,
         includeScreenshot: Bool = false,
-        maxDepth: Int = 30,
+        maxDepth: Int = 60,
         maxChildren: Int = 240,
         includeOCR: Bool = false,
         maxOCRObservations: Int = 240,
@@ -161,7 +161,7 @@ public enum AppShotCore {
                 trigger: options.cacheTrigger ?? "capture",
                 maxAgeSeconds: options.cacheMaxAgeSeconds
             )
-        } else if options.preferRecentCache {
+        } else {
             payload["captureCache"] = captureCacheMetadata(
                 hit: false,
                 trigger: nil,
@@ -922,7 +922,12 @@ public func accessibilitySnapshot(
         }
     }
 
-    let documents = documentReferences(from: payload)
+    let scopedDocumentPayload: JSONObject = [
+        "root": root,
+        "targetWindow": targetWindow as Any
+    ]
+    let scopedDocuments = documentReferences(from: scopedDocumentPayload)
+    let documents = scopedDocuments.isEmpty ? documentReferences(from: root) : scopedDocuments
     if !documents.isEmpty {
         payload["documentReferences"] = documents
     }

@@ -89,13 +89,16 @@ function tools() {
           pid: { type: "number" },
           bundleID: { type: "string" },
           format: { type: "string", enum: ["json", "codex"], default: "json" },
-          maxDepth: { type: "number", default: 30 },
+          maxDepth: { type: "number", default: 60 },
           maxChildren: { type: "number", default: 240 },
           maxOCRObservations: { type: "number", default: 240 },
           accessibilityTimeout: { type: "number", default: 20 },
           screenshotTimeout: { type: "number", default: 3 },
           useRecentCache: { type: "boolean", default: true },
-          cacheMaxAge: { type: "number", default: 15 }
+          preferRecentCache: { type: "boolean", default: true },
+          cacheMaxAge: { type: "number", default: 15 },
+          writeCache: { type: "boolean", default: false },
+          cacheTrigger: { type: "string" }
         }
       }
     },
@@ -140,10 +143,12 @@ function callTool(params = {}) {
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
     if (args.pid != null) cliArgs.push("--pid", String(args.pid));
     if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
-    if (args.useRecentCache === false) cliArgs.push("--ignore-cache");
+    if (args.useRecentCache === false || args.preferRecentCache === false) cliArgs.push("--no-cache");
     if (args.cacheMaxAge != null) cliArgs.push("--cache-max-age", String(args.cacheMaxAge));
+    if (args.writeCache) cliArgs.push("--write-cache");
+    if (args.cacheTrigger) cliArgs.push("--cache-trigger", String(args.cacheTrigger));
     if (args.format === "codex") cliArgs.push("--format", "codex");
-    cliArgs.push("--max-depth", String(args.maxDepth ?? 30));
+    cliArgs.push("--max-depth", String(args.maxDepth ?? 60));
     cliArgs.push("--max-children", String(args.maxChildren ?? 240));
     if (args.maxOCRObservations != null) cliArgs.push("--max-ocr-observations", String(args.maxOCRObservations));
     cliArgs.push("--accessibility-timeout", String(args.accessibilityTimeout ?? 20));

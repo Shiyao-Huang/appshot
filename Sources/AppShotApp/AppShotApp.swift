@@ -296,7 +296,7 @@ final class AppShotModel: ObservableObject {
             do {
                 let payload = try AppShotCore.capture(options: AppShotCaptureOptions(
                     includeScreenshot: includeScreenshot,
-                    maxDepth: 30,
+                    maxDepth: 60,
                     maxChildren: 240,
                     includeOCR: includeOCR,
                     accessibilityTimeoutSeconds: 20.0,

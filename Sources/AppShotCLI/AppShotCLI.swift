@@ -9,7 +9,7 @@ struct CLIOptions {
     var includeOCR = false
     var pretty = false
     var format = "json"
-    var maxDepth = 30
+    var maxDepth = 60
     var maxChildren = 240
     var maxOCRObservations = 240
     var accessibilityTimeoutSeconds = 20.0
