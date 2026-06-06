@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_OWNER="${APPSHOT_REPO_OWNER:-Shiyao-Huang}"
 REPO_NAME="${APPSHOT_REPO_NAME:-appshot}"
-VERSION="${APPSHOT_VERSION:-0.1.3}"
+VERSION="${APPSHOT_VERSION:-0.1.4}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 SKILL_DIR="$CODEX_HOME/skills/appshot"
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"

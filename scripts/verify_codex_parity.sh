@@ -162,7 +162,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.3"
+expected = "0.1.4"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
