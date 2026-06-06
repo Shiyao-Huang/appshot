@@ -68,6 +68,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
+    Read `codexBrowserDOMIntegration.remoteDebuggingTarget` when the page might be a Codex/Electron remote-debugging surface such as `content shell remote debugging`, `inspectable webcontents`, or localhost ports `9222` / `9229`.
     When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
 12. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 13. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
@@ -128,6 +129,8 @@ The CLI returns JSON with:
 - `codexBrowserDOMIntegration.browserRuntimeEvents`
 - `codexBrowserDOMIntegration.browserRuntimeEventTypes`
 - `codexBrowserDOMIntegration.liveEventStreamAvailable`
+- `codexBrowserDOMIntegration.remoteDebuggingTarget`
+- `codexBrowserDOMIntegration.remoteDebuggingTarget.isRemoteDebuggingTarget`
 - `codexBrowserDOMIntegration.localBrowserAttachedImages`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
@@ -138,6 +141,7 @@ The CLI returns JSON with:
 - `codexBrowserPayload.localBrowserContext.targetPath`
 - `codexBrowserPayload.localBrowserCommentMetadata`
 - `codexBrowserPayload.localBrowserCommentMetadata.markerViewportPoint`
+- `codexBrowserPayload.localBrowserCommentMetadata.browserDOMIntegration.remoteDebuggingTarget`
 - `codexBrowserPayload.localBrowserAttachedImages`
 - `codexBrowserPayload.localBrowserDesignChange`
 - `codexBrowserPayload.localBrowserDesignChange.group`

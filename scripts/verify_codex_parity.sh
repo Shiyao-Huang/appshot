@@ -177,7 +177,7 @@ do
 done
 
 log "checking package version alignment"
-"$PYTHON" - "$ROOT" "$APP_BUNDLE" <<'PY'
+"$PYTHON" - "$ROOT" "$APP_BUNDLE" "$CODEX_EVIDENCE_ROOT" <<'PY'
 import json
 import pathlib
 import plistlib
@@ -186,6 +186,7 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 app_bundle = pathlib.Path(sys.argv[2])
+codex_evidence_root = pathlib.Path(sys.argv[3])
 plugin = json.loads((root / ".codex-plugin/plugin.json").read_text())
 mcp = json.loads((root / "mcp/package.json").read_text())
 server = (root / "mcp/server.js").read_text()
@@ -195,6 +196,7 @@ app = (root / "Sources/AppShotApp/AppShotApp.swift").read_text()
 cli = (root / "Sources/AppShotCLI/AppShotCLI.swift").read_text()
 core = (root / "Sources/AppShotCore/AppShotCore.swift").read_text()
 parity = (root / "docs/codex-parity.md").read_text()
+app_session = (codex_evidence_root / "appshots-evidence/522-app-session-appshots-snippets.js").read_text()
 qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
@@ -251,6 +253,7 @@ for name, text, needles in [
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
     ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
+    ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
     ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
@@ -270,13 +273,14 @@ CAPTURE_JSON="$(mktemp)"
 POLICY_JSON="$(mktemp)"
 RUNTIME_JSON="$(mktemp)"
 DOM_JSON="$(mktemp)"
+DEBUG_DOM_JSON="$(mktemp)"
 CODEX_TXT="$(mktemp)"
 MCP_JSONL="$(mktemp)"
 RUN_DIR="$(mktemp -d)"
 POLICY_SCREENSHOT="$RUN_DIR/policy.png"
 MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
 MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
-trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
 
 log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
@@ -284,9 +288,10 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.9","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"http://127.0.0.1:9222/json","title":"Inspectable WebContents","viewportSize":{"width":900,"height":700},"designTargets":[{"selector":"body","role":"document","text":"Inspectable WebContents","rect":{"x":0,"y":0,"width":900,"height":700}}]}' --pretty >"$DEBUG_DOM_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
 
-"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
@@ -295,7 +300,8 @@ capture = json.load(open(sys.argv[2]))
 policy = json.load(open(sys.argv[3]))
 runtime = json.load(open(sys.argv[4]))
 dom = json.load(open(sys.argv[5]))
-codex_text = open(sys.argv[6]).read()
+debug_dom = json.load(open(sys.argv[6]))
+codex_text = open(sys.argv[7]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -524,6 +530,20 @@ if dom_metadata.get("markerViewportPoint", {}).get("x") is None:
     raise SystemExit("browser DOM payload did not expose markerViewportPoint")
 if dom_metadata.get("browserDOMIntegration", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("browser DOM metadata did not mirror liveEventStreamAvailable")
+debug_dom_integration = debug_dom.get("codexBrowserDOMIntegration", {})
+debug_dom_payload = debug_dom.get("codexBrowserPayload", {})
+debug_remote = debug_dom_integration.get("remoteDebuggingTarget", {})
+if debug_remote.get("isRemoteDebuggingTarget") is not True:
+    raise SystemExit("browser DOM fixture did not detect Codex remote debugging target")
+if debug_remote.get("titleMatched") is not True:
+    raise SystemExit("browser DOM fixture did not detect inspectable WebContents title")
+if debug_remote.get("localDebugPortMatched") is not True:
+    raise SystemExit("browser DOM fixture did not detect localhost debug port")
+if debug_remote.get("port") != 9222:
+    raise SystemExit("browser DOM fixture did not preserve debug port 9222")
+debug_remote_metadata = debug_dom_payload.get("localBrowserCommentMetadata", {}).get("browserDOMIntegration", {}).get("remoteDebuggingTarget", {})
+if debug_remote_metadata.get("isRemoteDebuggingTarget") is not True:
+    raise SystemExit("browser payload metadata did not mirror remote debugging target")
 
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})
@@ -542,6 +562,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","screenshotPath":'"$MCP_POLICY_SCREENSHOT_JSON"',"browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
   '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.9","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
+  '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"http://localhost:9229/json","title":"Content Shell Remote Debugging","viewportSize":{"width":640,"height":480},"designTargets":[{"selector":"main","role":"document","text":"Content Shell Remote Debugging","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
   | (cd "$RUN_DIR" && APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL")
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -549,8 +570,8 @@ import json
 import sys
 
 lines = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6]:
-    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6]")
+if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6, 7]:
+    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6, 7]")
 
 tools = {tool["name"] for tool in lines[1]["result"]["tools"]}
 expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows"}
@@ -630,6 +651,17 @@ if mcp_dom_metadata.get("kind") != "browser":
     raise SystemExit("MCP DOM payload did not switch metadata kind to browser")
 if mcp_dom_metadata.get("markerViewportPoint", {}).get("x") is None:
     raise SystemExit("MCP DOM payload did not expose markerViewportPoint")
+
+mcp_debug_dom = json.loads(lines[6]["result"]["content"][0]["text"])
+mcp_debug_remote = mcp_debug_dom.get("codexBrowserDOMIntegration", {}).get("remoteDebuggingTarget", {})
+if mcp_debug_remote.get("isRemoteDebuggingTarget") is not True:
+    raise SystemExit("MCP DOM fixture did not detect Codex remote debugging target")
+if mcp_debug_remote.get("titleMatched") is not True:
+    raise SystemExit("MCP DOM fixture did not detect content shell title")
+if mcp_debug_remote.get("localDebugPortMatched") is not True:
+    raise SystemExit("MCP DOM fixture did not detect localhost debug port")
+if mcp_debug_remote.get("port") != 9229:
+    raise SystemExit("MCP DOM fixture did not preserve debug port 9229")
 PY
 
 log "ok"

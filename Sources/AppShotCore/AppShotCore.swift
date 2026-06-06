@@ -2731,6 +2731,7 @@ private func codexBrowserDOMIntegrationPayload(
         options: options,
         liveEventStreamAvailable: liveEventStreamAvailable
     )
+    let remoteDebuggingTarget = codexBrowserRemoteDebuggingTarget(pageURL: pageURL, title: title)
     return [
         "format": "codex-browser-dom-integration",
         "source": source,
@@ -2740,6 +2741,7 @@ private func codexBrowserDOMIntegrationPayload(
         "applicationName": appName,
         "pageUrl": pageURL,
         "title": title,
+        "remoteDebuggingTarget": remoteDebuggingTarget,
         "viewportSize": domSnapshot["viewportSize"] as? JSONObject ?? [:],
         "devicePixelRatio": domSnapshot["devicePixelRatio"] ?? NSNull(),
         "images": attachedImages,
@@ -2758,6 +2760,50 @@ private func codexBrowserDOMIntegrationPayload(
         "liveEventStreamAvailable": liveEventStreamAvailable,
         "localBrowserAttachedImages": attachedImages
     ]
+}
+
+private let codexBrowserRemoteDebuggingTitles: Set<String> = [
+    "content shell remote debugging",
+    "inspectable webcontents"
+]
+
+private let codexBrowserRemoteDebuggingPorts: Set<Int> = [9222, 9229]
+
+private func codexBrowserRemoteDebuggingTarget(pageURL: String, title: String) -> JSONObject {
+    let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let titleMatched = codexBrowserRemoteDebuggingTitles.contains(normalizedTitle)
+
+    var localDebugPortMatched = false
+    var parsedHost = ""
+    var parsedPort: Int?
+    if let url = URL(string: pageURL) {
+        parsedHost = (url.host ?? "").lowercased()
+        parsedPort = url.port ?? (url.scheme == "http" ? 80 : url.scheme == "https" ? 443 : nil)
+        if let port = parsedPort,
+           codexBrowserIsLocalDebugHost(parsedHost),
+           codexBrowserRemoteDebuggingPorts.contains(port) {
+            localDebugPortMatched = true
+        }
+    }
+
+    let isRemoteDebuggingTarget = titleMatched || localDebugPortMatched
+    return [
+        "isRemoteDebuggingTarget": isRemoteDebuggingTarget,
+        "titleMatched": titleMatched,
+        "localDebugPortMatched": localDebugPortMatched,
+        "title": title,
+        "host": parsedHost,
+        "port": parsedPort.map { $0 as Any } ?? NSNull(),
+        "knownTitles": Array(codexBrowserRemoteDebuggingTitles).sorted(),
+        "knownPorts": Array(codexBrowserRemoteDebuggingPorts).sorted()
+    ]
+}
+
+private func codexBrowserIsLocalDebugHost(_ host: String) -> Bool {
+    if host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" || host == "[::1]" {
+        return true
+    }
+    return host.hasSuffix(".localhost")
 }
 
 private func codexBrowserRuntimeEventCandidates(
@@ -3400,7 +3446,8 @@ public func codexBrowserPayload(
             "browserRuntimeEventCount": browserDOMIntegration["browserRuntimeEventCount"] ?? 0,
             "browserRuntimeBridgeEventCount": browserDOMIntegration["browserRuntimeBridgeEventCount"] ?? 0,
             "browserRuntimeCandidateEventCount": browserDOMIntegration["browserRuntimeCandidateEventCount"] ?? 0,
-            "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false
+            "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false,
+            "remoteDebuggingTarget": browserDOMIntegration["remoteDebuggingTarget"] ?? NSNull()
         ]
     }
 
