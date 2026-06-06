@@ -129,6 +129,11 @@ for anchor in \
   "codexBrowserRuntimeState" \
   "codexBrowserRuntimeProtocol" \
   "codexBrowserDOMIntegration" \
+  "browserRuntimeBridge" \
+  "browserRuntimeBridgeEvents" \
+  "browserRuntimeCandidateEvents" \
+  "appshot-browser-runtime-bridge" \
+  "Browser runtime bridge event log" \
   "codex-browser-runtime-state-adapter" \
   "codex-browser-runtime-protocol-adapter" \
   "codex-browser-dom-integration" \
@@ -136,6 +141,9 @@ for anchor in \
   "browser-annotation-screenshots-mode" \
   "Browser annotation screenshot policy" \
   "Browser runtime state adapter" \
+  "Browser Bridge" \
+  "--browser-dom-install-bridge" \
+  "--browser-dom-clear-bridge-log" \
   "browser-sidebar-runtime-open-design-editor" \
   "browser-sidebar-runtime-image-drag-started" \
   "browser-sidebar-runtime-image-drag-ended" \
@@ -190,7 +198,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.7"
+expected = "0.1.8"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
@@ -231,9 +239,9 @@ for name, text, pattern in [
         raise SystemExit(f"{name} is not aligned to {expected}")
 
 for name, text, needles in [
-    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture"]),
+    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM", "browserDOMInstallBridge", "Browser Bridge"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
@@ -241,7 +249,7 @@ for name, text, needles in [
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
-    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState"]),
+    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
@@ -269,7 +277,7 @@ log "checking CLI status/capture schema"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --pretty >"$POLICY_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON"
-"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON"
+"$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.8","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON"
 "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT"
 
 "$PYTHON" - "$STATUS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$CODEX_TXT" <<'PY'
@@ -440,11 +448,27 @@ if runtime_metadata.get("runtimeState", {}).get("isOriginalViewEnabled") is not 
 
 dom_integration = dom.get("codexBrowserDOMIntegration", {})
 dom_browser_payload = dom.get("codexBrowserPayload", {})
-require_keys("dom codexBrowserDOMIntegration", dom_integration, ["format", "source", "available", "images", "designTargets", "browserRuntimeEvents", "browserRuntimeEventTypes", "browserRuntimeProtocol", "localBrowserAttachedImages"])
+require_keys("dom codexBrowserDOMIntegration", dom_integration, ["format", "source", "available", "images", "designTargets", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeBridgeEventCount", "browserRuntimeCandidateEvents", "browserRuntimeCandidateEventCount", "browserRuntimeEvents", "browserRuntimeEventTypes", "browserRuntimeProtocol", "liveEventStreamAvailable", "localBrowserAttachedImages"])
 if dom_integration.get("format") != "codex-browser-dom-integration":
     raise SystemExit(f"unexpected browser DOM integration format: {dom_integration.get('format')!r}")
 if dom_integration.get("available") is not True:
     raise SystemExit("browser DOM fixture integration should be available")
+bridge = dom_integration.get("browserRuntimeBridge", {})
+if bridge.get("source") != "appshot-browser-runtime-bridge":
+    raise SystemExit("browser DOM bridge fixture did not preserve bridge source")
+if dom_integration.get("liveEventStreamAvailable") is not True:
+    raise SystemExit("browser DOM bridge fixture should report liveEventStreamAvailable")
+if dom_integration.get("browserRuntimeBridgeEventCount") != 1:
+    raise SystemExit("browser DOM bridge fixture should expose one bridge event")
+if dom_integration.get("browserRuntimeCandidateEventCount") != len(expected_runtime_events):
+    raise SystemExit("browser DOM fixture candidate event count is wrong")
+if dom_integration.get("browserRuntimeEventCount") != len(expected_runtime_events) + 1:
+    raise SystemExit("browser DOM combined runtime event count should include bridge plus candidates")
+bridge_event = dom_integration.get("browserRuntimeBridgeEvents", [{}])[0]
+if bridge_event.get("bridgeEvent") is not True or bridge_event.get("candidate") is not False:
+    raise SystemExit("browser DOM bridge event flags were not preserved")
+if bridge_event.get("anchorState", {}).get("anchor", {}).get("selector") != "button.cta":
+    raise SystemExit("browser DOM bridge event did not preserve selector anchor")
 event_types = [event.get("type") for event in dom_integration.get("browserRuntimeEvents", [])]
 for expected_event in expected_runtime_events:
     if expected_event not in event_types:
@@ -460,8 +484,12 @@ if design_event["anchorState"].get("anchor", {}).get("selector") != "button.cta"
     raise SystemExit("browser DOM design event did not preserve selector anchor")
 if len(dom_browser_payload.get("localBrowserAttachedImages", [])) != 1:
     raise SystemExit("browser DOM attached images were not mirrored into codexBrowserPayload")
-if len(dom_browser_payload.get("localBrowserRuntimeEvents", [])) != len(expected_runtime_events):
+if len(dom_browser_payload.get("localBrowserRuntimeEvents", [])) != len(expected_runtime_events) + 1:
     raise SystemExit("browser DOM runtime events were not mirrored into codexBrowserPayload")
+if dom_browser_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEvent") is not True:
+    raise SystemExit("browser DOM bridge event was not first in codexBrowserPayload runtime events")
+if dom_browser_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
+    raise SystemExit("browser DOM bridge availability was not mirrored into codexBrowserPayload runtime protocol")
 
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})
@@ -479,7 +507,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
-  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
+  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.8","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
   | APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL"
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -536,14 +564,24 @@ mcp_dom_integration = mcp_dom.get("codexBrowserDOMIntegration", {})
 mcp_dom_payload = mcp_dom.get("codexBrowserPayload", {})
 if mcp_dom_integration.get("format") != "codex-browser-dom-integration":
     raise SystemExit("MCP DOM fixture did not return codex browser DOM integration")
+if mcp_dom_integration.get("browserRuntimeBridgeEventCount") != 1:
+    raise SystemExit("MCP DOM fixture did not preserve bridge events")
+if mcp_dom_integration.get("browserRuntimeCandidateEventCount") != 22:
+    raise SystemExit("MCP DOM fixture did not preserve candidate event set")
+if mcp_dom_integration.get("liveEventStreamAvailable") is not True:
+    raise SystemExit("MCP DOM fixture did not preserve bridge liveEventStreamAvailable")
 events = mcp_dom_integration.get("browserRuntimeEvents", [])
 event_by_type = {event.get("type"): event for event in events}
 if event_by_type.get("browser-sidebar-runtime-image-drag-started", {}).get("sourceUrl") != "https://example.test/mcp.png":
     raise SystemExit("MCP DOM fixture did not preserve image sourceUrl")
 if event_by_type.get("browser-sidebar-runtime-open-design-editor", {}).get("anchorState", {}).get("anchor", {}).get("selector") != "a.primary":
     raise SystemExit("MCP DOM fixture did not mirror design event into payload")
-if len(mcp_dom_payload.get("localBrowserRuntimeEvents", [])) != 22:
-    raise SystemExit("MCP DOM fixture did not mirror the full Codex runtime candidate event set")
+if len(mcp_dom_payload.get("localBrowserRuntimeEvents", [])) != 23:
+    raise SystemExit("MCP DOM fixture did not mirror bridge plus the full Codex runtime candidate event set")
+if mcp_dom_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEvent") is not True:
+    raise SystemExit("MCP DOM fixture did not put bridge event into payload")
+if mcp_dom_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
+    raise SystemExit("MCP DOM fixture did not mirror liveEventStreamAvailable into payload protocol")
 PY
 
 log "ok"

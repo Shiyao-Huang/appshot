@@ -62,6 +62,8 @@ public struct AppShotCaptureOptions {
     public var includeBrowserDOM: Bool
     public var browserDOMTimeoutSeconds: TimeInterval
     public var browserDOMFixture: JSONObject?
+    public var browserDOMInstallBridge: Bool
+    public var browserDOMClearBridgeLog: Bool
     public var maxDepth: Int
     public var maxChildren: Int
     public var includeOCR: Bool
@@ -93,6 +95,8 @@ public struct AppShotCaptureOptions {
         includeBrowserDOM: Bool = false,
         browserDOMTimeoutSeconds: TimeInterval = 1.5,
         browserDOMFixture: JSONObject? = nil,
+        browserDOMInstallBridge: Bool = false,
+        browserDOMClearBridgeLog: Bool = false,
         maxDepth: Int = 60,
         maxChildren: Int = 240,
         includeOCR: Bool = false,
@@ -123,6 +127,8 @@ public struct AppShotCaptureOptions {
         self.includeBrowserDOM = includeBrowserDOM
         self.browserDOMTimeoutSeconds = browserDOMTimeoutSeconds
         self.browserDOMFixture = browserDOMFixture
+        self.browserDOMInstallBridge = browserDOMInstallBridge
+        self.browserDOMClearBridgeLog = browserDOMClearBridgeLog
         self.maxDepth = maxDepth
         self.maxChildren = maxChildren
         self.includeOCR = includeOCR
@@ -241,7 +247,7 @@ public enum AppShotCore {
         }
         payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
         payload["codexBrowserRuntimeProtocol"] = codexBrowserRuntimeProtocolPayload(options: options)
-        if options.includeBrowserDOM || options.browserDOMFixture != nil {
+        if options.includeBrowserDOM || options.browserDOMFixture != nil || options.browserDOMInstallBridge || options.browserDOMClearBridgeLog {
             payload["codexBrowserDOMIntegration"] = codexBrowserDOMIntegrationPayload(
                 application: app,
                 options: options
@@ -423,6 +429,8 @@ public enum AppShotCore {
             && options.screenshotPath == nil
             && !options.includeBrowserDOM
             && options.browserDOMFixture == nil
+            && !options.browserDOMInstallBridge
+            && !options.browserDOMClearBridgeLog
             && options.targetWindowID == nil
             && options.targetProcessIdentifier == nil
             && options.targetBundleIdentifier == nil
@@ -438,7 +446,7 @@ public enum AppShotCore {
         if options.screenshotPath != nil {
             return "explicitScreenshotPath"
         }
-        if options.includeBrowserDOM || options.browserDOMFixture != nil {
+        if options.includeBrowserDOM || options.browserDOMFixture != nil || options.browserDOMInstallBridge || options.browserDOMClearBridgeLog {
             return "browserDOMRequested"
         }
         if options.targetWindowID != nil {
@@ -2484,7 +2492,10 @@ public func codexBrowserRuntimeStatePayload(options: AppShotCaptureOptions) -> J
     return out
 }
 
-public func codexBrowserRuntimeProtocolPayload(options: AppShotCaptureOptions) -> JSONObject {
+public func codexBrowserRuntimeProtocolPayload(
+    options: AppShotCaptureOptions,
+    liveEventStreamAvailable: Bool = false
+) -> JSONObject {
     [
         "format": "codex-browser-runtime-protocol-adapter",
         "source": "codex-macapp-522-evidence",
@@ -2510,7 +2521,7 @@ public func codexBrowserRuntimeProtocolPayload(options: AppShotCaptureOptions) -
             "localBrowserScreenshot"
         ],
         "runtimeState": codexBrowserRuntimeStatePayload(options: options),
-        "liveEventStreamAvailable": false,
+        "liveEventStreamAvailable": liveEventStreamAvailable,
         "adapterOnly": true,
         "evidence": [
             "../codex-522/mac-app/artifacts/comment-preload-runtime-events-522.txt",
@@ -2538,7 +2549,7 @@ public func codexBrowserDOMIntegrationPayload(
         )
     }
 
-    guard options.includeBrowserDOM else {
+    guard options.includeBrowserDOM || options.browserDOMInstallBridge || options.browserDOMClearBridgeLog else {
         return [
             "format": "codex-browser-dom-integration",
             "source": "browser-apple-events-dom-probe",
@@ -2548,7 +2559,11 @@ public func codexBrowserDOMIntegrationPayload(
         ]
     }
 
-    guard let script = browserDOMProbeScript(bundleIdentifier: bundleIdentifier) else {
+    guard let script = browserDOMProbeScript(
+        bundleIdentifier: bundleIdentifier,
+        installBridge: options.browserDOMInstallBridge,
+        clearBridgeLog: options.browserDOMClearBridgeLog
+    ) else {
         return [
             "format": "codex-browser-dom-integration",
             "source": "browser-apple-events-dom-probe",
@@ -2695,7 +2710,7 @@ private func codexBrowserDOMIntegrationPayload(
         ]
     }.filter { !(codexTrimmedString($0["sourceUrl"]) ?? "").isEmpty }
 
-    let runtimeEvents = codexBrowserRuntimeEventCandidates(
+    let runtimeCandidateEvents = codexBrowserRuntimeEventCandidates(
         domSnapshot: domSnapshot,
         pageURL: pageURL,
         title: title,
@@ -2703,7 +2718,19 @@ private func codexBrowserDOMIntegrationPayload(
         designTargets: designTargets,
         options: options
     )
-    let runtimeEventTypes = runtimeEvents.compactMap { codexTrimmedString($0["type"]) }
+    let runtimeBridge = domSnapshot["runtimeBridge"] as? JSONObject ?? [:]
+    let runtimeBridgeEvents = ((runtimeBridge["events"] as? [JSONObject]) ?? (domSnapshot["browserRuntimeBridgeEvents"] as? [JSONObject]) ?? [])
+        .prefix(200)
+        .map { $0 }
+    let liveEventStreamAvailable = (runtimeBridge["liveEventStreamAvailable"] as? Bool)
+        ?? (runtimeBridge["installed"] as? Bool)
+        ?? !runtimeBridgeEvents.isEmpty
+    let runtimeEvents = runtimeBridgeEvents + runtimeCandidateEvents
+    let runtimeEventTypes = Array(Set(runtimeEvents.compactMap { codexTrimmedString($0["type"]) })).sorted()
+    let runtimeProtocol = codexBrowserRuntimeProtocolPayload(
+        options: options,
+        liveEventStreamAvailable: liveEventStreamAvailable
+    )
     return [
         "format": "codex-browser-dom-integration",
         "source": source,
@@ -2719,10 +2746,16 @@ private func codexBrowserDOMIntegrationPayload(
         "imageCount": attachedImages.count,
         "designTargets": Array(designTargets.prefix(24)),
         "designTargetCount": designTargets.count,
+        "browserRuntimeBridge": runtimeBridge,
+        "browserRuntimeBridgeEvents": Array(runtimeBridgeEvents),
+        "browserRuntimeBridgeEventCount": runtimeBridgeEvents.count,
+        "browserRuntimeCandidateEvents": runtimeCandidateEvents,
+        "browserRuntimeCandidateEventCount": runtimeCandidateEvents.count,
         "browserRuntimeEvents": runtimeEvents,
         "browserRuntimeEventCount": runtimeEvents.count,
         "browserRuntimeEventTypes": runtimeEventTypes,
-        "browserRuntimeProtocol": codexBrowserRuntimeProtocolPayload(options: options),
+        "browserRuntimeProtocol": runtimeProtocol,
+        "liveEventStreamAvailable": liveEventStreamAvailable,
         "localBrowserAttachedImages": attachedImages
     ]
 }
@@ -2902,7 +2935,11 @@ private func codexBrowserViewportPoint(from rect: JSONObject) -> JSONObject {
     ]
 }
 
-private func browserDOMProbeScript(bundleIdentifier: String) -> String? {
+private func browserDOMProbeScript(
+    bundleIdentifier: String,
+    installBridge: Bool,
+    clearBridgeLog: Bool
+) -> String? {
     let appName: String
     let chromeLike: Bool
     switch bundleIdentifier {
@@ -2925,7 +2962,10 @@ private func browserDOMProbeScript(bundleIdentifier: String) -> String? {
         return nil
     }
 
-    let pageProbe = browserDOMPageProbeJavaScript()
+    let pageProbe = browserDOMPageProbeJavaScript(
+        installBridge: installBridge,
+        clearBridgeLog: clearBridgeLog
+    )
     return """
     const appName = \(javaScriptStringLiteral(appName));
     const domJS = \(javaScriptStringLiteral(pageProbe));
@@ -2944,11 +2984,26 @@ private func browserDOMProbeScript(bundleIdentifier: String) -> String? {
     """
 }
 
-private func browserDOMPageProbeJavaScript() -> String {
-    #"""
+private func browserDOMPageProbeJavaScript(
+    installBridge: Bool,
+    clearBridgeLog: Bool
+) -> String {
+    let installBridgeLiteral = installBridge ? "true" : "false"
+    let clearBridgeLogLiteral = clearBridgeLog ? "true" : "false"
+    return #"""
     JSON.stringify((function() {
+      const appshotInstallBridge = \#(installBridgeLiteral);
+      const appshotClearBridgeLog = \#(clearBridgeLogLiteral);
+      const appshotBridgeVersion = "0.1.8";
+      const appshotBridgeSource = "appshot-browser-runtime-bridge";
       function textOf(element) {
         return (element.innerText || element.alt || element.getAttribute("aria-label") || element.title || element.value || "").replace(/\s+/g, " ").trim().slice(0, 240);
+      }
+      function elementFromEventTarget(target) {
+        if (!target) return document.documentElement;
+        if (target.nodeType === 1) return target;
+        if (target.parentElement) return target.parentElement;
+        return document.documentElement;
       }
       function rectOf(element) {
         const rect = element.getBoundingClientRect();
@@ -2989,6 +3044,166 @@ private func browserDOMPageProbeJavaScript() -> String {
         }
         return parts.join(" > ");
       }
+      function viewportPoint(rect) {
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      }
+      function anchorStateFor(element, event) {
+        const rect = rectOf(element);
+        const role = element.getAttribute("role") || element.tagName.toLowerCase();
+        const text = textOf(element);
+        return {
+          anchor: {
+            kind: "element",
+            selector: selectorFor(element),
+            role: role,
+            text: text
+          },
+          framePath: [],
+          frameUrl: location.href,
+          viewportSize: { width: window.innerWidth, height: window.innerHeight },
+          cardViewportRect: rect,
+          markerViewportPoint: event ? { x: event.clientX, y: event.clientY } : viewportPoint(rect)
+        };
+      }
+      function designEditorStateFor(element) {
+        return {
+          id: "appshot-bridge-design",
+          selector: selectorFor(element),
+          role: element.getAttribute("role") || element.tagName.toLowerCase(),
+          text: textOf(element),
+          rect: rectOf(element),
+          declarations: []
+        };
+      }
+      function closestImage(element) {
+        if (!element) return null;
+        if (element.tagName && element.tagName.toLowerCase() === "img") return element;
+        if (typeof element.closest === "function") return element.closest("img");
+        return null;
+      }
+      function imagePayload(img) {
+        return {
+          sourceUrl: img.currentSrc || img.src || "",
+          alt: img.alt || "",
+          selector: selectorFor(img),
+          rect: rectOf(img),
+          naturalSize: { width: img.naturalWidth || 0, height: img.naturalHeight || 0 }
+        };
+      }
+      function ensureRuntimeEventLog() {
+        if (!Array.isArray(window.__appshotRuntimeEventLog)) {
+          window.__appshotRuntimeEventLog = [];
+        }
+        return window.__appshotRuntimeEventLog;
+      }
+      function pushRuntimeEvent(type, event, fields) {
+        const element = elementFromEventTarget(event && event.target);
+        const payload = Object.assign({
+          type: type,
+          source: appshotBridgeSource,
+          bridgeEvent: true,
+          candidate: false,
+          capturedAt: new Date().toISOString(),
+          pageUrl: location.href,
+          title: document.title,
+          anchorState: anchorStateFor(element, event || null)
+        }, fields || {});
+        const log = ensureRuntimeEventLog();
+        log.push(payload);
+        if (log.length > 200) {
+          log.splice(0, log.length - 200);
+        }
+        return payload;
+      }
+      function installRuntimeBridge() {
+        const log = ensureRuntimeEventLog();
+        if (appshotClearBridgeLog) {
+          log.splice(0, log.length);
+        }
+        window.__appshotRuntimeBridgeVersion = appshotBridgeVersion;
+        if (!appshotInstallBridge) return;
+        if (window.__appshotRuntimeBridgeInstalled) return;
+        window.__appshotRuntimeBridgeInstalled = true;
+        document.addEventListener("pointerdown", function(event) {
+          const element = elementFromEventTarget(event.target);
+          const anchorState = anchorStateFor(element, event);
+          const commentId = "appshot-bridge-" + Date.now();
+          pushRuntimeEvent("browser-sidebar-runtime-open-editor", event, {
+            anchorState: anchorState,
+            editorMode: event.altKey ? "design" : "comment",
+            commentId: commentId
+          });
+          pushRuntimeEvent("browser-sidebar-runtime-create-comment-at-point", event, {
+            point: { x: event.clientX, y: event.clientY },
+            anchorState: anchorState,
+            commentId: commentId
+          });
+          pushRuntimeEvent("browser-sidebar-runtime-update-anchor", event, {
+            anchorState: anchorState,
+            commentId: commentId
+          });
+        }, true);
+        document.addEventListener("pointermove", function(event) {
+          if (!event.altKey && !event.shiftKey) return;
+          const element = elementFromEventTarget(event.target);
+          const anchorState = anchorStateFor(element, event);
+          const designEditorState = designEditorStateFor(element);
+          pushRuntimeEvent("browser-sidebar-runtime-design-modifier-state", event, {
+            isDesignModifierPressed: event.altKey
+          });
+          pushRuntimeEvent("browser-sidebar-runtime-design-scrub-changed", event, {
+            anchorState: anchorState,
+            designEditorState: designEditorState,
+            designChange: designEditorState
+          });
+        }, true);
+        document.addEventListener("dragstart", function(event) {
+          const img = closestImage(elementFromEventTarget(event.target));
+          if (!img) return;
+          const image = imagePayload(img);
+          if (!image.sourceUrl) return;
+          pushRuntimeEvent("browser-sidebar-runtime-image-drag-started", event, {
+            sourceUrl: image.sourceUrl,
+            image: image
+          });
+        }, true);
+        document.addEventListener("dragend", function(event) {
+          const img = closestImage(elementFromEventTarget(event.target));
+          if (!img) return;
+          const image = imagePayload(img);
+          if (!image.sourceUrl) return;
+          pushRuntimeEvent("browser-sidebar-runtime-image-drag-ended", event, {
+            sourceUrl: image.sourceUrl,
+            image: image
+          });
+        }, true);
+        document.addEventListener("keydown", function(event) {
+          if (event.key !== "Alt" && event.key !== "Option") return;
+          pushRuntimeEvent("browser-sidebar-runtime-design-modifier-state", event, {
+            isDesignModifierPressed: true
+          });
+        }, true);
+        document.addEventListener("keyup", function(event) {
+          if (event.key !== "Alt" && event.key !== "Option") return;
+          pushRuntimeEvent("browser-sidebar-runtime-design-modifier-state", event, {
+            isDesignModifierPressed: false
+          });
+        }, true);
+        pushRuntimeEvent("browser-sidebar-runtime-sync", null, {
+          state: {
+            type: "browser-sidebar-runtime-sync",
+            interactionMode: "comment",
+            annotationEditorMode: "comment",
+            isAgentControllingBrowser: false,
+            canUseTweaks: true,
+            isDesignModifierPressed: false,
+            isOriginalViewEnabled: false,
+            isTweaksEditorOpen: false,
+            comments: []
+          }
+        });
+      }
+      installRuntimeBridge();
       const viewportSize = { width: window.innerWidth, height: window.innerHeight };
       const images = Array.from(document.images).filter(function(img) {
         return Boolean(img.currentSrc || img.src);
@@ -3017,6 +3232,17 @@ private func browserDOMPageProbeJavaScript() -> String {
           rect: rectOf(element)
         };
       });
+      const runtimeBridgeLog = ensureRuntimeEventLog();
+      const runtimeBridge = {
+        installed: Boolean(window.__appshotRuntimeBridgeInstalled),
+        installRequested: appshotInstallBridge,
+        clearRequested: appshotClearBridgeLog,
+        liveEventStreamAvailable: Boolean(window.__appshotRuntimeBridgeInstalled),
+        version: window.__appshotRuntimeBridgeVersion || appshotBridgeVersion,
+        source: appshotBridgeSource,
+        eventCount: runtimeBridgeLog.length,
+        events: runtimeBridgeLog.slice(-80)
+      };
       return {
         available: true,
         pageUrl: location.href,
@@ -3024,7 +3250,8 @@ private func browserDOMPageProbeJavaScript() -> String {
         viewportSize: viewportSize,
         devicePixelRatio: window.devicePixelRatio || 1,
         images: images,
-        designTargets: designTargets
+        designTargets: designTargets,
+        runtimeBridge: runtimeBridge
       };
     })())
     """#
@@ -3100,8 +3327,9 @@ public func codexBrowserPayload(
     let root = accessibility?["root"] as? JSONObject
     let screenshot = payload["screenshot"] as? JSONObject
     let runtimeState = payload["codexBrowserRuntimeState"] as? JSONObject
-    let runtimeProtocol = payload["codexBrowserRuntimeProtocol"] as? JSONObject
     let browserDOMIntegration = payload["codexBrowserDOMIntegration"] as? JSONObject
+    let runtimeProtocol = (browserDOMIntegration?["browserRuntimeProtocol"] as? JSONObject)
+        ?? (payload["codexBrowserRuntimeProtocol"] as? JSONObject)
 
     let appName = codexTrimmedString(app["localizedName"]) ?? codexTrimmedString(app["bundleIdentifier"]) ?? "Unknown"
     let bundleIdentifier = codexTrimmedString(app["bundleIdentifier"]) ?? ""

@@ -58,7 +58,7 @@ function handleLine(line) {
       respond(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "appshot", version: "0.1.7" }
+        serverInfo: { name: "appshot", version: "0.1.8" }
       });
     } else if (method === "tools/list") {
       respond(id, { tools: tools() });
@@ -97,6 +97,8 @@ function tools() {
           includeBrowserDOM: { type: "boolean", default: false },
           browserDOMTimeout: { type: "number", default: 1.5 },
           browserDOMFixture: { type: "object" },
+          browserDOMInstallBridge: { type: "boolean", default: false },
+          browserDOMClearBridgeLog: { type: "boolean", default: false },
           includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
           windowID: { type: "number" },
@@ -166,6 +168,8 @@ function callTool(params = {}) {
     if (args.includeBrowserDOM) cliArgs.push("--include-browser-dom");
     if (args.browserDOMTimeout != null) cliArgs.push("--browser-dom-timeout", String(args.browserDOMTimeout));
     if (args.browserDOMFixture != null) cliArgs.push("--browser-dom-fixture-json", JSON.stringify(args.browserDOMFixture));
+    if (args.browserDOMInstallBridge) cliArgs.push("--browser-dom-install-bridge");
+    if (args.browserDOMClearBridgeLog) cliArgs.push("--browser-dom-clear-bridge-log");
     if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));

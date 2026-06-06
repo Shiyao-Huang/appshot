@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-0.1.7}"
+VERSION="${1:-0.1.8}"
 BUILD_DIR="$ROOT/.xcode-build"
 DERIVED_DATA_DIR="$BUILD_DIR/DerivedData"
 PRODUCTS_DIR="$BUILD_DIR/Products"

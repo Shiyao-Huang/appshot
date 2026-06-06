@@ -20,6 +20,8 @@ struct CLIOptions {
     var includeBrowserDOM = false
     var browserDOMTimeoutSeconds = 1.5
     var browserDOMFixture: JSONObject?
+    var browserDOMInstallBridge = false
+    var browserDOMClearBridgeLog = false
     var includeOCR = false
     var pretty = false
     var format = "json"
@@ -69,6 +71,8 @@ struct AppShotCLI {
                     includeBrowserDOM: options.includeBrowserDOM,
                     browserDOMTimeoutSeconds: options.browserDOMTimeoutSeconds,
                     browserDOMFixture: options.browserDOMFixture,
+                    browserDOMInstallBridge: options.browserDOMInstallBridge,
+                    browserDOMClearBridgeLog: options.browserDOMClearBridgeLog,
                     maxDepth: options.maxDepth,
                     maxChildren: options.maxChildren,
                     includeOCR: options.includeOCR,
@@ -166,6 +170,12 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
         case "--browser-dom-fixture-json":
             options.browserDOMFixture = try parseJSONObject(try nextValue(), optionName: arg)
             options.includeBrowserDOM = true
+        case "--browser-dom-install-bridge":
+            options.browserDOMInstallBridge = true
+            options.includeBrowserDOM = true
+        case "--browser-dom-clear-bridge-log":
+            options.browserDOMClearBridgeLog = true
+            options.includeBrowserDOM = true
         case "--include-ocr":
             options.includeOCR = true
         case "--pretty":
@@ -260,7 +270,7 @@ func printHelp() {
 
     Usage:
       appshot status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -274,6 +284,7 @@ func printHelp() {
       --browser-annotation-screenshots-mode always captures a screenshot for codexBrowserPayload by default.
       Browser runtime options populate codexBrowserRuntimeState using Codex browser-sidebar-runtime-sync field names.
       --include-browser-dom adds a timed Safari/Chrome DOM probe for image-drag sourceUrl and design-editor anchor candidates when Apple Events allows it.
+      --browser-dom-install-bridge injects an optional page listener that records real browser-sidebar-runtime event logs in the current tab until reload.
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
       --format codex prints a compact AppShot block similar to Codex built-in appshots.

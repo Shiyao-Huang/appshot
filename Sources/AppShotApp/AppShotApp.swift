@@ -65,6 +65,7 @@ final class AppShotModel: ObservableObject {
     private static let browserDesignModifierPressedKey = "AppShot.browserDesignModifierPressed"
     private static let browserTweaksEditorOpenKey = "AppShot.browserTweaksEditorOpen"
     private static let includeBrowserDOMKey = "AppShot.includeBrowserDOM"
+    private static let browserDOMInstallBridgeKey = "AppShot.browserDOMInstallBridge"
     private let optionShortcutMonitor = OptionPairShortcutMonitor()
 
     @Published var state: String = "checking"
@@ -149,6 +150,14 @@ final class AppShotModel: ObservableObject {
                 return
             }
             UserDefaults.standard.set(includeBrowserDOM, forKey: Self.includeBrowserDOMKey)
+        }
+    }
+    @Published var browserDOMInstallBridge: Bool = AppShotModel.defaultBrowserDOMInstallBridge() {
+        didSet {
+            guard browserDOMInstallBridge != oldValue else {
+                return
+            }
+            UserDefaults.standard.set(browserDOMInstallBridge, forKey: Self.browserDOMInstallBridgeKey)
         }
     }
     @Published var isAutoRefreshEnabled = false
@@ -321,6 +330,10 @@ final class AppShotModel: ObservableObject {
         UserDefaults.standard.bool(forKey: includeBrowserDOMKey)
     }
 
+    private static func defaultBrowserDOMInstallBridge() -> Bool {
+        UserDefaults.standard.bool(forKey: browserDOMInstallBridgeKey)
+    }
+
     private func configureGlobalShortcut() {
         if isGlobalShortcutEnabled {
             optionShortcutMonitor.start()
@@ -390,6 +403,7 @@ final class AppShotModel: ObservableObject {
         let browserDesignModifierPressed = self.browserDesignModifierPressed
         let browserTweaksEditorOpen = self.browserTweaksEditorOpen
         let includeBrowserDOM = self.includeBrowserDOM
+        let browserDOMInstallBridge = self.browserDOMInstallBridge
         isCapturing = true
         lastError = nil
 
@@ -404,6 +418,7 @@ final class AppShotModel: ObservableObject {
                     browserIsOriginalViewEnabled: browserOriginalViewEnabled,
                     browserIsTweaksEditorOpen: browserTweaksEditorOpen,
                     includeBrowserDOM: includeBrowserDOM,
+                    browserDOMInstallBridge: browserDOMInstallBridge,
                     maxDepth: 60,
                     maxChildren: 240,
                     includeOCR: includeOCR,
@@ -792,6 +807,10 @@ struct AppShotDashboardView: View {
                 StatusTile(title: "Browser Screenshots", value: model.browserAnnotationScreenshotsMode, symbol: "rectangle.on.rectangle.angled", good: true)
                 StatusTile(title: "Browser DOM", value: model.includeBrowserDOM ? "On" : "Off", symbol: "safari", good: model.includeBrowserDOM)
             }
+            GridRow {
+                StatusTile(title: "Browser Bridge", value: model.browserDOMInstallBridge ? "On" : "Off", symbol: "link", good: model.browserDOMInstallBridge)
+                StatusTile(title: "Browser Editor", value: model.browserAnnotationEditorMode, symbol: "pencil.and.outline", good: true)
+            }
         }
     }
 
@@ -934,6 +953,7 @@ struct MenuBarView: View {
             StatusLine(label: "Auto Refresh", value: model.isAutoRefreshEnabled ? "\(Int(model.samplingIntervalSeconds))s" : "Off", good: model.isAutoRefreshEnabled)
             StatusLine(label: "Shortcut", value: model.isGlobalShortcutEnabled ? model.globalShortcutLabel : "Off", good: model.isGlobalShortcutEnabled)
             StatusLine(label: "Cache", value: model.captureCacheSummary, good: model.captureCacheSummary != "Empty")
+            StatusLine(label: "Browser Bridge", value: model.browserDOMInstallBridge ? "On" : "Off", good: model.browserDOMInstallBridge)
             HStack {
                 Button("Refresh") {
                     model.refreshStatus()
@@ -1017,6 +1037,10 @@ struct AppShotSettingsView: View {
 
             Toggle(isOn: $model.includeBrowserDOM) {
                 Label("Browser DOM", systemImage: "safari")
+            }
+
+            Toggle(isOn: $model.browserDOMInstallBridge) {
+                Label("Browser Bridge", systemImage: "link")
             }
 
             Divider()

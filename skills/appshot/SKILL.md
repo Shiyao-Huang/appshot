@@ -68,6 +68,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
+    When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
 12. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 13. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
 14. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
@@ -121,8 +122,12 @@ The CLI returns JSON with:
 - `codexBrowserRuntimeProtocol.channel`
 - `codexBrowserRuntimeProtocol.liveEventStreamAvailable`
 - `codexBrowserDOMIntegration`
+- `codexBrowserDOMIntegration.browserRuntimeBridge`
+- `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`
+- `codexBrowserDOMIntegration.browserRuntimeCandidateEvents`
 - `codexBrowserDOMIntegration.browserRuntimeEvents`
 - `codexBrowserDOMIntegration.browserRuntimeEventTypes`
+- `codexBrowserDOMIntegration.liveEventStreamAvailable`
 - `codexBrowserDOMIntegration.localBrowserAttachedImages`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
