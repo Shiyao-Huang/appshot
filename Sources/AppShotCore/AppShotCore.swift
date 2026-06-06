@@ -851,7 +851,14 @@ private func axPreferredChildAttributes(parentSnapshot: JSONObject, discovered: 
     let role = parentSnapshot["role"] as? String
     switch role {
     case "AXCell", "AXRow", "AXOutlineRow":
-        return [kAXChildrenAttribute]
+        return [
+            kAXChildrenAttribute,
+            "AXVisibleChildren",
+            "AXChildrenInNavigationOrder",
+            "AXContents",
+            "AXColumns",
+            "AXVisibleColumns"
+        ]
     case "AXList", "AXOutline", "AXTable":
         return [
             "AXVisibleRows",
@@ -2161,16 +2168,22 @@ private func codexDescriptionLabel(_ description: String, role: String) -> Strin
         "list",
         "outline",
         "outline row",
+        "pop up button",
         "row",
         "scroll area",
         "split group",
+        "tab group",
         "toolbar",
         "单元格",
+        "内容列表",
         "列表",
         "大纲",
+        "外框",
         "外框行",
         "滚动区",
         "分离组",
+        "弹出式按钮",
+        "标签组",
         "工具栏"
     ])
     if rawDescriptionRoles.contains(role) {
@@ -2290,7 +2303,7 @@ private func codexShouldIncludeElementLine(_ element: JSONObject) -> Bool {
        codexTrimmedString(element["identifier"]) == nil,
        !codexIsSelected(element) {
         let childCount = codexSemanticChildren(of: element).count
-        return childCount != 1
+        return childCount > 1
     }
 
     return true
