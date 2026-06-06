@@ -582,7 +582,7 @@ public func accessibilitySnapshot(
 ) -> JSONObject {
     let appElement = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(appElement, 0.75)
-    let electronAccessibility = enableElectronAccessibility(appElement)
+    var electronAccessibility = enableElectronAccessibility(appElement)
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     var focusedWindow: AnyObject?
     let focusedWindowResult = AXUIElementCopyAttributeValue(
@@ -611,6 +611,13 @@ public func accessibilitySnapshot(
     let mainAXWindow = mainWindowResult == .success ? axElement(from: mainWindow) : nil
     let windowFallback = [focusedAXWindow, mainAXWindow].compactMap { $0 }.first(where: axIsWindowElement)
     let rootElement = targetAXWindow ?? windowFallback ?? appElement
+    var enhancedElements = [AXUIElement]()
+    if let focusedAXElement = axElement(from: focusedElement) {
+        enhancedElements.append(focusedAXElement)
+    }
+    enhancedElements.append(rootElement)
+    enhancedElements.append(contentsOf: axEnhancementCandidateElements(rootElement))
+    electronAccessibility["enhancedUserInterface"] = enableEnhancedUserInterface(enhancedElements)
     let rootSource = targetAXWindow != nil ? "targetWindow" : windowFallback != nil ? "focusedWindow" : "application"
     let root = elementSnapshot(
         rootElement,
@@ -893,17 +900,104 @@ private func axPreferredChildAttributes(parentSnapshot: JSONObject, discovered: 
 
 public func enableElectronAccessibility(_ appElement: AXUIElement) -> JSONObject {
     AXUIElementSetMessagingTimeout(appElement, 0.5)
-    let result = AXUIElementSetAttributeValue(
-        appElement,
-        "AXManualAccessibility" as CFString,
-        kCFBooleanTrue
-    )
-    return [
+    let attributes = [
+        "AXManualAccessibility",
+        "AXEnhancedUserInterface"
+    ]
+    let attempts: [JSONObject] = attributes.map { attribute in
+        let result = AXUIElementSetAttributeValue(
+            appElement,
+            attribute as CFString,
+            kCFBooleanTrue
+        )
+        return [
+            "attribute": attribute,
+            "requested": true,
+            "result": String(describing: result),
+            "enabled": result == .success
+        ]
+    }
+    let first = attempts.first ?? [
         "attribute": "AXManualAccessibility",
         "requested": true,
-        "result": String(describing: result),
-        "enabled": result == .success
+        "result": "notAttempted",
+        "enabled": false
     ]
+    return [
+        "attribute": first["attribute"] ?? "AXManualAccessibility",
+        "requested": true,
+        "result": first["result"] ?? "notAttempted",
+        "enabled": attempts.contains { $0["enabled"] as? Bool == true },
+        "attempts": attempts
+    ]
+}
+
+public func axEnhancementCandidateElements(
+    _ rootElement: AXUIElement,
+    maxDepth: Int = 3,
+    maxElements: Int = 48
+) -> [AXUIElement] {
+    let childAttributes = [
+        kAXChildrenAttribute as String,
+        "AXVisibleChildren",
+        "AXChildrenInNavigationOrder",
+        "AXContents",
+        "AXTabs",
+        "AXRows",
+        "AXVisibleRows"
+    ]
+    var out: [AXUIElement] = []
+    var queue: [(AXUIElement, Int)] = [(rootElement, 0)]
+    var seen = Set([axElementID(rootElement)])
+
+    while !queue.isEmpty, out.count < maxElements {
+        let (element, depth) = queue.removeFirst()
+        guard depth < maxDepth else {
+            continue
+        }
+        for attribute in childAttributes {
+            for child in axChildElements(element, attribute: attribute) {
+                let childID = axElementID(child)
+                guard !seen.contains(childID) else {
+                    continue
+                }
+                seen.insert(childID)
+                out.append(child)
+                if out.count >= maxElements {
+                    break
+                }
+                queue.append((child, depth + 1))
+            }
+            if out.count >= maxElements {
+                break
+            }
+        }
+    }
+    return out
+}
+
+public func enableEnhancedUserInterface(_ elements: [AXUIElement]) -> [JSONObject] {
+    var seen = Set<String>()
+    return elements.compactMap { element in
+        let elementID = axElementID(element)
+        guard !seen.contains(elementID) else {
+            return nil
+        }
+        seen.insert(elementID)
+        AXUIElementSetMessagingTimeout(element, 0.5)
+        let result = AXUIElementSetAttributeValue(
+            element,
+            "AXEnhancedUserInterface" as CFString,
+            kCFBooleanTrue
+        )
+        return [
+            "attribute": "AXEnhancedUserInterface",
+            "elementID": elementID,
+            "requested": true,
+            "result": String(describing: result),
+            "enabled": result == .success
+        ]
+    }
 }
 
 public func axAttributeNames(_ element: AXUIElement) -> [String] {
