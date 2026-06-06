@@ -2135,7 +2135,9 @@ private func codexAppendElementLines(_ element: JSONObject, depth: Int, lines: i
     }
 
     let digest = codexElementDigest(element)
-    let includeLine = codexShouldIncludeElementLine(element) && !seen.contains(digest)
+    let includeLine = codexShouldIncludeElementLine(element)
+        && !seen.contains(digest)
+        && (!codexIsStructuralShell(element) || codexHasUnseenRenderableDescendant(element, seen: seen))
     if includeLine {
         seen.insert(digest)
         lines.append(String(repeating: "\t", count: depth) + codexElementLine(element))
@@ -2426,19 +2428,58 @@ private func codexShouldIncludeElementLine(_ element: JSONObject) -> Bool {
         return false
     }
 
-    let role = codexRoleName(element)
-    if ["element", "container", "组", "group", "cell", "application", "应用"].contains(role),
-        codexTrimmedString(element["title"]) == nil,
-       codexTrimmedString(element["description"]) == nil,
-       codexTrimmedString(element["value"]) == nil,
-       codexTrimmedString(element["textContent"]) == nil,
-       codexTrimmedString(element["identifier"]) == nil,
-       !codexIsSelected(element) {
+    if codexIsStructuralShell(element) {
         let childCount = codexSemanticChildren(of: element).count
         return childCount > 1
     }
 
     return true
+}
+
+private func codexIsStructuralShell(_ element: JSONObject) -> Bool {
+    let role = codexRoleName(element)
+    let structuralShellRoles = Set([
+        "element",
+        "application",
+        "cell",
+        "container",
+        "content list",
+        "group",
+        "list",
+        "outline",
+        "scroll area",
+        "tab group",
+        "toolbar",
+        "应用",
+        "单元格",
+        "内容列表",
+        "外框",
+        "工具栏",
+        "滚动区",
+        "组",
+        "标签组",
+        "列表"
+    ])
+    return structuralShellRoles.contains(role)
+        && codexTrimmedString(element["title"]) == nil
+        && codexTrimmedString(element["description"]) == nil
+        && codexTrimmedString(element["value"]) == nil
+        && codexTrimmedString(element["textContent"]) == nil
+        && codexTrimmedString(element["identifier"]) == nil
+        && !codexIsSelected(element)
+}
+
+private func codexHasUnseenRenderableDescendant(_ element: JSONObject, seen: Set<String>) -> Bool {
+    for child in codexChildrenForSummary(of: element) {
+        if codexShouldIncludeElementLine(child),
+           !seen.contains(codexElementDigest(child)) {
+            return true
+        }
+        if codexHasUnseenRenderableDescendant(child, seen: seen) {
+            return true
+        }
+    }
+    return false
 }
 
 private let codexChildKeys = [
