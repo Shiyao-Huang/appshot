@@ -261,7 +261,7 @@ for name, text, needles in [
     ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
-    ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
+    ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetWindowMatch", "matchingAXWindowResult", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
@@ -374,8 +374,17 @@ if isinstance(capture.get("primaryWindow"), dict):
 
 accessibility = capture.get("accessibility", {})
 require_keys("capture accessibility", accessibility, ["trusted", "rootSource", "root", "text", "textLineCount", "visibleText", "visibleTextLineCount", "electronAccessibility"])
-if accessibility.get("rootSource") not in {"targetWindow", "focusedWindow", "application"}:
+if accessibility.get("rootSource") not in {"targetWindow", "focusedWindow", "application", "targetWindowUnmatchedFocusedWindow", "targetWindowUnmatchedApplication"}:
     raise SystemExit(f"unexpected accessibility.rootSource: {accessibility.get('rootSource')!r}")
+if "targetWindow" in accessibility:
+    target_window_match = accessibility.get("targetWindowMatch", {})
+    require_keys("capture targetWindowMatch", target_window_match, ["matched", "candidateCount", "bestScore", "topCandidates", "focusedWindowResult", "mainWindowResult", "recoverySteps"])
+    if not isinstance(target_window_match.get("matched"), bool):
+        raise SystemExit("targetWindowMatch matched was not a boolean")
+    if not isinstance(target_window_match.get("candidateCount"), int):
+        raise SystemExit("targetWindowMatch candidateCount was not an integer")
+    if not isinstance(target_window_match.get("topCandidates"), list):
+        raise SystemExit("targetWindowMatch topCandidates was not a list")
 if accessibility.get("trusted") and accessibility.get("visibleTextLineCount", 0) <= 0:
     raise SystemExit("trusted accessibility capture has no visibleText lines")
 electron_accessibility = accessibility.get("electronAccessibility", {})

@@ -1058,9 +1058,10 @@ public func accessibilitySnapshot(
     )
 
     var visited = Set<String>()
-    let targetAXWindow = targetWindow.flatMap {
-        matchingAXWindow(appElement: appElement, targetWindow: $0)
+    let targetWindowMatch = targetWindow.map {
+        matchingAXWindowResult(appElement: appElement, targetWindow: $0)
     }
+    let targetAXWindow = targetWindowMatch?.element
     let focusedAXWindow = focusedWindowResult == .success ? axElement(from: focusedWindow) : nil
     let mainAXWindow = mainWindowResult == .success ? axElement(from: mainWindow) : nil
     let windowFallback = [focusedAXWindow, mainAXWindow].compactMap { $0 }.first(where: axIsWindowElement)
@@ -1072,7 +1073,18 @@ public func accessibilitySnapshot(
     enhancedElements.append(rootElement)
     enhancedElements.append(contentsOf: axEnhancementCandidateElements(rootElement))
     electronAccessibility["enhancedUserInterface"] = enableEnhancedUserInterface(enhancedElements)
-    let rootSource = targetAXWindow != nil ? "targetWindow" : windowFallback != nil ? "focusedWindow" : "application"
+    let rootSource: String
+    if targetAXWindow != nil {
+        rootSource = "targetWindow"
+    } else if targetWindow != nil, windowFallback != nil {
+        rootSource = "targetWindowUnmatchedFocusedWindow"
+    } else if targetWindow != nil {
+        rootSource = "targetWindowUnmatchedApplication"
+    } else if windowFallback != nil {
+        rootSource = "focusedWindow"
+    } else {
+        rootSource = "application"
+    }
     let root = elementSnapshot(
         rootElement,
         depth: 0,
@@ -1092,6 +1104,9 @@ public func accessibilitySnapshot(
 
     if let targetWindow {
         payload["targetWindow"] = targetWindow
+    }
+    if let targetWindowMatch {
+        payload["targetWindowMatch"] = targetWindowMatch.diagnostics
     }
 
     if focusedElementResult == .success,
@@ -1707,6 +1722,18 @@ private func axChildMaxDepth(parentSnapshot: JSONObject, parentDepth: Int, reque
 }
 
 public func matchingAXWindow(appElement: AXUIElement, targetWindow: JSONObject) -> AXUIElement? {
+    matchingAXWindowResult(appElement: appElement, targetWindow: targetWindow).element
+}
+
+private struct AXWindowCandidate {
+    let element: AXUIElement
+    let sources: [String]
+}
+
+private func matchingAXWindowResult(
+    appElement: AXUIElement,
+    targetWindow: JSONObject
+) -> (element: AXUIElement?, diagnostics: JSONObject) {
     var focusedWindow: AnyObject?
     let focusedWindowResult = AXUIElementCopyAttributeValue(
         appElement,
@@ -1719,40 +1746,96 @@ public func matchingAXWindow(appElement: AXUIElement, targetWindow: JSONObject) 
         kAXMainWindowAttribute as CFString,
         &mainWindow
     )
-    var candidates: [AXUIElement] = []
+    var candidatePairs: [(source: String, element: AXUIElement)] = []
     if focusedWindowResult == .success, let focusedWindow {
-        candidates.append(focusedWindow as! AXUIElement)
+        candidatePairs.append(("focusedWindow", focusedWindow as! AXUIElement))
     }
     if mainWindowResult == .success, let mainWindow {
-        candidates.append(mainWindow as! AXUIElement)
+        candidatePairs.append(("mainWindow", mainWindow as! AXUIElement))
     }
-    candidates +=
-        axChildElements(appElement, attribute: kAXWindowsAttribute) +
-        axChildElements(appElement, attribute: "AXVisibleChildren") +
-        axChildElements(appElement, attribute: kAXChildrenAttribute)
-    let windows = dedupeAXElements(
-        candidates
-    )
-    guard !windows.isEmpty else {
-        return nil
+    for attribute in [
+        kAXWindowsAttribute,
+        "AXVisibleChildren",
+        kAXChildrenAttribute,
+        "AXChildrenInNavigationOrder",
+        "AXContents"
+    ] {
+        for element in axChildElements(appElement, attribute: attribute) {
+            candidatePairs.append((attribute, element))
+        }
     }
+
+    var candidatesByID: [String: AXWindowCandidate] = [:]
+    var candidateOrder: [String] = []
+    for pair in candidatePairs {
+        let id = axElementID(pair.element)
+        if let existing = candidatesByID[id] {
+            candidatesByID[id] = AXWindowCandidate(
+                element: existing.element,
+                sources: dedupeStrings(existing.sources + [pair.source])
+            )
+        } else {
+            candidatesByID[id] = AXWindowCandidate(element: pair.element, sources: [pair.source])
+            candidateOrder.append(id)
+        }
+    }
+    let candidates = candidateOrder.compactMap { candidatesByID[$0] }
 
     let targetTitle = (targetWindow["title"] as? String ?? "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
     let targetBounds = targetWindow["bounds"] as? JSONObject
-    var best: (score: Double, element: AXUIElement)?
+    let targetWindowNumber = numberValue(targetWindow["windowNumber"]) ?? numberValue(targetWindow["windowID"])
+    var best: (score: Double, element: AXUIElement, diagnostics: JSONObject)?
+    var scoredCandidates: [JSONObject] = []
 
-    for window in windows {
+    for candidate in candidates {
+        let window = candidate.element
         var score = 0.0
+        var reasons: [String] = []
+        let role = copyAXValue(window, kAXRoleAttribute) as? String ?? ""
+        if role == "AXWindow" {
+            score += 20
+            reasons.append("role")
+        }
         let axTitle = (copyAXValue(window, kAXTitleAttribute) as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !targetTitle.isEmpty && !axTitle.isEmpty {
             if axTitle == targetTitle {
                 score += 120
+                reasons.append("titleExact")
             } else if axTitle.contains(targetTitle) || targetTitle.contains(axTitle) {
                 score += 50
+                reasons.append("titleContains")
             }
+        }
+
+        let axWindowNumber = numberValue(copyAXValue(window, "AXWindowNumber"))
+        if let targetWindowNumber,
+           let axWindowNumber,
+           abs(targetWindowNumber - axWindowNumber) < 0.5 {
+            score += 200
+            reasons.append("windowNumber")
+        }
+
+        var candidatePayload: JSONObject = [
+            "score": score,
+            "role": role,
+            "title": axTitle,
+            "sources": candidate.sources,
+            "reasons": reasons
+        ]
+        if let axWindowNumber {
+            candidatePayload["windowNumber"] = axWindowNumber
+        }
+
+        if let position = copyAXValue(window, kAXPositionAttribute),
+           let point = axPoint(position) {
+            candidatePayload["position"] = ["x": point.x, "y": point.y]
+        }
+        if let size = copyAXValue(window, kAXSizeAttribute),
+           let cgSize = axSize(size) {
+            candidatePayload["size"] = ["width": cgSize.width, "height": cgSize.height]
         }
 
         if let targetBounds,
@@ -1765,19 +1848,51 @@ public func matchingAXWindow(appElement: AXUIElement, targetWindow: JSONObject) 
            let width = numberValue(targetBounds["width"]),
            let height = numberValue(targetBounds["height"]) {
             let delta = abs(point.x - x) + abs(point.y - y) + abs(cgSize.width - width) + abs(cgSize.height - height)
+            candidatePayload["boundsDelta"] = delta
             if delta < 12 {
                 score += 120
+                reasons.append("boundsExact")
             } else if delta < 80 {
                 score += 60
+                reasons.append("boundsNear")
             }
         }
+        candidatePayload["score"] = score
+        candidatePayload["reasons"] = reasons
+
+        scoredCandidates.append(candidatePayload)
 
         if score > (best?.score ?? 0) {
-            best = (score, window)
+            best = (score, window, candidatePayload)
         }
     }
 
-    return best?.score ?? 0 > 0 ? best?.element : nil
+    scoredCandidates.sort {
+        (($0["score"] as? Double) ?? 0) > (($1["score"] as? Double) ?? 0)
+    }
+    let matched = (best?.score ?? 0) > 0
+    var diagnostics: JSONObject = [
+        "matched": matched,
+        "candidateCount": candidates.count,
+        "bestScore": best?.score ?? 0,
+        "bestCandidate": best?.diagnostics ?? [:],
+        "topCandidates": Array(scoredCandidates.prefix(8)),
+        "targetTitle": targetTitle,
+        "focusedWindowResult": String(describing: focusedWindowResult),
+        "mainWindowResult": String(describing: mainWindowResult),
+        "recoverySteps": matched ? [] : [
+            "Activate the target app/window and retry capture so macOS Accessibility exposes AXWindow candidates.",
+            "For Electron apps such as VS Code, enable screen reader accessibility support in the target app when available.",
+            "Use --include-screenshot or --include-ocr only as fallback evidence when AXWindow matching is unavailable."
+        ]
+    ]
+    if let targetWindowNumber {
+        diagnostics["targetWindowNumber"] = targetWindowNumber
+    }
+    if let targetBounds {
+        diagnostics["targetBounds"] = targetBounds
+    }
+    return (matched ? best?.element : nil, diagnostics)
 }
 
 private func axIsWindowElement(_ element: AXUIElement) -> Bool {
