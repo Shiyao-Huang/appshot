@@ -22,6 +22,8 @@ struct CLIOptions {
     var browserDOMFixture: JSONObject?
     var browserDOMInstallBridge = false
     var browserDOMClearBridgeLog = false
+    var includeElectronDebugging = false
+    var electronDebuggingTimeoutSeconds = 2.0
     var includeOCR = false
     var pretty = false
     var format = "json"
@@ -73,6 +75,8 @@ struct AppShotCLI {
                     browserDOMFixture: options.browserDOMFixture,
                     browserDOMInstallBridge: options.browserDOMInstallBridge,
                     browserDOMClearBridgeLog: options.browserDOMClearBridgeLog,
+                    includeElectronDebugging: options.includeElectronDebugging,
+                    electronDebuggingTimeoutSeconds: options.electronDebuggingTimeoutSeconds,
                     maxDepth: options.maxDepth,
                     maxChildren: options.maxChildren,
                     includeOCR: options.includeOCR,
@@ -178,6 +182,10 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
         case "--browser-dom-clear-bridge-log":
             options.browserDOMClearBridgeLog = true
             options.includeBrowserDOM = true
+        case "--include-electron-debugging":
+            options.includeElectronDebugging = true
+        case "--electron-debugging-timeout":
+            options.electronDebuggingTimeoutSeconds = Double(try nextValue()) ?? options.electronDebuggingTimeoutSeconds
         case "--include-ocr":
             options.includeOCR = true
         case "--pretty":
@@ -273,7 +281,7 @@ func printHelp() {
     Usage:
       appshot status [--prompt] [--pretty]
       appshot codex-apps-status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-electron-debugging] [--electron-debugging-timeout seconds] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -289,6 +297,7 @@ func printHelp() {
       Browser runtime options populate codexBrowserRuntimeState using Codex browser-sidebar-runtime-sync field names.
       --include-browser-dom adds a timed Safari/Chrome DOM probe for image-drag sourceUrl and design-editor anchor candidates when Apple Events allows it.
       --browser-dom-install-bridge injects an optional page listener that records real browser-sidebar-runtime event logs in the current tab until reload.
+      --include-electron-debugging scans local Electron/Chromium DevTools targets and samples DOM/AX through CDP when available.
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
       --format codex prints a compact AppShot block similar to Codex built-in appshots.

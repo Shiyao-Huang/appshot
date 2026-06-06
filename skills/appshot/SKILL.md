@@ -74,6 +74,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
     Read `codexBrowserDOMIntegration.remoteDebuggingTarget` when the page might be a Codex/Electron remote-debugging surface such as `content shell remote debugging`, `inspectable webcontents`, or localhost ports `9222` / `9229`.
+    For Electron apps such as VS Code, add `--include-electron-debugging`, or add `--include-browser-dom` when you also want a browser-shaped payload. Read `codexElectronRemoteDebugging.scannedPorts`, `targets`, `selectedTarget`, `cdpSnapshot`, and `reason`. If the reason is `noInspectableTargets`, the app did not expose a Chrome DevTools Protocol WebContents target, so AppShot cannot extract Electron DOM/AX content through CDP for that run.
     When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
 13. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 14. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
@@ -144,6 +145,12 @@ The CLI returns JSON with:
 - `codexBrowserDOMIntegration.remoteDebuggingTarget`
 - `codexBrowserDOMIntegration.remoteDebuggingTarget.isRemoteDebuggingTarget`
 - `codexBrowserDOMIntegration.localBrowserAttachedImages`
+- `codexElectronRemoteDebugging`
+- `codexElectronRemoteDebugging.scannedPorts`
+- `codexElectronRemoteDebugging.targets`
+- `codexElectronRemoteDebugging.selectedTarget`
+- `codexElectronRemoteDebugging.cdpSnapshot`
+- `codexElectronRemoteDebugging.domSnapshot`
 - `codexBrowserPayload`
 - `codexBrowserPayload.localBrowserContext`
 - `codexBrowserPayload.localBrowserContext.pageUrl`
@@ -154,6 +161,7 @@ The CLI returns JSON with:
 - `codexBrowserPayload.localBrowserCommentMetadata`
 - `codexBrowserPayload.localBrowserCommentMetadata.markerViewportPoint`
 - `codexBrowserPayload.localBrowserCommentMetadata.browserDOMIntegration.remoteDebuggingTarget`
+- `codexBrowserPayload.localBrowserCommentMetadata.electronRemoteDebugging`
 - `codexBrowserPayload.localBrowserAttachedImages`
 - `codexBrowserPayload.localBrowserDesignChange`
 - `codexBrowserPayload.localBrowserDesignChange.group`

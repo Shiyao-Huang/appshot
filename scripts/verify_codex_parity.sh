@@ -257,8 +257,8 @@ for name, text, pattern in [
 
 for name, text, needles in [
     ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM", "browserDOMInstallBridge", "Browser Bridge"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetWindowMatch", "matchingAXWindowResult", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
@@ -268,6 +268,7 @@ for name, text, needles in [
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
     ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
+    ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
     ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
@@ -290,13 +291,14 @@ POLICY_JSON="$(mktemp)"
 RUNTIME_JSON="$(mktemp)"
 DOM_JSON="$(mktemp)"
 DEBUG_DOM_JSON="$(mktemp)"
+ELECTRON_JSON="$(mktemp)"
 CODEX_TXT="$(mktemp)"
 MCP_JSONL="$(mktemp)"
 RUN_DIR="$(mktemp -d)"
 POLICY_SCREENSHOT="$RUN_DIR/policy.png"
 MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
 MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
-trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
 
 log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
@@ -306,9 +308,10 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"http://127.0.0.1:9222/json","title":"Inspectable WebContents","viewportSize":{"width":900,"height":700},"designTargets":[{"selector":"body","role":"document","text":"Inspectable WebContents","rect":{"x":0,"y":0,"width":900,"height":700}}]}' --pretty >"$DEBUG_DOM_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --include-electron-debugging --electron-debugging-timeout 0.5 --pretty >"$ELECTRON_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
 
-"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
@@ -319,7 +322,8 @@ policy = json.load(open(sys.argv[4]))
 runtime = json.load(open(sys.argv[5]))
 dom = json.load(open(sys.argv[6]))
 debug_dom = json.load(open(sys.argv[7]))
-codex_text = open(sys.argv[8]).read()
+electron = json.load(open(sys.argv[8]))
+codex_text = open(sys.argv[9]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -602,6 +606,34 @@ if debug_remote.get("port") != 9222:
 debug_remote_metadata = debug_dom_payload.get("localBrowserCommentMetadata", {}).get("browserDOMIntegration", {}).get("remoteDebuggingTarget", {})
 if debug_remote_metadata.get("isRemoteDebuggingTarget") is not True:
     raise SystemExit("browser payload metadata did not mirror remote debugging target")
+
+electron_debugging = electron.get("codexElectronRemoteDebugging", {})
+require_keys(
+    "electron codexElectronRemoteDebugging",
+    electron_debugging,
+    ["format", "source", "requested", "available", "supported", "processIdentifier", "processIDs", "knownPorts", "scannedPorts", "httpProbeCount", "httpProbes", "targetCount", "targets", "selectedTarget", "cdpSnapshot", "liveEventStreamAvailable", "reason", "evidence"],
+)
+if electron_debugging.get("format") != "codex-electron-remote-debugging":
+    raise SystemExit("electron debugging capture returned unexpected format")
+if electron_debugging.get("source") != "electron-cdp-probe":
+    raise SystemExit("electron debugging capture returned unexpected source")
+if electron_debugging.get("requested") is not True:
+    raise SystemExit("electron debugging capture did not report requested=true")
+if 9222 not in electron_debugging.get("knownPorts", []) or 9229 not in electron_debugging.get("knownPorts", []):
+    raise SystemExit("electron debugging capture lost Codex known debug ports")
+if not isinstance(electron_debugging.get("scannedPorts"), list):
+    raise SystemExit("electron debugging scannedPorts was not a list")
+if not isinstance(electron_debugging.get("httpProbes"), list):
+    raise SystemExit("electron debugging httpProbes was not a list")
+if not isinstance(electron_debugging.get("targets"), list):
+    raise SystemExit("electron debugging targets was not a list")
+if not isinstance(electron_debugging.get("cdpSnapshot"), dict):
+    raise SystemExit("electron debugging cdpSnapshot was not an object")
+electron_metadata = electron.get("codexBrowserPayload", {}).get("localBrowserCommentMetadata", {}).get("electronRemoteDebugging", {})
+if electron_metadata.get("format") != "codex-electron-remote-debugging":
+    raise SystemExit("electron debugging summary was not mirrored into browser metadata")
+if electron_metadata.get("targetCount") != electron_debugging.get("targetCount"):
+    raise SystemExit("electron debugging metadata targetCount did not mirror top-level targetCount")
 
 for name, payload in [("status", status), ("capture", capture)]:
     permissions = payload.get("permissions", {})

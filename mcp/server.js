@@ -99,6 +99,8 @@ function tools() {
           browserDOMFixture: { type: "object" },
           browserDOMInstallBridge: { type: "boolean", default: false },
           browserDOMClearBridgeLog: { type: "boolean", default: false },
+          includeElectronDebugging: { type: "boolean", default: false },
+          electronDebuggingTimeout: { type: "number", default: 2 },
           includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
           windowID: { type: "number" },
@@ -180,6 +182,8 @@ function callTool(params = {}) {
     if (args.browserDOMFixture != null) cliArgs.push("--browser-dom-fixture-json", JSON.stringify(args.browserDOMFixture));
     if (args.browserDOMInstallBridge) cliArgs.push("--browser-dom-install-bridge");
     if (args.browserDOMClearBridgeLog) cliArgs.push("--browser-dom-clear-bridge-log");
+    if (args.includeElectronDebugging) cliArgs.push("--include-electron-debugging");
+    if (args.electronDebuggingTimeout != null) cliArgs.push("--electron-debugging-timeout", String(args.electronDebuggingTimeout));
     if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));

@@ -64,6 +64,8 @@ public struct AppShotCaptureOptions {
     public var browserDOMFixture: JSONObject?
     public var browserDOMInstallBridge: Bool
     public var browserDOMClearBridgeLog: Bool
+    public var includeElectronDebugging: Bool
+    public var electronDebuggingTimeoutSeconds: TimeInterval
     public var maxDepth: Int
     public var maxChildren: Int
     public var includeOCR: Bool
@@ -97,6 +99,8 @@ public struct AppShotCaptureOptions {
         browserDOMFixture: JSONObject? = nil,
         browserDOMInstallBridge: Bool = false,
         browserDOMClearBridgeLog: Bool = false,
+        includeElectronDebugging: Bool = false,
+        electronDebuggingTimeoutSeconds: TimeInterval = 2.0,
         maxDepth: Int = 60,
         maxChildren: Int = 240,
         includeOCR: Bool = false,
@@ -129,6 +133,8 @@ public struct AppShotCaptureOptions {
         self.browserDOMFixture = browserDOMFixture
         self.browserDOMInstallBridge = browserDOMInstallBridge
         self.browserDOMClearBridgeLog = browserDOMClearBridgeLog
+        self.includeElectronDebugging = includeElectronDebugging
+        self.electronDebuggingTimeoutSeconds = electronDebuggingTimeoutSeconds
         self.maxDepth = maxDepth
         self.maxChildren = maxChildren
         self.includeOCR = includeOCR
@@ -249,11 +255,35 @@ public enum AppShotCore {
         }
         payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
         payload["codexBrowserRuntimeProtocol"] = codexBrowserRuntimeProtocolPayload(options: options)
+        let shouldProbeElectronDebugging = options.includeElectronDebugging
+            || (options.includeBrowserDOM && options.browserDOMFixture == nil && isLikelyElectronApplication(app))
+        if shouldProbeElectronDebugging {
+            payload["codexElectronRemoteDebugging"] = codexElectronRemoteDebuggingPayload(
+                application: app,
+                window: primaryWindow,
+                options: options
+            )
+        }
         if options.includeBrowserDOM || options.browserDOMFixture != nil || options.browserDOMInstallBridge || options.browserDOMClearBridgeLog {
-            payload["codexBrowserDOMIntegration"] = codexBrowserDOMIntegrationPayload(
+            var domIntegration = codexBrowserDOMIntegrationPayload(
                 application: app,
                 options: options
             )
+            if domIntegration["available"] as? Bool != true,
+               let electronDebugging = payload["codexElectronRemoteDebugging"] as? JSONObject,
+               let domSnapshot = electronDebugging["domSnapshot"] as? JSONObject {
+                domIntegration = codexBrowserDOMIntegrationPayload(
+                    fromDOMSnapshot: domSnapshot,
+                    appName: app.localizedName ?? app.bundleIdentifier ?? "Electron",
+                    bundleIdentifier: app.bundleIdentifier ?? "",
+                    options: options,
+                    source: "electron-cdp-probe"
+                )
+                domIntegration["electronRemoteDebugging"] = codexElectronRemoteDebuggingSummary(electronDebugging)
+            } else if let electronDebugging = payload["codexElectronRemoteDebugging"] as? JSONObject {
+                domIntegration["electronRemoteDebugging"] = codexElectronRemoteDebuggingSummary(electronDebugging)
+            }
+            payload["codexBrowserDOMIntegration"] = domIntegration
         }
         payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: browserAnnotationScreenshotsMode)
         if options.writeCache {
@@ -2835,6 +2865,460 @@ public func codexBrowserDOMIntegrationPayload(
     )
 }
 
+public func codexElectronRemoteDebuggingPayload(
+    application: NSRunningApplication,
+    window: JSONObject?,
+    options: AppShotCaptureOptions
+) -> JSONObject {
+    let bundleIdentifier = application.bundleIdentifier ?? ""
+    let appName = application.localizedName ?? bundleIdentifier
+    let rootPID = application.processIdentifier
+    let processIDs = electronProcessTreePIDs(rootPID: rootPID)
+    let scannedPorts = electronCandidateDevToolsPorts(rootPID: rootPID, processIDs: processIDs)
+    let deadline = Date().addingTimeInterval(max(0.2, options.electronDebuggingTimeoutSeconds))
+    let probe = electronDevToolsTargets(scannedPorts: scannedPorts, deadline: deadline)
+    let windowTitle = codexTrimmedString(window?["title"]) ?? ""
+    let scoredTargets = probe.targets.map { target -> JSONObject in
+        var out = target
+        out["selectionScore"] = electronDevToolsTargetScore(target, windowTitle: windowTitle)
+        return out
+    }
+    let selectedTarget = scoredTargets
+        .filter { codexTrimmedString($0["webSocketDebuggerUrl"]) != nil }
+        .sorted {
+            let left = ($0["selectionScore"] as? Int) ?? 0
+            let right = ($1["selectionScore"] as? Int) ?? 0
+            if left == right {
+                return (codexTrimmedString($0["title"]) ?? "") < (codexTrimmedString($1["title"]) ?? "")
+            }
+            return left > right
+        }
+        .first
+    var cdpSnapshot: JSONObject = [
+        "available": false,
+        "reason": selectedTarget == nil ? "noWebSocketDebuggerTarget" : "notSampled"
+    ]
+    if let webSocketURL = codexTrimmedString(selectedTarget?["webSocketDebuggerUrl"]),
+       Date() < deadline {
+        cdpSnapshot = electronCDPSnapshot(
+            webSocketDebuggerURL: webSocketURL,
+            timeoutSeconds: max(0.2, deadline.timeIntervalSinceNow)
+        )
+    }
+
+    var payload: JSONObject = [
+        "format": "codex-electron-remote-debugging",
+        "source": "electron-cdp-probe",
+        "requested": true,
+        "available": !probe.targets.isEmpty,
+        "supported": isLikelyElectronApplication(application),
+        "applicationName": appName,
+        "bundleIdentifier": bundleIdentifier,
+        "processIdentifier": rootPID,
+        "processIDs": processIDs.map { Int($0) },
+        "windowTitle": windowTitle,
+        "knownPorts": Array(codexBrowserRemoteDebuggingPorts).sorted(),
+        "scannedPorts": scannedPorts,
+        "httpProbeCount": probe.probes.count,
+        "httpProbes": probe.probes,
+        "targetCount": scoredTargets.count,
+        "targets": scoredTargets,
+        "selectedTarget": selectedTarget.map { $0 as Any } ?? NSNull(),
+        "cdpSnapshot": cdpSnapshot,
+        "liveEventStreamAvailable": cdpSnapshot["available"] as? Bool ?? false,
+        "adapterOnly": true,
+        "evidence": [
+            "../codex-522/mac-app/docs/appshots-macapp-architecture.md",
+            "../codex-522/mac-app/appshots-evidence/522-appshots-snippets.js",
+            "../codex-522/mac-app/artifacts/comment-preload-runtime-events-522.txt"
+        ]
+    ]
+
+    if let domSnapshot = cdpSnapshot["domSnapshot"] as? JSONObject {
+        payload["domSnapshot"] = domSnapshot
+    }
+    if probe.targets.isEmpty {
+        payload["reason"] = "noInspectableTargets"
+    } else if cdpSnapshot["available"] as? Bool == true {
+        payload["reason"] = "cdpSnapshotAvailable"
+    } else {
+        payload["reason"] = codexTrimmedString(cdpSnapshot["reason"]) ?? "cdpSnapshotUnavailable"
+    }
+    return payload
+}
+
+public func codexElectronRemoteDebuggingSummary(_ payload: JSONObject) -> JSONObject {
+    [
+        "format": payload["format"] ?? "codex-electron-remote-debugging",
+        "source": payload["source"] ?? "electron-cdp-probe",
+        "available": payload["available"] ?? false,
+        "supported": payload["supported"] ?? false,
+        "reason": payload["reason"] ?? "",
+        "scannedPorts": payload["scannedPorts"] ?? [],
+        "targetCount": payload["targetCount"] ?? 0,
+        "selectedTarget": payload["selectedTarget"] ?? NSNull(),
+        "liveEventStreamAvailable": payload["liveEventStreamAvailable"] ?? false
+    ]
+}
+
+private func isLikelyElectronApplication(_ application: NSRunningApplication) -> Bool {
+    let bundleIdentifier = (application.bundleIdentifier ?? "").lowercased()
+    if bundleIdentifier.contains("vscode") || bundleIdentifier.contains("electron") || bundleIdentifier.contains("codex") {
+        return true
+    }
+    guard let bundleURL = application.bundleURL else {
+        return false
+    }
+    let electronFramework = bundleURL
+        .appendingPathComponent("Contents")
+        .appendingPathComponent("Frameworks")
+        .appendingPathComponent("Electron Framework.framework")
+    return FileManager.default.fileExists(atPath: electronFramework.path)
+}
+
+private func electronProcessTreePIDs(rootPID: pid_t) -> [pid_t] {
+    let result = runProcess(
+        executablePath: "/bin/ps",
+        arguments: ["-axo", "pid=,ppid="],
+        timeoutSeconds: 0.8
+    )
+    guard result.exitStatus == 0 else {
+        return [rootPID]
+    }
+
+    var childrenByParent = [pid_t: [pid_t]]()
+    for line in result.stdout.split(separator: "\n") {
+        let parts = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        guard parts.count >= 2,
+              let pidValue = Int32(parts[0]),
+              let parentValue = Int32(parts[1]) else {
+            continue
+        }
+        childrenByParent[pid_t(parentValue), default: []].append(pid_t(pidValue))
+    }
+
+    var out: [pid_t] = []
+    var queue = [rootPID]
+    var seen = Set<pid_t>()
+    while let pid = queue.first, out.count < 160 {
+        queue.removeFirst()
+        guard !seen.contains(pid) else {
+            continue
+        }
+        seen.insert(pid)
+        out.append(pid)
+        queue.append(contentsOf: childrenByParent[pid] ?? [])
+    }
+    return out
+}
+
+private func electronCandidateDevToolsPorts(rootPID: pid_t, processIDs: [pid_t]) -> [Int] {
+    var ports = Set(codexBrowserRemoteDebuggingPorts)
+    let pidList = Array(processIDs.prefix(80)).map { String(Int($0)) }.joined(separator: ",")
+    if !pidList.isEmpty {
+        let result = runProcess(
+            executablePath: "/usr/sbin/lsof",
+            arguments: ["-nP", "-a", "-p", pidList, "-iTCP", "-sTCP:LISTEN"],
+            timeoutSeconds: 1.0
+        )
+        if result.exitStatus == 0 {
+            for line in result.stdout.split(separator: "\n") {
+                guard line.contains("(LISTEN)"),
+                      let port = parseListeningPort(fromLsofLine: String(line)) else {
+                    continue
+                }
+                ports.insert(port)
+            }
+        }
+    }
+    if ports.isEmpty {
+        ports.formUnion(codexBrowserRemoteDebuggingPorts)
+    }
+    _ = rootPID
+    return Array(ports).sorted().prefix(24).map { $0 }
+}
+
+private func parseListeningPort(fromLsofLine line: String) -> Int? {
+    guard let tcpRange = line.range(of: "TCP ") else {
+        return nil
+    }
+    let tail = line[tcpRange.upperBound...]
+    guard let endpoint = tail.split(separator: " ").first,
+          let colon = endpoint.lastIndex(of: ":") else {
+        return nil
+    }
+    return Int(endpoint[endpoint.index(after: colon)...])
+}
+
+private func electronDevToolsTargets(scannedPorts: [Int], deadline: Date) -> (targets: [JSONObject], probes: [JSONObject]) {
+    var targets: [JSONObject] = []
+    var probes: [JSONObject] = []
+
+    for port in scannedPorts {
+        guard Date() < deadline else {
+            probes.append([
+                "port": port,
+                "available": false,
+                "reason": "deadlineExceeded"
+            ])
+            break
+        }
+        let timeout = max(0.12, min(0.35, deadline.timeIntervalSinceNow / 2.0))
+        let versionValue = fetchLocalJSON(port: port, path: "/json/version", timeoutSeconds: timeout)
+        let listValue = fetchLocalJSON(port: port, path: "/json/list", timeoutSeconds: timeout)
+        let version = versionValue as? JSONObject
+        let targetList: [JSONObject]
+        if let array = listValue as? [JSONObject] {
+            targetList = array
+        } else if let object = listValue as? JSONObject {
+            targetList = [object]
+        } else {
+            targetList = []
+        }
+
+        let available = version != nil || !targetList.isEmpty
+        probes.append([
+            "port": port,
+            "available": available,
+            "hasVersion": version != nil,
+            "targetCount": targetList.count,
+            "browser": codexTrimmedString(version?["Browser"]) ?? codexTrimmedString(version?["browser"]) ?? "",
+            "protocolVersion": codexTrimmedString(version?["Protocol-Version"]) ?? codexTrimmedString(version?["protocolVersion"]) ?? ""
+        ])
+        for target in targetList {
+            var out = target
+            out["port"] = port
+            if out["webSocketDebuggerUrl"] == nil,
+               let webSocketPath = codexTrimmedString(target["webSocketDebuggerPath"]) {
+                out["webSocketDebuggerUrl"] = "ws://127.0.0.1:\(port)\(webSocketPath)"
+            }
+            targets.append(out)
+        }
+    }
+
+    return (targets, probes)
+}
+
+private func fetchLocalJSON(port: Int, path: String, timeoutSeconds: TimeInterval) -> Any? {
+    let result = runProcess(
+        executablePath: "/usr/bin/curl",
+        arguments: [
+            "-fsS",
+            "--max-time",
+            String(format: "%.2f", max(0.1, timeoutSeconds)),
+            "http://127.0.0.1:\(port)\(path)"
+        ],
+        timeoutSeconds: max(0.2, timeoutSeconds + 0.15)
+    )
+    guard result.exitStatus == 0, !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return nil
+    }
+    return parseJSONValue(result.stdout)
+}
+
+private func electronDevToolsTargetScore(_ target: JSONObject, windowTitle: String) -> Int {
+    var score = 0
+    let title = (codexTrimmedString(target["title"]) ?? "").lowercased()
+    let url = (codexTrimmedString(target["url"]) ?? "").lowercased()
+    let type = (codexTrimmedString(target["type"]) ?? "").lowercased()
+    let normalizedWindowTitle = windowTitle.lowercased()
+
+    if type == "page" || type == "webview" {
+        score += 40
+    }
+    if codexTrimmedString(target["webSocketDebuggerUrl"]) != nil {
+        score += 20
+    }
+    if !normalizedWindowTitle.isEmpty {
+        if title == normalizedWindowTitle {
+            score += 160
+        } else if title.contains(normalizedWindowTitle) || normalizedWindowTitle.contains(title) {
+            score += 80
+        }
+    }
+    if url.hasPrefix("devtools://") {
+        score -= 80
+    }
+    if url.contains("vscode") || url.contains("file://") || url.contains("localhost") {
+        score += 10
+    }
+    return score
+}
+
+private func electronCDPSnapshot(webSocketDebuggerURL: String, timeoutSeconds: TimeInterval) -> JSONObject {
+    let result = runProcess(
+        executablePath: "/usr/bin/env",
+        arguments: [
+            "node",
+            "-e",
+            electronCDPProbeScript,
+            webSocketDebuggerURL,
+            String(Int(max(200, timeoutSeconds * 1000.0)))
+        ],
+        timeoutSeconds: max(0.4, timeoutSeconds + 0.25)
+    )
+    guard !result.timedOut else {
+        return [
+            "available": false,
+            "reason": "timedOut",
+            "timeoutSeconds": timeoutSeconds
+        ]
+    }
+    guard result.exitStatus == 0 else {
+        return [
+            "available": false,
+            "reason": "nodeProbeFailed",
+            "exitStatus": result.exitStatus,
+            "stderr": result.stderr
+        ]
+    }
+    guard let payload = parseJSONObject(result.stdout) else {
+        return [
+            "available": false,
+            "reason": "invalidJSON",
+            "stdoutPreview": String(result.stdout.prefix(500)),
+            "stderr": result.stderr
+        ]
+    }
+    return payload
+}
+
+private let electronCDPProbeScript = #"""
+const wsUrl = process.argv[1];
+const timeoutMs = Number(process.argv[2] || 1500);
+const done = (value) => {
+  try { console.log(JSON.stringify(value)); } catch (error) { console.log(JSON.stringify({ available: false, reason: "jsonEncodeFailed", error: String(error) })); }
+  process.exit(0);
+};
+if (typeof WebSocket !== "function") done({ available: false, reason: "nodeWebSocketUnavailable" });
+let nextId = 1;
+const pending = new Map();
+const ws = new WebSocket(wsUrl);
+const timer = setTimeout(() => done({ available: false, reason: "timedOut" }), timeoutMs);
+function command(method, params = {}) {
+  const id = nextId++;
+  const payload = JSON.stringify({ id, method, params });
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    ws.send(payload);
+  });
+}
+function rectOf(element) {
+  if (!element || typeof element.getBoundingClientRect !== "function") return {};
+  const rect = element.getBoundingClientRect();
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+}
+function selectorFor(element) {
+  if (!element || element.nodeType !== 1) return "";
+  if (element.id) return "#" + CSS.escape(element.id);
+  const attr = element.getAttribute("aria-label") || element.getAttribute("role") || element.getAttribute("data-testid");
+  const name = element.localName || "element";
+  if (attr) return name + "[" + JSON.stringify(attr) + "]";
+  const parent = element.parentElement;
+  if (!parent) return name;
+  const siblings = Array.from(parent.children).filter((item) => item.localName === element.localName);
+  const index = Math.max(0, siblings.indexOf(element)) + 1;
+  return selectorFor(parent) + " > " + name + ":nth-of-type(" + index + ")";
+}
+function domSnapshot() {
+  const bodyText = (document.body?.innerText || document.documentElement?.innerText || "").slice(0, 80000);
+  const elementSelector = "button,a,input,textarea,select,[role],[aria-label],[contenteditable='true'],img,.monaco-editor,.terminal,.explorer-viewlet,.tabs-container,.panel";
+  const designTargets = Array.from(document.querySelectorAll(elementSelector)).slice(0, 240).map((element, index) => ({
+    index,
+    selector: selectorFor(element),
+    tagName: element.localName || "",
+    role: element.getAttribute("role") || element.localName || "",
+    label: element.getAttribute("aria-label") || element.getAttribute("title") || "",
+    text: ((element.innerText || element.textContent || element.getAttribute("alt") || element.getAttribute("aria-label") || "") + "").trim().slice(0, 1000),
+    rect: rectOf(element)
+  })).filter((item) => item.text || item.label || item.role || item.rect.width || item.rect.height);
+  const images = Array.from(document.images || []).slice(0, 120).map((image, index) => ({
+    index,
+    sourceUrl: image.currentSrc || image.src || "",
+    alt: image.alt || "",
+    selector: selectorFor(image),
+    rect: rectOf(image),
+    naturalSize: { width: image.naturalWidth || 0, height: image.naturalHeight || 0 }
+  }));
+  return {
+    available: true,
+    pageUrl: location.href,
+    url: location.href,
+    title: document.title,
+    viewportSize: { width: innerWidth, height: innerHeight },
+    devicePixelRatio,
+    bodyText,
+    textLineCount: bodyText.split(/\n+/).filter(Boolean).length,
+    activeElement: document.activeElement ? {
+      selector: selectorFor(document.activeElement),
+      role: document.activeElement.getAttribute("role") || document.activeElement.localName || "",
+      text: ((document.activeElement.innerText || document.activeElement.textContent || document.activeElement.getAttribute("aria-label") || "") + "").trim().slice(0, 1000),
+      rect: rectOf(document.activeElement)
+    } : null,
+    designTargets,
+    images
+  };
+}
+function simplifyAXNode(node) {
+  const prop = (value) => value && typeof value === "object" && "value" in value ? value.value : value;
+  return {
+    nodeId: node.nodeId,
+    ignored: !!node.ignored,
+    role: prop(node.role) || "",
+    name: prop(node.name) || "",
+    value: prop(node.value) || "",
+    description: prop(node.description) || "",
+    childIds: node.childIds || []
+  };
+}
+ws.addEventListener("message", (event) => {
+  let message;
+  try { message = JSON.parse(event.data); } catch { return; }
+  if (!message || message.id == null || !pending.has(message.id)) return;
+  const entry = pending.get(message.id);
+  pending.delete(message.id);
+  if (message.error) entry.reject(message.error);
+  else entry.resolve(message.result || {});
+});
+ws.addEventListener("error", (event) => done({ available: false, reason: "webSocketError", error: String(event.message || event.type || event) }));
+ws.addEventListener("open", async () => {
+  try {
+    const runtime = await command("Runtime.evaluate", {
+      expression: "(" + domSnapshot.toString() + ")()",
+      returnByValue: true,
+      awaitPromise: false
+    });
+    let ax = { nodes: [] };
+    try { ax = await command("Accessibility.getFullAXTree", { depth: 8 }); } catch (error) { ax = { error: String(error?.message || error), nodes: [] }; }
+    let documentRoot = null;
+    try { documentRoot = await command("DOM.getDocument", { depth: 2, pierce: true }); } catch {}
+    clearTimeout(timer);
+    ws.close();
+    const dom = runtime?.result?.value || {};
+    done({
+      available: true,
+      source: "Chrome DevTools Protocol",
+      domSnapshot: dom,
+      accessibility: {
+        available: Array.isArray(ax.nodes),
+        nodeCount: Array.isArray(ax.nodes) ? ax.nodes.length : 0,
+        nodes: Array.isArray(ax.nodes) ? ax.nodes.slice(0, 240).map(simplifyAXNode) : [],
+        error: ax.error || null
+      },
+      documentRoot: documentRoot?.root ? {
+        nodeId: documentRoot.root.nodeId,
+        nodeName: documentRoot.root.nodeName,
+        nodeType: documentRoot.root.nodeType,
+        childNodeCount: documentRoot.root.childNodeCount || 0
+      } : null
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    done({ available: false, reason: "cdpCommandFailed", error: String(error?.message || error) });
+  }
+});
+"""#
+
 private struct ProcessRunResult {
     let exitStatus: Int32
     let timedOut: Bool
@@ -3526,13 +4010,16 @@ private func javaScriptStringLiteral(_ value: String) -> String {
 }
 
 private func parseJSONObject(_ text: String) -> JSONObject? {
+    parseJSONValue(text) as? JSONObject
+}
+
+private func parseJSONValue(_ text: String) -> Any? {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let data = trimmed.data(using: .utf8),
-          let object = try? JSONSerialization.jsonObject(with: data),
-          let payload = object as? JSONObject else {
+          let object = try? JSONSerialization.jsonObject(with: data) else {
         return nil
     }
-    return payload
+    return object
 }
 
 public func codexSummaryPayload(from payload: JSONObject, maxTreeLines: Int = 420) -> JSONObject {
@@ -3574,6 +4061,7 @@ public func codexBrowserPayload(
     let screenshot = payload["screenshot"] as? JSONObject
     let runtimeState = payload["codexBrowserRuntimeState"] as? JSONObject
     let browserDOMIntegration = payload["codexBrowserDOMIntegration"] as? JSONObject
+    let electronRemoteDebugging = payload["codexElectronRemoteDebugging"] as? JSONObject
     let runtimeProtocol = (browserDOMIntegration?["browserRuntimeProtocol"] as? JSONObject)
         ?? (payload["codexBrowserRuntimeProtocol"] as? JSONObject)
 
@@ -3649,6 +4137,9 @@ public func codexBrowserPayload(
             "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false,
             "remoteDebuggingTarget": browserDOMIntegration["remoteDebuggingTarget"] ?? NSNull()
         ]
+    }
+    if let electronRemoteDebugging {
+        localBrowserCommentMetadata["electronRemoteDebugging"] = codexElectronRemoteDebuggingSummary(electronRemoteDebugging)
     }
 
     let localBrowserDesignChange = codexBrowserLocalDesignChange(from: runtimeState)
