@@ -160,7 +160,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.2"
+expected = "0.1.3"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
@@ -191,10 +191,11 @@ for name, value in native_checks.items():
     if value != expected_value:
         raise SystemExit(f"{name} is {value!r}, expected {expected_value!r}")
 
+version_re = re.escape(expected)
 for name, text, pattern in [
-    ("mcp server", server, r'version:\s*"0\.1\.2"'),
-    ("installer default", installer, r'VERSION="\$\{APPSHOT_VERSION:-0\.1\.2\}"'),
-    ("release default", release, r'VERSION="\$\{1:-0\.1\.2\}"'),
+    ("mcp server", server, rf'version:\s*"{version_re}"'),
+    ("installer default", installer, rf'VERSION="\$\{{APPSHOT_VERSION:-{version_re}\}}"'),
+    ("release default", release, rf'VERSION="\$\{{1:-{version_re}\}}"'),
 ]:
     if not re.search(pattern, text):
         raise SystemExit(f"{name} is not aligned to {expected}")
