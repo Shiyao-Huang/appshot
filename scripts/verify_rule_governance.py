@@ -58,6 +58,28 @@ def main():
         "rendered rules must not enable OCR fallback as output",
     )
     assert_true(catalog.get("captureProfiles"), "catalog must declare named captureProfiles")
+    capped_rule = json.loads(json.dumps(rules[0]))
+    capped_rule.setdefault("action", {})
+    capped_rule["action"]["sources"] = ["visible"]
+    capped_rule["action"]["keepRegex"] = [".{4,}"]
+    capped_rule["action"]["dropRegex"] = []
+    capped_rule["action"]["transport"] = {
+        "format": "toon",
+        "maxImportantLines": 1,
+        "maxRichLines": 0,
+        "preserveRaw": True,
+    }
+    capped_output = trainer.apply_rule({
+        "accessibility": {
+            "visibleText": "alpha visible\nbeta visible\ngamma visible\n",
+            "text": "",
+            "documentReferences": [],
+        },
+        "ocr": {"text": "alpha visible\nbeta visible\ngamma visible\n"},
+    }, capped_rule)
+    assert_true(capped_output["fullLineCount"] == 3, "density cap smoke did not see all source lines")
+    assert_true(capped_output["selectedLineCount"] == 1, "density cap smoke did not cap selected output lines")
+    assert_true(len(capped_output["text"].splitlines()) == 1, "plain text output must honor rule line caps")
 
     appshot = str(pathlib.Path(args.appshot_bin))
     with tempfile.TemporaryDirectory(prefix="appshot-rule-governance.") as tmp_raw:

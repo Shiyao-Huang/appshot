@@ -417,8 +417,8 @@ def apply_rule(capture, rule):
     keepers = [compile_regex(x) for x in action.get("keepRegex") or []]
     droppers = [compile_regex(x) for x in action.get("dropRegex") or []]
     transport = action.get("transport") or {}
-    max_important = int(transport.get("maxImportantLines") or 180)
-    max_rich = int(transport.get("maxRichLines") or 220)
+    max_important = int(transport["maxImportantLines"]) if transport.get("maxImportantLines") is not None else 180
+    max_rich = int(transport["maxRichLines"]) if transport.get("maxRichLines") is not None else 220
 
     ocr_weights = ocr_visual_weights(capture)
     sources = text_sources(capture)
@@ -446,7 +446,8 @@ def apply_rule(capture, rule):
     important_ids = {id(item) for item in ranked[:max_important]}
     important = [item for item in ranked if id(item) in important_ids]
     rich = [item for item in lines if id(item) not in important_ids][:max_rich]
-    text = "\n".join(item["text"] for item in lines)
+    selected = important + rich
+    text = "\n".join(item["text"] for item in selected)
     transport_text = toon_rule_output({
         "ruleID": rule.get("id") or "",
         "strategy": rule.get("strategy") or "",
@@ -460,10 +461,13 @@ def apply_rule(capture, rule):
         "text": text,
         "transportFormat": transport.get("format") or "toon",
         "transportText": transport_text,
-        "lineCount": len(lines),
+        "lineCount": len(selected),
+        "fullLineCount": len(lines),
+        "selectedLineCount": len(selected),
         "transportLineCount": len(transport_text.splitlines()),
-        "sources": sorted({item["source"] for item in lines}),
-        "lines": lines,
+        "sources": sorted({item["source"] for item in selected}),
+        "lines": selected,
+        "allLines": lines,
         "importantLines": important,
         "richLines": rich,
     }
