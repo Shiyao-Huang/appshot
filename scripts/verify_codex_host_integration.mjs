@@ -19,6 +19,8 @@ const eventsPath = join(evidenceRoot, "artifacts", "comment-preload-runtime-even
 const snippetsPath = join(evidenceRoot, "appshots-evidence", "522-appshots-snippets.js");
 const mainBundlePath = join(evidenceRoot, "asar-522", ".vite", "build", "main-DVEWN1ng.js");
 const commentPreloadPath = join(evidenceRoot, "asar-522", ".vite", "build", "comment-preload.js");
+const alternateAsarRoot = join(evidenceRoot, "asar-3003");
+const packedCodexApp = join(evidenceRoot, "extracted", "Codex-522.app");
 
 function assert(condition, message) {
   if (!condition) {
@@ -99,11 +101,15 @@ for (const needle of [
   "ipcRenderer.invoke/ipcMain.handle",
   "webContents.send/ipcRenderer.on",
   "patch_codex_electron_host_for_appshot",
+  "--asar-root",
+  "--codex-app",
+  "packed app.asar",
+  "sourceMainBundle",
   "browser-sidebar-runtime-sync",
   "browser-sidebar-runtime-message"
 ]) {
   assert(
-    adapterSource.includes(needle) || readme.includes(needle) || events.includes(needle) || snippets.includes(needle),
+    adapterSource.includes(needle) || readme.includes(needle) || injectionAnalyzer.includes(needle) || patcher.includes(needle) || events.includes(needle) || snippets.includes(needle),
     `missing Codex host integration anchor: ${needle}`
   );
 }
@@ -249,14 +255,24 @@ try {
   const patchPlan = JSON.parse(patcherRun.stdout);
   assert(patchPlan.format === "appshot-codex-electron-host-patch-plan", "patcher returned wrong format");
   assert(patchPlan.mode === "copy", "patcher did not run in copy mode");
+  assert(patchPlan.sourceMainBundle === "main-DVEWN1ng.js", "patcher did not report discovered main bundle");
+  assert(patchPlan.outputAsarRoot?.endsWith("asar-522"), "patcher did not report output asar root");
   assert(patchPlan.changed?.main === true, "patcher did not patch Codex main bundle");
   assert(patchPlan.changed?.commentPreload === true, "patcher did not patch Codex comment preload");
   const patchedMain = readFileSync(patchPlan.patchedFiles.main, "utf8");
   const patchedPreload = readFileSync(patchPlan.patchedFiles.commentPreload, "utf8");
   assert(patchedMain.includes(patchPlan.markers.main), "patched main bundle missing AppShot marker");
   assert(patchedMain.includes("installAppShotCodexHostBridge"), "patched main bundle missing adapter install call");
+  assert(patchedMain.includes("__appshotInstallCodexHostBridge(n.ipcMain,t),n.ipcMain.handle(Ts,"), "patched main bundle did not install before browser runtime handler");
   assert(patchedPreload.includes(patchPlan.markers.preload), "patched comment preload missing AppShot marker");
   assert(patchedPreload.includes("exposeInMainWorld(\"codex_desktop\""), "patched comment preload missing codex_desktop exposure");
+  for (const file of [patchPlan.patchedFiles.main, patchPlan.patchedFiles.commentPreload]) {
+    const syntaxCheck = spawnSync(process.execPath, ["--check", file], {
+      cwd: root,
+      encoding: "utf8"
+    });
+    assert(syntaxCheck.status === 0, `patched Codex JS syntax check failed for ${file}: ${syntaxCheck.stderr || syntaxCheck.stdout}`);
+  }
   const patchedAnalyzer = spawnSync(process.execPath, [injectionAnalyzerPath], {
     cwd: root,
     env: Object.assign({}, process.env, {
@@ -272,6 +288,75 @@ try {
     recursive: true,
     force: true
   });
+}
+
+if (existsSync(alternateAsarRoot)) {
+  const alternateAnalysis = spawnSync(process.execPath, [
+    injectionAnalyzerPath,
+    "--asar-root",
+    alternateAsarRoot,
+    "--compact"
+  ], {
+    cwd: root,
+    encoding: "utf8"
+  });
+  assert(alternateAnalysis.status === 0, `alternate Codex asar analyzer failed: ${alternateAnalysis.stderr || alternateAnalysis.stdout}`);
+  const alternatePayload = JSON.parse(alternateAnalysis.stdout);
+  assert(alternatePayload.files?.mainBundle === "main-BLTY-mbJ.js", "alternate analyzer did not discover hashed main bundle");
+  assert(alternatePayload.anchors?.main?.some((entry) => entry.name === "browser sidebar webview preload assignment" && entry.match?.includes(".preload=")), "alternate analyzer lost semantic preload assignment proof");
+
+  const alternatePatchRoot = mkdtempSync(join(tmpdir(), "appshot-codex-host-patch-alt-"));
+  try {
+    const alternatePatcherRun = spawnSync(process.execPath, [
+      patcherPath,
+      "--asar-root",
+      alternateAsarRoot,
+      "--output-dir",
+      alternatePatchRoot
+    ], {
+      cwd: root,
+      encoding: "utf8"
+    });
+    assert(alternatePatcherRun.status === 0, `alternate Codex host patcher failed: ${alternatePatcherRun.stderr || alternatePatcherRun.stdout}`);
+    const alternatePatch = JSON.parse(alternatePatcherRun.stdout);
+    assert(alternatePatch.sourceMainBundle === "main-BLTY-mbJ.js", "alternate patcher did not discover hashed main bundle");
+    for (const file of [alternatePatch.patchedFiles.main, alternatePatch.patchedFiles.commentPreload]) {
+      const syntaxCheck = spawnSync(process.execPath, ["--check", file], {
+        cwd: root,
+        encoding: "utf8"
+      });
+      assert(syntaxCheck.status === 0, `alternate patched Codex JS syntax check failed for ${file}: ${syntaxCheck.stderr || syntaxCheck.stdout}`);
+    }
+    const alternatePatchedAnalysis = spawnSync(process.execPath, [
+      injectionAnalyzerPath,
+      "--asar-root",
+      alternatePatch.outputAsarRoot,
+      "--compact"
+    ], {
+      cwd: root,
+      encoding: "utf8"
+    });
+    assert(alternatePatchedAnalysis.status === 0, `alternate patched Codex analyzer failed: ${alternatePatchedAnalysis.stderr || alternatePatchedAnalysis.stdout}`);
+  } finally {
+    rmSync(alternatePatchRoot, {
+      recursive: true,
+      force: true
+    });
+  }
+}
+
+if (existsSync(packedCodexApp)) {
+  const packedAppAnalysis = spawnSync(process.execPath, [
+    injectionAnalyzerPath,
+    "--codex-app",
+    packedCodexApp,
+    "--compact"
+  ], {
+    cwd: root,
+    encoding: "utf8"
+  });
+  assert(packedAppAnalysis.status !== 0, "packed Codex app analysis should require explicit asar extraction");
+  assert((packedAppAnalysis.stderr || packedAppAnalysis.stdout).includes("packed app.asar"), "packed Codex app analysis did not explain packed asar requirement");
 }
 
 bridge.dispose();

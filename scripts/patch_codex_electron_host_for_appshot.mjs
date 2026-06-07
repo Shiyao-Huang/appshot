@@ -1,7 +1,7 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -19,10 +19,18 @@ const defaultAdapterPath = join(
 
 const mainMarker = "appshot-codex-host-bridge-main-installed";
 const preloadMarker = "appshot-codex-host-bridge-preload-exposed";
+const buildRelativePath = join(".vite", "build");
+const unpackedAsarAppCandidates = [
+  join("Contents", "Resources", "app"),
+  join("Contents", "Resources", "app.asar.unpacked"),
+  join("Contents", "Resources", "app.asar.extracted")
+];
 
 function parseArgs(argv) {
   const options = {
     codexEvidenceRoot: process.env.CODEX_EVIDENCE_ROOT || defaultCodexEvidenceRoot,
+    asarRoot: process.env.CODEX_ASAR_ROOT || null,
+    codexApp: process.env.CODEX_APP_PATH || null,
     adapterPath: process.env.APPSHOT_CODEX_HOST_ADAPTER_PATH || defaultAdapterPath,
     outputDir: null,
     inPlace: false,
@@ -40,6 +48,12 @@ function parseArgs(argv) {
     switch (arg) {
       case "--codex-evidence-root":
         options.codexEvidenceRoot = next();
+        break;
+      case "--asar-root":
+        options.asarRoot = next();
+        break;
+      case "--codex-app":
+        options.codexApp = next();
         break;
       case "--adapter-path":
         options.adapterPath = next();
@@ -68,12 +82,29 @@ function usage() {
   return {
     usage: [
       "node scripts/patch_codex_electron_host_for_appshot.mjs [--pretty]",
-      "node scripts/patch_codex_electron_host_for_appshot.mjs --output-dir /tmp/codex-appshot-patched --pretty",
-      "node scripts/patch_codex_electron_host_for_appshot.mjs --in-place --codex-evidence-root /path/to/codex/mac-app --adapter-path /path/to/codex-host-adapter.cjs"
+      "node scripts/patch_codex_electron_host_for_appshot.mjs --asar-root /path/to/unpacked/app.asar --output-dir /tmp/codex-appshot-patched --pretty",
+      "node scripts/patch_codex_electron_host_for_appshot.mjs --codex-app /Applications/Codex.app --pretty",
+      "node scripts/patch_codex_electron_host_for_appshot.mjs --in-place --asar-root /path/to/unpacked/app.asar --adapter-path /path/to/codex-host-adapter.cjs"
     ],
     defaultMode: "dry-run",
-    note: "This script never mutates Codex.app unless --in-place is passed. --output-dir writes a minimal patched evidence copy under outputDir/asar-522."
+    note: "This script never mutates Codex.app unless --in-place is passed. It patches unpacked asar directories; packed app.asar files must be extracted first."
   };
+}
+
+function statMaybe(path) {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
+}
+
+function isDirectory(path) {
+  return statMaybe(path)?.isDirectory() === true;
+}
+
+function isFile(path) {
+  return statMaybe(path)?.isFile() === true;
 }
 
 function readRequired(path) {
@@ -87,30 +118,129 @@ function ensureParent(path) {
   mkdirSync(dirname(path), { recursive: true });
 }
 
-function targetPaths(options) {
+function hasUnpackedAsarShape(path) {
+  return isFile(join(path, "package.json")) && isDirectory(join(path, buildRelativePath));
+}
+
+function discoverAsarRootInEvidenceRoot(sourceRoot) {
+  const preferred = join(sourceRoot, "asar-522");
+  if (hasUnpackedAsarShape(preferred)) {
+    return preferred;
+  }
+  if (!isDirectory(sourceRoot)) {
+    return null;
+  }
+  return readdirSync(sourceRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^asar(?:-|$)/.test(entry.name))
+    .map((entry) => join(sourceRoot, entry.name))
+    .find(hasUnpackedAsarShape) ?? null;
+}
+
+function resolveSourceLayout(options) {
+  if (options.asarRoot) {
+    const sourceAsar = resolve(options.asarRoot);
+    if (!hasUnpackedAsarShape(sourceAsar)) {
+      throw new Error(`--asar-root must point to an unpacked Codex asar directory with package.json and ${buildRelativePath}: ${sourceAsar}`);
+    }
+    return {
+      sourceKind: "asar-root",
+      sourceRoot: dirname(sourceAsar),
+      sourceAsar,
+      codexApp: null
+    };
+  }
+
+  if (options.codexApp) {
+    const codexApp = resolve(options.codexApp);
+    for (const relative of unpackedAsarAppCandidates) {
+      const candidate = join(codexApp, relative);
+      if (hasUnpackedAsarShape(candidate)) {
+        return {
+          sourceKind: "codex-app-unpacked-asar",
+          sourceRoot: codexApp,
+          sourceAsar: candidate,
+          codexApp
+        };
+      }
+    }
+    const packedAsar = join(codexApp, "Contents", "Resources", "app.asar");
+    if (isFile(packedAsar)) {
+      throw new Error(`Codex app uses packed app.asar at ${packedAsar}. Extract it first, then pass the extracted directory with --asar-root; this patcher does not pretend to patch packed archives.`);
+    }
+    throw new Error(`Could not find an unpacked Codex asar directory inside ${codexApp}`);
+  }
+
   const sourceRoot = resolve(options.codexEvidenceRoot);
-  const sourceAsar = join(sourceRoot, "asar-522");
-  const sourceBuild = join(sourceAsar, ".vite", "build");
-  const writeRoot = options.inPlace
-    ? sourceRoot
-    : options.outputDir
-      ? resolve(options.outputDir)
-      : null;
-  const writeAsar = writeRoot ? join(writeRoot, "asar-522") : null;
-  const writeBuild = writeAsar ? join(writeAsar, ".vite", "build") : null;
+  if (hasUnpackedAsarShape(sourceRoot)) {
+    return {
+      sourceKind: "asar-root",
+      sourceRoot: dirname(sourceRoot),
+      sourceAsar: sourceRoot,
+      codexApp: null
+    };
+  }
+  const sourceAsar = discoverAsarRootInEvidenceRoot(sourceRoot);
+  if (!sourceAsar) {
+    throw new Error(`Could not find an unpacked Codex asar under ${sourceRoot}`);
+  }
   return {
+    sourceKind: "codex-evidence-root",
     sourceRoot,
     sourceAsar,
+    codexApp: null
+  };
+}
+
+function discoverMainBundle(buildRoot) {
+  const names = readdirSync(buildRoot)
+    .filter((name) => /^main-.*\.js$/.test(name))
+    .sort((a, b) => a.localeCompare(b));
+  const candidates = [];
+  for (const name of names) {
+    const path = join(buildRoot, name);
+    const text = readFileSync(path, "utf8");
+    if (
+      text.includes("codex_desktop:browser-sidebar-runtime-message") &&
+      text.includes("codex_desktop:message-for-view") &&
+      text.includes("comment-preload.js") &&
+      text.includes("n.ipcMain.handle(Ts,")
+    ) {
+      candidates.push({ name, path });
+    }
+  }
+  if (candidates.length === 0) {
+    throw new Error(`Could not find a Codex Electron main bundle with browser-sidebar-runtime-message anchors under ${buildRoot}`);
+  }
+  return candidates[0];
+}
+
+function targetPaths(options) {
+  const layout = resolveSourceLayout(options);
+  const sourceBuild = join(layout.sourceAsar, buildRelativePath);
+  const sourceMainBundle = discoverMainBundle(sourceBuild);
+  let writeRoot = null;
+  let writeAsar = null;
+  if (options.inPlace) {
+    writeRoot = layout.sourceRoot;
+    writeAsar = layout.sourceAsar;
+  } else if (options.outputDir) {
+    writeRoot = resolve(options.outputDir);
+    writeAsar = join(writeRoot, basename(layout.sourceAsar));
+  }
+  const writeBuild = writeAsar ? join(writeAsar, buildRelativePath) : null;
+  return {
+    ...layout,
     sourceBuild,
-    sourcePackage: join(sourceAsar, "package.json"),
-    sourceMain: join(sourceBuild, "main-DVEWN1ng.js"),
+    sourceMainBundle: sourceMainBundle.name,
+    sourcePackage: join(layout.sourceAsar, "package.json"),
+    sourceMain: sourceMainBundle.path,
     sourceCommentPreload: join(sourceBuild, "comment-preload.js"),
     sourcePreload: join(sourceBuild, "preload.js"),
     writeRoot,
     writeAsar,
     writeBuild,
     writePackage: writeAsar ? join(writeAsar, "package.json") : null,
-    writeMain: writeBuild ? join(writeBuild, "main-DVEWN1ng.js") : null,
+    writeMain: writeBuild ? join(writeBuild, sourceMainBundle.name) : null,
     writeCommentPreload: writeBuild ? join(writeBuild, "comment-preload.js") : null,
     writePreload: writeBuild ? join(writeBuild, "preload.js") : null
   };
@@ -119,13 +249,17 @@ function targetPaths(options) {
 function patchMainBundle(source, adapterPath) {
   const anchors = {
     channelConstants: "var ws=`codex_desktop:message-from-view`,F=`codex_desktop:message-for-view`,Ts=`codex_desktop:browser-sidebar-runtime-message`,",
-    handlerRegistration: "n.ipcMain.handle(ws,"
+    helperInsertion: "Vs=`codex_desktop`;function Hs",
+    handlerRegistration: "n.ipcMain.handle(Ts,"
   };
   if (!source.includes(anchors.channelConstants)) {
     throw new Error("main bundle missing Codex IPC channel constants anchor");
   }
+  if (!source.includes(anchors.helperInsertion)) {
+    throw new Error("main bundle missing Codex IPC constants terminator anchor");
+  }
   if (!source.includes(anchors.handlerRegistration)) {
-    throw new Error("main bundle missing ipcMain.handle registration anchor");
+    throw new Error("main bundle missing browser runtime ipcMain.handle registration anchor");
   }
   if (source.includes(mainMarker)) {
     return {
@@ -148,7 +282,7 @@ function patchMainBundle(source, adapterPath) {
     `return null}`,
     `}`
   ].join("");
-  const withHelper = source.replace(anchors.channelConstants, `${anchors.channelConstants}${helper}`);
+  const withHelper = source.replace(anchors.helperInsertion, `Vs=\`codex_desktop\`;${helper}function Hs`);
   const call = `__appshotInstallCodexHostBridge(n.ipcMain,t),`;
   return {
     text: withHelper.replace(anchors.handlerRegistration, `${call}${anchors.handlerRegistration}`),
@@ -213,6 +347,14 @@ function writeCopyInputs(paths) {
   }
 }
 
+function analyzerCommandFor(paths) {
+  const analyzer = "node scripts/analyze_codex_electron_host_injection.mjs";
+  if (paths.writeAsar) {
+    return `${analyzer} --asar-root ${JSON.stringify(paths.writeAsar)}`;
+  }
+  return `${analyzer} --asar-root ${JSON.stringify(paths.sourceAsar)}`;
+}
+
 function run(options) {
   if (options.help) {
     return usage();
@@ -242,8 +384,13 @@ function run(options) {
     format: "appshot-codex-electron-host-patch-plan",
     source: "patch_codex_electron_host_for_appshot",
     mode: options.inPlace ? "in-place" : options.outputDir ? "copy" : "dry-run",
+    sourceKind: paths.sourceKind,
     sourceCodexEvidenceRoot: paths.sourceRoot,
+    sourceCodexApp: paths.codexApp,
+    sourceAsarRoot: paths.sourceAsar,
+    sourceMainBundle: paths.sourceMainBundle,
     outputCodexEvidenceRoot: paths.writeRoot,
+    outputAsarRoot: paths.writeAsar,
     adapterPath: resolve(options.adapterPath),
     markers: {
       main: mainMarker,
@@ -264,9 +411,7 @@ function run(options) {
       commentPreload: preloadPatch.anchors
     },
     verification: {
-      analyzerCommand: writesEnabled
-        ? `CODEX_EVIDENCE_ROOT=${paths.writeRoot} node scripts/analyze_codex_electron_host_injection.mjs`
-        : "node scripts/analyze_codex_electron_host_injection.mjs",
+      analyzerCommand: analyzerCommandFor(paths),
       privateHostStillRequiresLaunchingPatchedCodex: true
     }
   };
