@@ -258,7 +258,7 @@ for name, text, pattern in [
 for name, text, needles in [
     ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "appShotCaptureRequestNotificationName", "appShotCaptureRequestCacheTrigger", "handleAppCaptureRequest", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM", "browserDOMInstallBridge", "Browser Bridge"]),
     ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--activate-target", "--no-activate-target", "--request-app-capture", "--app-capture-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout", "get_app_state", "list_apps", "appshot_codex_computer_use_status"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
@@ -270,6 +270,7 @@ for name, text, needles in [
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
     ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
+    ("Codex Computer Use bridge diagnostics", core + cli + server + parity, ["codexComputerUseStatus", "codex-computer-use-status", "codex-computer-use-status", "com.openai.sky.CUAService", "SkyComputerUseService", "SkyComputerUseClient", "ComputerUseAppApprovals.json", "SKY_CUA_NATIVE_PIPE", "x-codex-turn-metadata", "codexTurnMetadata", "requestComputerUseApproval", "get_app_state", "list_apps"]),
     ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
@@ -336,12 +337,12 @@ def require_keys(name, payload, keys):
 require_keys(
     "status",
     status,
-    ["schemaVersion", "permissions", "codexAppsStatus", "captureCache", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"],
+    ["schemaVersion", "permissions", "codexAppsStatus", "codexComputerUseStatus", "captureCache", "frontmostApplication", "currentApplication", "primaryWindow", "frontmostWindow", "currentWindow"],
 )
 require_keys(
     "capture",
     capture,
-    ["schemaVersion", "permissions", "codexAppsStatus", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
+    ["schemaVersion", "permissions", "codexAppsStatus", "codexComputerUseStatus", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
 )
 require_keys(
     "app capture request",
@@ -359,17 +360,17 @@ if app_request["appCaptureRequest"].get("requested") is not True:
 require_keys(
     "CLI codex apps status",
     codex_apps,
-    ["format", "source", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "connectors", "connectorCount", "accessibleConnectors", "accessibleConnectorCount", "tools", "toolCount", "blockers", "evidence"],
+    ["format", "source", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "connectors", "connectorCount", "accessibleConnectors", "accessibleConnectorCount", "tools", "toolCount", "blockers", "codexComputerUseStatus", "evidence"],
 )
 if codex_apps.get("format") != "codex-accessible-connectors-status":
     raise SystemExit("codex-apps-status returned unexpected format")
-for required_tool in ["appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows", "appshot_codex_apps_status"]:
+for required_tool in ["appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows", "appshot_codex_apps_status", "appshot_codex_computer_use_status", "list_apps", "get_app_state"]:
     if required_tool not in codex_apps.get("tools", []):
         raise SystemExit(f"codex-apps-status missing tool: {required_tool}")
 if codex_apps.get("connectorCount") != 1:
     raise SystemExit("codex-apps-status should report one AppShot connector")
-if codex_apps.get("toolCount") != 5:
-    raise SystemExit("codex-apps-status should report five AppShot MCP tools")
+if codex_apps.get("toolCount") != 8:
+    raise SystemExit("codex-apps-status should report eight AppShot MCP tools")
 if codex_apps.get("forceRefetchSupported") is not True or codex_apps.get("retryWhenNotReady") is not True:
     raise SystemExit("codex-apps-status lost Codex force-refetch readiness semantics")
 if codex_apps.get("codexAppsReady") != (len(codex_apps.get("blockers", [])) == 0):
@@ -379,7 +380,7 @@ if codex_apps.get("accessibleConnectorCount") != len(codex_apps.get("accessibleC
 if codex_apps.get("evidence", {}).get("anchors") != ["AccessibleConnectorsStatus", "codex_apps_ready", "force_refetch", "ConnectorsSnapshot"]:
     raise SystemExit("codex-apps-status evidence anchors drifted")
 for name, payload in [("status", status.get("codexAppsStatus", {})), ("capture", capture.get("codexAppsStatus", {}))]:
-    require_keys(f"{name} codexAppsStatus", payload, ["format", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "tools", "blockers"])
+    require_keys(f"{name} codexAppsStatus", payload, ["format", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "tools", "blockers", "codexComputerUseStatus"])
     if payload.get("format") != "codex-accessible-connectors-status":
         raise SystemExit(f"{name} codexAppsStatus format drifted")
     if "appshot_codex_apps_status" not in payload.get("tools", []):
@@ -679,6 +680,9 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
   '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"http://localhost:9229/json","title":"Content Shell Remote Debugging","viewportSize":{"width":640,"height":480},"designTargets":[{"selector":"main","role":"document","text":"Content Shell Remote Debugging","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
   '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"appshot_codex_apps_status","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"list_apps","arguments":{}}}' \
+  '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"get_app_state","arguments":{"app":"com.openai.codex"}}}' \
+  '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"appshot_codex_computer_use_status","arguments":{}}}' \
   | (cd "$RUN_DIR" && APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL")
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -686,11 +690,11 @@ import json
 import sys
 
 lines = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
-if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6, 7, 8]:
-    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6, 7, 8]")
+if [line.get("id") for line in lines] != [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]:
+    raise SystemExit("MCP response ids are not [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]")
 
 tools = {tool["name"] for tool in lines[1]["result"]["tools"]}
-expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows", "appshot_codex_apps_status"}
+expected_tools = {"appshot_capture", "appshot_permissions", "appshot_status", "appshot_list_windows", "appshot_codex_apps_status", "appshot_codex_computer_use_status", "list_apps", "get_app_state"}
 missing = sorted(expected_tools - tools)
 if missing:
     raise SystemExit(f"MCP missing tools: {', '.join(missing)}")
@@ -790,6 +794,23 @@ if mcp_codex_apps.get("codexAppsReady") != (len(mcp_codex_apps.get("blockers", [
     raise SystemExit("MCP codex apps readiness does not match blockers")
 if "appshot_codex_apps_status" not in mcp_codex_apps.get("tools", []):
     raise SystemExit("MCP codex apps status did not include its own tool surface")
+
+mcp_list_apps = lines[8]["result"]["content"][0]["text"]
+if "com.openai.codex" not in mcp_list_apps:
+    raise SystemExit("MCP list_apps did not include Codex")
+
+mcp_get_app_state = lines[9]["result"]
+content = mcp_get_app_state.get("content", [])
+if not content or content[0].get("type") != "text" or not content[0].get("text", "").startswith("<appshot "):
+    raise SystemExit("MCP get_app_state did not return Codex-style appshot text")
+if not any(item.get("type") == "image" and item.get("mimeType") == "image/png" and item.get("data") for item in content):
+    raise SystemExit("MCP get_app_state did not return a PNG image content block")
+
+mcp_cua = json.loads(lines[10]["result"]["content"][0]["text"])
+if mcp_cua.get("format") != "codex-computer-use-status":
+    raise SystemExit("MCP Codex Computer Use status returned unexpected format")
+if mcp_cua.get("serviceBundleIdentifier") != "com.openai.sky.CUAService":
+    raise SystemExit("MCP Codex Computer Use status lost service bundle identifier")
 PY
 
 log "ok"

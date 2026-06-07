@@ -255,6 +255,7 @@ public enum AppShotCore {
             "capturedAt": ISO8601DateFormatter().string(from: Date()),
             "permissions": permissionPayload,
             "codexAppsStatus": codexAppsStatus(permissions: permissionPayload),
+            "codexComputerUseStatus": codexComputerUseStatus(),
             "frontmostApplication": appInfo(frontmostApp ?? app),
             "currentApplication": appInfo(app),
             "targetApplication": appInfo(app),
@@ -363,6 +364,7 @@ public enum AppShotCore {
             "capturedAt": ISO8601DateFormatter().string(from: Date()),
             "permissions": permissionPayload,
             "codexAppsStatus": codexAppsStatus(permissions: permissionPayload),
+            "codexComputerUseStatus": codexComputerUseStatus(),
             "frontmostApplication": NSWorkspace.shared.frontmostApplication.map { appInfo($0) } ?? NSNull(),
             "currentApplication": processPayload,
             "targetApplication": processPayload,
@@ -501,6 +503,7 @@ public enum AppShotCore {
             "state": blockers.isEmpty ? "ready" : "needsAttention",
             "permissions": permissionPayload,
             "codexAppsStatus": codexAppsStatus(permissions: permissionPayload),
+            "codexComputerUseStatus": codexComputerUseStatus(),
             "windowCount": windows.count,
             "blockers": blockers,
             "advisories": advisories,
@@ -529,7 +532,10 @@ public enum AppShotCore {
         "appshot_permissions",
         "appshot_status",
         "appshot_list_windows",
-        "appshot_codex_apps_status"
+        "appshot_codex_apps_status",
+        "appshot_codex_computer_use_status",
+        "list_apps",
+        "get_app_state"
     ]
 
     private static func appshotReadinessBlockers(
@@ -598,6 +604,7 @@ public enum AppShotCore {
             "toolCount": toolNames.count,
             "blockers": blockers,
             "advisories": advisories,
+            "codexComputerUseStatus": codexComputerUseStatus(),
             "evidence": [
                 "focusedDiff": "codex-522/artifacts/appshots-focused-diff-v0.132.0..v0.133.0.patch",
                 "anchors": [
@@ -605,6 +612,102 @@ public enum AppShotCore {
                     "codex_apps_ready",
                     "force_refetch",
                     "ConnectorsSnapshot"
+                ]
+            ]
+        ]
+    }
+
+    public static func codexComputerUseStatus() -> JSONObject {
+        let fileManager = FileManager.default
+        let home = NSHomeDirectory()
+        let installedAppPath = "\(home)/.codex/computer-use/Codex Computer Use.app"
+        let bundledAppPath = "/Applications/Codex.app/Contents/Resources/plugins/openai-bundled/plugins/computer-use/Codex Computer Use.app"
+        let serviceRelativePath = "Contents/MacOS/SkyComputerUseService"
+        let clientRelativePath = "Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient"
+        let approvalsPath = "\(home)/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json"
+
+        func appBundleStatus(path: String) -> JSONObject {
+            [
+                "path": path,
+                "available": fileManager.fileExists(atPath: path),
+                "serviceExecutablePath": "\(path)/\(serviceRelativePath)",
+                "serviceExecutableAvailable": fileManager.isExecutableFile(atPath: "\(path)/\(serviceRelativePath)"),
+                "clientExecutablePath": "\(path)/\(clientRelativePath)",
+                "clientExecutableAvailable": fileManager.isExecutableFile(atPath: "\(path)/\(clientRelativePath)")
+            ]
+        }
+
+        var approvedBundleIdentifiers: [String] = []
+        var approvalsError = ""
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: approvalsPath)) {
+            do {
+                let object = try JSONSerialization.jsonObject(with: data)
+                if let json = object as? JSONObject,
+                   let approvals = json["approvedBundleIdentifiers"] as? [String] {
+                    approvedBundleIdentifiers = approvals.sorted()
+                }
+            } catch {
+                approvalsError = String(describing: error)
+            }
+        }
+
+        let environment = ProcessInfo.processInfo.environment
+        let nativePipeEnvironment = [
+            "SKY_CUA_SERVICE_PATH": environment["SKY_CUA_SERVICE_PATH"] ?? "",
+            "SKY_CUA_NATIVE_PIPE": environment["SKY_CUA_NATIVE_PIPE"] ?? "",
+            "SKY_CUA_NATIVE_PIPE_DIRECTORY": environment["SKY_CUA_NATIVE_PIPE_DIRECTORY"] ?? ""
+        ]
+        let nativePipeEnvironmentPresent = nativePipeEnvironment.values.contains { !$0.isEmpty }
+        let runningServices = NSWorkspace.shared.runningApplications
+            .filter { $0.bundleIdentifier == "com.openai.sky.CUAService" }
+            .map { appInfo($0) }
+
+        return [
+            "schemaVersion": 1,
+            "format": "codex-computer-use-status",
+            "source": "appshot-codex-computer-use-status",
+            "serviceBundleIdentifier": "com.openai.sky.CUAService",
+            "installedService": appBundleStatus(path: installedAppPath),
+            "bundledService": appBundleStatus(path: bundledAppPath),
+            "serviceRunning": !runningServices.isEmpty,
+            "runningServices": runningServices,
+            "appApprovals": [
+                "path": approvalsPath,
+                "available": fileManager.fileExists(atPath: approvalsPath),
+                "approvedBundleIdentifiers": approvedBundleIdentifiers,
+                "approvedBundleIdentifierCount": approvedBundleIdentifiers.count,
+                "error": approvalsError
+            ],
+            "hostBridge": [
+                "requiresCodexHostBridge": true,
+                "nativePipeEnvironmentPresent": nativePipeEnvironmentPresent,
+                "nativePipeEnvironment": nativePipeEnvironment,
+                "requiredSignals": [
+                    "SKY_CUA_NATIVE_PIPE",
+                    "SKY_CUA_NATIVE_PIPE_DIRECTORY",
+                    "x-codex-turn-metadata",
+                    "codexTurnMetadata",
+                    "requestComputerUseApproval"
+                ],
+                "bareMCPObservation": "cua mcp can list tools, but get_app_state depends on Codex host bridge/session metadata and app approval handling."
+            ],
+            "computerUseCompatibleTools": [
+                ["name": "list_apps", "source": "appshot-mcp-alias"] as JSONObject,
+                ["name": "get_app_state", "source": "appshot-mcp-alias"] as JSONObject
+            ],
+            "evidence": [
+                "strings": [
+                    "ComputerUseMCPServer",
+                    "get_app_state",
+                    "x-codex-turn-metadata",
+                    "requestComputerUseApproval",
+                    "AppshotCaptureStore",
+                    "The following is a diff from the previous accessibility tree"
+                ],
+                "paths": [
+                    installedAppPath,
+                    bundledAppPath,
+                    approvalsPath
                 ]
             ]
         ]

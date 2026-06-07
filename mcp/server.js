@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -154,9 +155,43 @@ function tools() {
       }
     },
     {
+      name: "appshot_codex_computer_use_status",
+      description: "Report Codex Computer Use parity diagnostics, including CUA service discovery, app approvals, and host native-pipe bridge requirements.",
+      inputSchema: { type: "object", properties: {} }
+    },
+    {
       name: "appshot_list_windows",
       description: "List regular running apps and visible windows, including exact capture parameters for follow-up appshot_capture calls.",
       inputSchema: { type: "object", properties: {} }
+    },
+    {
+      name: "list_apps",
+      description: "Computer Use-compatible alias: list running apps that AppShot can target.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+        readOnlyHint: true
+      }
+    },
+    {
+      name: "get_app_state",
+      description: "Computer Use-compatible alias: get the state of an app's key window and return a screenshot plus Codex-style accessibility tree.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          app: { type: "string", description: "App name, full app path, or unambiguous bundle identifier" }
+        },
+        required: ["app"],
+        additionalProperties: false
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+        readOnlyHint: true
+      }
     }
   ];
 }
@@ -164,6 +199,9 @@ function tools() {
 function callTool(params = {}) {
   const name = params.name;
   const args = params.arguments || {};
+  if (name === "list_apps") return callComputerUseListApps();
+  if (name === "get_app_state") return callComputerUseGetAppState(args);
+
   const cliArgs = [];
 
   if (name === "appshot_capture") {
@@ -214,20 +252,145 @@ function callTool(params = {}) {
   } else if (name === "appshot_codex_apps_status") {
     cliArgs.push("codex-apps-status", "--pretty");
     if (args.prompt) cliArgs.push("--prompt");
+  } else if (name === "appshot_codex_computer_use_status") {
+    cliArgs.push("codex-computer-use-status", "--pretty");
   } else if (name === "appshot_list_windows") {
     cliArgs.push("list-windows", "--pretty");
   } else {
     throw new Error(`Unknown tool: ${name}`);
   }
 
-  const result = spawnSync(appshot, cliArgs, { encoding: "utf8" });
+  return {
+    content: [{ type: "text", text: runAppShot(cliArgs).trim() }]
+  };
+}
+
+function runAppShot(cliArgs) {
+  const result = spawnSync(appshot, cliArgs, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(result.stderr || `appshot exited with status ${result.status}`);
   }
+  return result.stdout;
+}
+
+function runAppShotJSON(cliArgs) {
+  const stdout = runAppShot(cliArgs);
+  return JSON.parse(stdout);
+}
+
+function callComputerUseListApps() {
+  const payload = runAppShotJSON(["list-windows", "--pretty"]);
+  const apps = Array.isArray(payload.applications) ? payload.applications : [];
+  const lines = apps.map((app) => {
+    const name = app.localizedName || app.name || app.bundleIdentifier || "Unknown";
+    const path = app.bundleURL || app.bundlePath || "";
+    const bundleID = app.bundleIdentifier || "";
+    const windows = Array.isArray(app.windows) ? app.windows.length : 0;
+    return `${name} — ${path} — ${bundleID} [running, windows=${windows}]`;
+  });
   return {
-    content: [{ type: "text", text: result.stdout.trim() }]
+    content: [{ type: "text", text: lines.join("\n") }]
   };
+}
+
+function callComputerUseGetAppState(args) {
+  const app = String(args.app || "").trim();
+  if (!app) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "Missing required argument: app" }]
+    };
+  }
+
+  const target = resolveComputerUseAppTarget(app);
+  if (!target) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: `Invalid app: ${app}` }]
+    };
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), "appshot-get-app-state-"));
+  const screenshotPath = join(dir, "screenshot.png");
+  const cliArgs = [
+    "capture",
+    "--pretty",
+    "--format",
+    "json",
+    "--include-screenshot",
+    "--screenshot",
+    screenshotPath,
+    "--no-cache",
+    "--max-depth",
+    "60",
+    "--max-children",
+    "240",
+    "--accessibility-timeout",
+    "20"
+  ];
+  if (target.bundleID) cliArgs.push("--bundle-id", target.bundleID);
+  else if (target.pid != null) cliArgs.push("--pid", String(target.pid));
+
+  const payload = runAppShotJSON(cliArgs);
+  const codex = payload.codex || {};
+  const text = codex.text || JSON.stringify(payload, null, 2);
+  const content = [{ type: "text", text }];
+  if (existsSync(screenshotPath)) {
+    content.push({
+      type: "image",
+      data: readFileSync(screenshotPath).toString("base64"),
+      mimeType: "image/png"
+    });
+  }
+  return {
+    _meta: {
+      source: "appshot-get-app-state",
+      app,
+      target,
+      screenshotPath,
+      codexComputerUseStatus: payload.codexComputerUseStatus || null
+    },
+    content
+  };
+}
+
+function resolveComputerUseAppTarget(app) {
+  const payload = runAppShotJSON(["list-windows", "--pretty"]);
+  const apps = Array.isArray(payload.applications) ? payload.applications : [];
+  const wanted = normalizeAppToken(app);
+  const match = apps.find((candidate) => {
+    const names = [
+      candidate.localizedName,
+      candidate.name,
+      candidate.bundleIdentifier,
+      candidate.bundleURL,
+      candidate.bundlePath
+    ].filter(Boolean).map(normalizeAppToken);
+    return names.includes(wanted);
+  });
+  if (match) {
+    return {
+      bundleID: match.bundleIdentifier || undefined,
+      pid: match.captureParameters?.pid ?? match.processIdentifier,
+      name: match.localizedName || match.name || "",
+      path: match.bundleURL || match.bundlePath || ""
+    };
+  }
+  if (!app.includes("/") && app.includes(".")) {
+    return { bundleID: app };
+  }
+  return null;
+}
+
+function normalizeAppToken(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\/+$/, "")
+    .toLowerCase();
 }
 
 function respond(id, result, error) {
