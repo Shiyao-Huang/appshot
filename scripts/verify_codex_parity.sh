@@ -146,8 +146,13 @@ for anchor in \
   "appshot-browser-runtime-bridge" \
   "codexDesktopShimAvailable" \
   "window.codex_desktop" \
+  "extensionHelperAvailable" \
   "hostAPI" \
   "hostChannel" \
+  "hostOwner" \
+  "hostTransport" \
+  "window.postMessage+extension-runtime" \
+  "browser-extension/appshot-bridge" \
   "Browser runtime bridge event log" \
   "codex-browser-runtime-state-adapter" \
   "codex-browser-runtime-protocol-adapter" \
@@ -207,6 +212,10 @@ app_bundle = pathlib.Path(sys.argv[2])
 codex_evidence_root = pathlib.Path(sys.argv[3])
 plugin = json.loads((root / ".codex-plugin/plugin.json").read_text())
 mcp = json.loads((root / "mcp/package.json").read_text())
+extension_manifest = json.loads((root / "browser-extension/appshot-bridge/manifest.json").read_text())
+extension_page = (root / "browser-extension/appshot-bridge/page-bridge.js").read_text()
+extension_content = (root / "browser-extension/appshot-bridge/content.js").read_text()
+extension_background = (root / "browser-extension/appshot-bridge/background.js").read_text()
 server = (root / "mcp/server.js").read_text()
 installer = (root / "install.sh").read_text()
 release = (root / "scripts/build_release.sh").read_text()
@@ -223,6 +232,7 @@ expected = "0.1.12"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
+    "browser bridge extension version": extension_manifest.get("version"),
 }
 for name, value in checks.items():
     if value != expected:
@@ -264,6 +274,7 @@ for name, text, needles in [
     ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--activate-target", "--no-activate-target", "--request-app-capture", "--app-capture-timeout", "--window-title", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
     ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "windowTitle", "--window-title", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout", "get_app_state", "list_apps", "appshot_codex_computer_use_status"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
+    ("browser extension installer/release", installer + release, ["APPSHOT_BROWSER_EXTENSION_DIR", "browser-extension/appshot-bridge", "FOUND_BROWSER_EXTENSION", "load unpacked", "ditto \"$ROOT/browser-extension/appshot-bridge\""]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "bestCandidateIsAXWindow", "codexIsMenuBarElement", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("AX window discovery", core + cli + server + parity + skill, ["accessibilityWindows", "windowDiscovery", "accessibilityWindow", "preferredAccessibilityWindow", "hasAccessibilityOnlyWindows", "resolveCaptureTargetByWindowTitle", "--window-title", "captureMode", "screenshotRectArgument", "titlesCompatible"]),
@@ -271,7 +282,8 @@ for name, text, needles in [
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
-    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents", "window.codex_desktop", "codexDesktopShimAvailable", "hostAPI", "hostChannel"]),
+    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents", "window.codex_desktop", "codexDesktopShimAvailable", "extensionHelperAvailable", "hostAPI", "hostChannel", "hostOwner", "hostTransport"]),
+    ("Browser bridge extension helper", json.dumps(extension_manifest) + extension_page + extension_content + extension_background + installer + release + parity + skill, ["manifest_version", "service_worker", "content_scripts", "page-bridge.js", "content.js", "background.js", "window.codex_desktop", "sendMessageToHost", "subscribeToHostMessages", "codex_desktop:browser-sidebar-runtime-message", "window.postMessage+extension-runtime", "browser-extension", "extensionHelperAvailable", "hostOwner", "hostTransport"]),
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
     ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
@@ -289,6 +301,9 @@ for name, text, needles in [
     if missing:
         raise SystemExit(f"{name} missing anchors: {', '.join(missing)}")
 PY
+
+log "checking browser bridge extension helper"
+(cd "$ROOT" && node scripts/verify_browser_bridge_extension.mjs >/dev/null)
 
 STATUS_JSON="$(mktemp)"
 CODEX_APPS_JSON="$(mktemp)"
@@ -316,7 +331,7 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --request-app-capture --app-capture-timeout 0.1 --pretty >"$APP_REQUEST_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
-(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","extensionHelperAvailable":true,"hostOwner":"browser-extension","hostTransport":"window.postMessage+extension-runtime","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"http://127.0.0.1:9222/json","title":"Inspectable WebContents","viewportSize":{"width":900,"height":700},"designTargets":[{"selector":"body","role":"document","text":"Inspectable WebContents","rect":{"x":0,"y":0,"width":900,"height":700}}]}' --pretty >"$DEBUG_DOM_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --include-electron-debugging --electron-debugging-timeout 0.5 --pretty >"$ELECTRON_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
@@ -611,6 +626,12 @@ if bridge.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
     raise SystemExit("browser DOM bridge fixture did not preserve Codex host channel")
 if sorted(bridge.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
     raise SystemExit("browser DOM bridge fixture did not expose Codex host API names")
+if bridge.get("extensionHelperAvailable") is not True:
+    raise SystemExit("browser DOM bridge fixture did not preserve extension helper availability")
+if bridge.get("hostOwner") != "browser-extension":
+    raise SystemExit("browser DOM bridge fixture did not preserve extension host owner")
+if bridge.get("hostTransport") != "window.postMessage+extension-runtime":
+    raise SystemExit("browser DOM bridge fixture did not preserve extension host transport")
 if dom_integration.get("liveEventStreamAvailable") is not True:
     raise SystemExit("browser DOM bridge fixture should report liveEventStreamAvailable")
 if dom_integration.get("browserRuntimeBridgeEventCount") != 1:
@@ -648,6 +669,12 @@ if dom_metadata_bridge.get("codexDesktopShimAvailable") is not True:
     raise SystemExit("browser DOM payload metadata did not summarize Codex desktop shim availability")
 if sorted(dom_metadata_bridge.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
     raise SystemExit("browser DOM payload metadata did not summarize Codex host API names")
+if dom_metadata_bridge.get("extensionHelperAvailable") is not True:
+    raise SystemExit("browser DOM payload metadata did not summarize extension helper availability")
+if dom_metadata_bridge.get("hostOwner") != "browser-extension":
+    raise SystemExit("browser DOM payload metadata did not summarize extension host owner")
+if dom_metadata_bridge.get("hostTransport") != "window.postMessage+extension-runtime":
+    raise SystemExit("browser DOM payload metadata did not summarize extension host transport")
 if dom_browser_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("browser DOM bridge availability was not mirrored into codexBrowserPayload runtime protocol")
 dom_context = dom_browser_payload.get("localBrowserContext", {})
@@ -725,7 +752,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","screenshotPath":'"$MCP_POLICY_SCREENSHOT_JSON"',"browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
-  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
+  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","extensionHelperAvailable":true,"hostOwner":"browser-extension","hostTransport":"window.postMessage+extension-runtime","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
   '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"http://localhost:9229/json","title":"Content Shell Remote Debugging","viewportSize":{"width":640,"height":480},"designTargets":[{"selector":"main","role":"document","text":"Content Shell Remote Debugging","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
   '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"appshot_codex_apps_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"list_apps","arguments":{}}}' \
@@ -800,6 +827,12 @@ if bridge.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
     raise SystemExit("MCP DOM fixture did not preserve Codex host channel")
 if sorted(bridge.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
     raise SystemExit("MCP DOM fixture did not expose Codex host API names")
+if bridge.get("extensionHelperAvailable") is not True:
+    raise SystemExit("MCP DOM fixture did not expose extension helper availability")
+if bridge.get("hostOwner") != "browser-extension":
+    raise SystemExit("MCP DOM fixture did not preserve extension host owner")
+if bridge.get("hostTransport") != "window.postMessage+extension-runtime":
+    raise SystemExit("MCP DOM fixture did not preserve extension host transport")
 if mcp_dom_integration.get("browserRuntimeCandidateEventCount") != 22:
     raise SystemExit("MCP DOM fixture did not preserve candidate event set")
 if mcp_dom_integration.get("liveEventStreamAvailable") is not True:
@@ -817,6 +850,12 @@ if mcp_dom_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEvent") 
 metadata_bridge = mcp_dom_payload.get("localBrowserCommentMetadata", {}).get("browserDOMIntegration", {})
 if metadata_bridge.get("codexDesktopShimAvailable") is not True:
     raise SystemExit("MCP DOM payload metadata did not summarize Codex desktop shim availability")
+if metadata_bridge.get("extensionHelperAvailable") is not True:
+    raise SystemExit("MCP DOM payload metadata did not summarize extension helper availability")
+if metadata_bridge.get("hostOwner") != "browser-extension":
+    raise SystemExit("MCP DOM payload metadata did not summarize extension host owner")
+if metadata_bridge.get("hostTransport") != "window.postMessage+extension-runtime":
+    raise SystemExit("MCP DOM payload metadata did not summarize extension host transport")
 if mcp_dom_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("MCP DOM fixture did not mirror liveEventStreamAvailable into payload protocol")
 mcp_dom_context = mcp_dom_payload.get("localBrowserContext", {})

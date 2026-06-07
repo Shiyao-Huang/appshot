@@ -4239,6 +4239,18 @@ private func codexBrowserDOMIntegrationPayload(
     var runtimeBridge = domSnapshot["runtimeBridge"] as? JSONObject ?? [:]
     if codexTrimmedString(runtimeBridge["source"]) == "appshot-browser-runtime-bridge"
         || (runtimeBridge["installed"] as? Bool) == true {
+        let existingHostOwner = codexTrimmedString(runtimeBridge["hostOwner"]) ?? ""
+        let existingHostTransport = codexTrimmedString(runtimeBridge["hostTransport"]) ?? ""
+        let extensionHelperAvailable: Bool
+        if let value = runtimeBridge["extensionHelperAvailable"] as? Bool {
+            extensionHelperAvailable = value
+        } else {
+            extensionHelperAvailable = existingHostOwner == "browser-extension"
+                || existingHostTransport.contains("extension-runtime")
+        }
+        if runtimeBridge["extensionHelperAvailable"] == nil {
+            runtimeBridge["extensionHelperAvailable"] = extensionHelperAvailable
+        }
         if runtimeBridge["codexDesktopShimAvailable"] == nil {
             runtimeBridge["codexDesktopShimAvailable"] = runtimeBridge["installed"] as? Bool ?? false
         }
@@ -4250,6 +4262,12 @@ private func codexBrowserDOMIntegrationPayload(
         }
         if runtimeBridge["hostChannel"] == nil {
             runtimeBridge["hostChannel"] = "codex_desktop:browser-sidebar-runtime-message"
+        }
+        if runtimeBridge["hostOwner"] == nil {
+            runtimeBridge["hostOwner"] = extensionHelperAvailable ? "browser-extension" : "apple-events-page-bridge"
+        }
+        if runtimeBridge["hostTransport"] == nil {
+            runtimeBridge["hostTransport"] = extensionHelperAvailable ? "window.postMessage+extension-runtime" : "page-local"
         }
         if runtimeBridge["hostShim"] == nil {
             runtimeBridge["hostShim"] = runtimeBridge["codexDesktopShimAvailable"] as? Bool ?? false
@@ -4878,7 +4896,11 @@ private func browserDOMPageProbeJavaScript(
         };
       });
       const runtimeBridgeLog = ensureRuntimeEventLog();
+      const bridgeHost = window.__appshotBrowserBridgeHost || {};
       const codexDesktopShimAvailable = Boolean(window.__appshotCodexDesktopShimInstalled && window.codex_desktop && typeof window.codex_desktop.sendMessageToHost === "function" && typeof window.codex_desktop.subscribeToHostMessages === "function");
+      const extensionHelperAvailable = Boolean(bridgeHost.extensionHelperAvailable || bridgeHost.owner === "browser-extension" || (window.codex_desktop && window.codex_desktop.__appshotHostOwner === "browser-extension"));
+      const hostOwner = bridgeHost.owner || (extensionHelperAvailable ? "browser-extension" : (codexDesktopShimAvailable ? "apple-events-page-bridge" : ""));
+      const hostTransport = bridgeHost.transport || (extensionHelperAvailable ? "window.postMessage+extension-runtime" : (codexDesktopShimAvailable ? "page-local" : ""));
       const runtimeBridge = {
         installed: Boolean(window.__appshotRuntimeBridgeInstalled),
         installRequested: appshotInstallBridge,
@@ -4886,9 +4908,12 @@ private func browserDOMPageProbeJavaScript(
         liveEventStreamAvailable: Boolean(window.__appshotRuntimeBridgeInstalled),
         version: window.__appshotRuntimeBridgeVersion || appshotBridgeVersion,
         source: appshotBridgeSource,
+        extensionHelperAvailable: extensionHelperAvailable,
         codexDesktopShimAvailable: codexDesktopShimAvailable,
         hostAPI: ["sendMessageToHost", "subscribeToHostMessages"],
         hostChannel: "codex_desktop:browser-sidebar-runtime-message",
+        hostOwner: hostOwner,
+        hostTransport: hostTransport,
         hostShim: codexDesktopShimAvailable,
         hostSubscriberCount: ensureHostSubscribers().length,
         eventCount: runtimeBridgeLog.length,
@@ -5056,9 +5081,12 @@ public func codexBrowserPayload(
             "browserRuntimeBridgeEventCount": browserDOMIntegration["browserRuntimeBridgeEventCount"] ?? 0,
             "browserRuntimeCandidateEventCount": browserDOMIntegration["browserRuntimeCandidateEventCount"] ?? 0,
             "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false,
+            "extensionHelperAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["extensionHelperAvailable"] ?? false,
             "codexDesktopShimAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["codexDesktopShimAvailable"] ?? false,
             "hostAPI": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostAPI"] ?? [],
             "hostChannel": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostChannel"] ?? NSNull(),
+            "hostOwner": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostOwner"] ?? NSNull(),
+            "hostTransport": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostTransport"] ?? NSNull(),
             "remoteDebuggingTarget": browserDOMIntegration["remoteDebuggingTarget"] ?? NSNull()
         ]
     }
