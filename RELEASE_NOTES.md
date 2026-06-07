@@ -1,3 +1,23 @@
+# AppShot v0.1.13
+
+## English
+
+AppShot v0.1.13 turns the remaining Codex-side Electron bridge work into a packaged, testable integration surface:
+
+- Added `codex-integration/appshot-codex-host-bridge`, a Codex-side Electron host adapter that composes the AppShot Electron bridge and emits Codex-shaped runtime sync/message state when loaded by an actual host process.
+- Added `codexComputerUseStatus.hostBridge.codexHostIntegration` diagnostics so CLI/MCP callers can see installed bridge artifacts, expected host API/channel/owner/transport values, and the standalone non-claim `privateCodexWebviewHostAttached: false`.
+- Packaged and installed the Codex host integration adapter alongside the browser extension and Electron preload helpers.
+- Tightened parity verification with `scripts/verify_codex_host_integration.mjs` plus CLI/MCP schema checks for the new host integration diagnostics.
+
+## 中文
+
+AppShot v0.1.13 把剩余的 Codex-side Electron bridge 工作推进成一个可打包、可验证的集成面：
+
+- 新增 `codex-integration/appshot-codex-host-bridge`，提供 Codex-side Electron host adapter；当它被真实 host process 加载时，会复用 AppShot Electron bridge，并输出 Codex-shaped runtime sync/message state。
+- 新增 `codexComputerUseStatus.hostBridge.codexHostIntegration` 诊断，让 CLI/MCP 调用方能看到 bridge artifacts、预期 host API/channel/owner/transport，以及 standalone 场景下不会误报的 `privateCodexWebviewHostAttached: false`。
+- release 包和安装器会随 browser extension、Electron preload helper 一起安装 Codex host integration adapter。
+- `scripts/verify_codex_host_integration.mjs` 和 parity verifier 现在会检查新的 host integration 诊断与 CLI/MCP schema。
+
 # AppShot v0.1.2
 
 ## English

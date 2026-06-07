@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AppShot Browser Bridge",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Codex-style page preload and host-message bridge for AppShot browser captures.",
   "permissions": [
     "storage"

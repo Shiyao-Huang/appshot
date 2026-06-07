@@ -12,7 +12,7 @@ It captures the frontmost Mac application as structured context: app metadata, v
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | bash
 ```
 
-By default this installs `AppShot.app` to `~/Applications/AppShot.app`, the `appshot` CLI to `~/.local/bin/appshot`, the MCP server to `~/.local/share/appshot/mcp`, the optional browser bridge extension to `~/.local/share/appshot/browser-extension/appshot-bridge`, the optional Electron host bridge to `~/.local/share/appshot/electron-preload/appshot-host-bridge`, and the Codex skill to `~/.codex/skills/appshot`.
+By default this installs `AppShot.app` to `~/Applications/AppShot.app`, the `appshot` CLI to `~/.local/bin/appshot`, the MCP server to `~/.local/share/appshot/mcp`, the optional browser bridge extension to `~/.local/share/appshot/browser-extension/appshot-bridge`, the optional Electron host bridge to `~/.local/share/appshot/electron-preload/appshot-host-bridge`, the optional Codex host integration adapter to `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge`, and the Codex skill to `~/.codex/skills/appshot`.
 
 To let Claude Code use Codex-style App Shot, install the Claude Code skill and MCP registration too:
 
@@ -57,6 +57,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Browser runtime bridge: `--browser-dom-install-bridge`, MCP `browserDOMInstallBridge`, and App Settings `Browser Bridge` optionally install a page-level Safari/Chrome listener plus a `window.codex_desktop.sendMessageToHost` / `subscribeToHostMessages` shim. It records real `browser-sidebar-runtime-*` bridge events into `browserRuntimeBridgeEvents` and reports `codexDesktopShimAvailable`, `hostAPI`, and `hostChannel`; `--browser-dom-clear-bridge-log` clears that tab-local log.
 - Browser extension/preload helper: `browser-extension/appshot-bridge` is packaged and installed as an optional unpacked MV3 helper. It exposes `window.codex_desktop` from a page preload, relays through `window.postMessage+extension-runtime`, and surfaces `extensionHelperAvailable`, `hostOwner`, and `hostTransport` in `codexBrowserDOMIntegration.browserRuntimeBridge`.
 - Electron preload/host helper: `electron-preload/appshot-host-bridge` is packaged and installed as an optional Electron integration. It exposes `window.codex_desktop` from `preload.cjs`, registers `installAppShotElectronHostBridge(ipcMain)` in `host.cjs`, and surfaces `electronHostBridgeAvailable`, `hostOwner: electron-preload`, and `hostTransport: electron-ipc`.
+- Codex host integration adapter: `codex-integration/appshot-codex-host-bridge` is packaged and installed as a Codex-side host adapter. It exports `installAppShotCodexHostBridge`, composes the Electron helper, reports `hostOwner: codex-electron-host`, and is surfaced in diagnostics at `codexComputerUseStatus.hostBridge.codexHostIntegration`; standalone CLI/MCP status keeps `privateCodexWebviewHostAttached: false` until a real Codex Electron host loads it.
 
 ### Build And Run
 
@@ -72,8 +73,8 @@ For a complete local release package:
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.12
-open dist/AppShot-macOS-0.1.12/AppShot.app
+scripts/build_release.sh 0.1.13
+open dist/AppShot-macOS-0.1.13/AppShot.app
 ```
 
 For a public macOS release, sign with a `Developer ID Application` identity and notarize the DMG:
@@ -82,7 +83,7 @@ For a public macOS release, sign with a `Developer ID Application` identity and 
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.12
+scripts/build_release.sh 0.1.13
 ```
 
 The public release path refuses Apple Development or ad-hoc signatures, submits the DMG to Apple notarization, staples the ticket, and runs Gatekeeper assessment.
@@ -128,7 +129,7 @@ JSON capture output also includes `codexBrowserPayload`, a native AppShot adapte
 
 For Codex browser runtime-state parity, JSON capture includes `codexBrowserRuntimeState` and mirrors `activeDesignChange` into `codexBrowserPayload.localBrowserDesignChange.group`, matching the Codex browser comment payload shape. CLI and MCP calls can set those adapter fields with options such as `--browser-annotation-editor-mode design`, `--browser-original-view-enabled`, `--browser-design-modifier-pressed`, `--browser-tweaks-editor-open`, and `--browser-active-design-change-json '{"id":"design","declarations":[]}'`. JSON capture also includes `codexBrowserRuntimeProtocol`, an evidence-backed protocol adapter for the full Codex 522 `browser-sidebar-runtime-*` event set; it is mirrored into `codexBrowserPayload.localBrowserRuntimeProtocol`.
 
-For supported frontmost browser apps, `--include-browser-dom` adds `codexBrowserDOMIntegration`. It uses a short-timeout Apple Events JavaScript probe for Safari and Chromium-style browsers to read page images and design target candidates, then emits Codex runtime event-shaped candidate entries such as `browser-sidebar-runtime-open-editor`, `browser-sidebar-runtime-create-comment-at-point`, `browser-sidebar-runtime-update-anchor`, `browser-sidebar-runtime-open-design-editor`, `browser-sidebar-runtime-design-scrub-changed`, `browser-sidebar-runtime-image-drag-started`, and `browser-sidebar-runtime-image-drag-ended`. `--browser-dom-install-bridge` goes one step closer to Codex by installing a temporary page listener and a page-local `window.codex_desktop` shim with `sendMessageToHost` / `subscribeToHostMessages`; it logs real pointer, keyboard, drag, sync, and shim message events into `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`. For a browser-owned bridge, load the unpacked helper at `~/.local/share/appshot/browser-extension/appshot-bridge`; its `page-bridge.js`, `content.js`, and `background.js` route the same Codex-shaped messages through `window.postMessage+extension-runtime`. For an Electron-owned bridge in an app you control, wire `~/.local/share/appshot/electron-preload/appshot-host-bridge/preload.cjs` into `BrowserWindow.webPreferences.preload` and register `installAppShotElectronHostBridge(ipcMain)` from `host.cjs`. Inspect `codexBrowserDOMIntegration.browserRuntimeBridge.codexDesktopShimAvailable`, `extensionHelperAvailable`, `electronHostBridgeAvailable`, `hostAPI`, `hostChannel`, `hostOwner`, and `hostTransport` to verify the active bridge. These bridge events are merged into `codexBrowserPayload.localBrowserRuntimeEvents` and make `localBrowserRuntimeProtocol.liveEventStreamAvailable` true for that tab. If Apple Events scripting is unavailable, blocked, or times out, the capture returns `available: false` with a reason instead of hanging. This bridge is page-level/browser-extension/Electron-preload instrumentation, not Codex's internal Electron preload/host IPC.
+For supported frontmost browser apps, `--include-browser-dom` adds `codexBrowserDOMIntegration`. It uses a short-timeout Apple Events JavaScript probe for Safari and Chromium-style browsers to read page images and design target candidates, then emits Codex runtime event-shaped candidate entries such as `browser-sidebar-runtime-open-editor`, `browser-sidebar-runtime-create-comment-at-point`, `browser-sidebar-runtime-update-anchor`, `browser-sidebar-runtime-open-design-editor`, `browser-sidebar-runtime-design-scrub-changed`, `browser-sidebar-runtime-image-drag-started`, and `browser-sidebar-runtime-image-drag-ended`. `--browser-dom-install-bridge` goes one step closer to Codex by installing a temporary page listener and a page-local `window.codex_desktop` shim with `sendMessageToHost` / `subscribeToHostMessages`; it logs real pointer, keyboard, drag, sync, and shim message events into `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`. For a browser-owned bridge, load the unpacked helper at `~/.local/share/appshot/browser-extension/appshot-bridge`; its `page-bridge.js`, `content.js`, and `background.js` route the same Codex-shaped messages through `window.postMessage+extension-runtime`. For an Electron-owned bridge in an app you control, wire `~/.local/share/appshot/electron-preload/appshot-host-bridge/preload.cjs` into `BrowserWindow.webPreferences.preload` and register `installAppShotElectronHostBridge(ipcMain)` from `host.cjs`. For a Codex-side host integration experiment, load `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs` inside the actual Codex Electron host and call `installAppShotCodexHostBridge(ipcMain)`. Inspect `codexBrowserDOMIntegration.browserRuntimeBridge.codexDesktopShimAvailable`, `extensionHelperAvailable`, `electronHostBridgeAvailable`, `hostAPI`, `hostChannel`, `hostOwner`, and `hostTransport` to verify the active bridge; inspect `codexComputerUseStatus.hostBridge.codexHostIntegration` to see whether the Codex host adapter artifacts are installed and whether the private Codex webview host is actually attached. These bridge events are merged into `codexBrowserPayload.localBrowserRuntimeEvents` and make `localBrowserRuntimeProtocol.liveEventStreamAvailable` true for that tab. If Apple Events scripting is unavailable, blocked, or times out, the capture returns `available: false` with a reason instead of hanging. This bridge is page-level/browser-extension/Electron-preload/Codex-host instrumentation, but the standalone CLI/MCP path still cannot claim Codex's internal Electron preload lifecycle.
 
 For Electron apps, add `--include-electron-debugging` or use `--include-browser-dom` against an Electron target. AppShot will report `codexElectronRemoteDebugging` with scanned ports, DevTools targets, selected target scoring, and an optional CDP DOM/AX snapshot. This is the public DevTools-adjacent path toward Codex-like Electron content, but it still depends on the target app exposing inspectable WebContents.
 
@@ -176,7 +177,7 @@ AppShot 让任何 AI 都拥有 Codex 样式的 App Shot 能力，并让 Claude C
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | bash
 ```
 
-默认会把 `AppShot.app` 安装到 `~/Applications/AppShot.app`，把 `appshot` CLI 安装到 `~/.local/bin/appshot`，把 MCP server 安装到 `~/.local/share/appshot/mcp`，把可选 browser bridge extension 安装到 `~/.local/share/appshot/browser-extension/appshot-bridge`，把可选 Electron host bridge 安装到 `~/.local/share/appshot/electron-preload/appshot-host-bridge`，并把 Codex skill 安装到 `~/.codex/skills/appshot`。
+默认会把 `AppShot.app` 安装到 `~/Applications/AppShot.app`，把 `appshot` CLI 安装到 `~/.local/bin/appshot`，把 MCP server 安装到 `~/.local/share/appshot/mcp`，把可选 browser bridge extension 安装到 `~/.local/share/appshot/browser-extension/appshot-bridge`，把可选 Electron host bridge 安装到 `~/.local/share/appshot/electron-preload/appshot-host-bridge`，把可选 Codex host integration adapter 安装到 `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge`，并把 Codex skill 安装到 `~/.codex/skills/appshot`。
 
 如果要让 Claude Code 使用 Codex 样式的 App Shot，同时安装 Claude Code skill 和 MCP 注册：
 
@@ -221,6 +222,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Browser runtime bridge：`--browser-dom-install-bridge`、MCP `browserDOMInstallBridge`、App Settings `Browser Bridge` 会可选安装一个页面级 Safari/Chrome 监听器和 `window.codex_desktop.sendMessageToHost` / `subscribeToHostMessages` shim，把真实 `browser-sidebar-runtime-*` bridge 事件写入 `browserRuntimeBridgeEvents`，并报告 `codexDesktopShimAvailable`、`hostAPI`、`hostChannel`；`--browser-dom-clear-bridge-log` 可以清空当前 tab 的本地日志。
 - Browser extension/preload helper：`browser-extension/appshot-bridge` 会作为可选 unpacked MV3 helper 打包和安装。它从页面 preload 暴露 `window.codex_desktop`，通过 `window.postMessage+extension-runtime` 转发，并在 `codexBrowserDOMIntegration.browserRuntimeBridge` 中输出 `extensionHelperAvailable`、`hostOwner`、`hostTransport`。
 - Electron preload/host helper：`electron-preload/appshot-host-bridge` 会作为可选 Electron integration 打包和安装。它从 `preload.cjs` 暴露 `window.codex_desktop`，在 `host.cjs` 中注册 `installAppShotElectronHostBridge(ipcMain)`，并输出 `electronHostBridgeAvailable`、`hostOwner: electron-preload`、`hostTransport: electron-ipc`。
+- Codex host integration adapter：`codex-integration/appshot-codex-host-bridge` 会作为 Codex-side host adapter 打包和安装。它导出 `installAppShotCodexHostBridge`，复用 Electron helper，报告 `hostOwner: codex-electron-host`，并通过 `codexComputerUseStatus.hostBridge.codexHostIntegration` 暴露诊断；在真实 Codex Electron host 接入之前，standalone CLI/MCP 会保持 `privateCodexWebviewHostAttached: false`。
 
 ### 构建和运行
 
@@ -236,8 +238,8 @@ xcodebuild -project AppShot.xcodeproj -scheme AppShot -configuration Release bui
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.12
-open dist/AppShot-macOS-0.1.12/AppShot.app
+scripts/build_release.sh 0.1.13
+open dist/AppShot-macOS-0.1.13/AppShot.app
 ```
 
 公开 macOS 发布包需要 `Developer ID Application` 证书并完成 DMG 公证：
@@ -246,7 +248,7 @@ open dist/AppShot-macOS-0.1.12/AppShot.app
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.12
+scripts/build_release.sh 0.1.13
 ```
 
 公开发布路径会拒绝 Apple Development 或 ad-hoc 签名，提交 Apple notarization，staple 公证票据，并运行 Gatekeeper 校验。
@@ -292,7 +294,7 @@ JSON capture 还会包含 `codexBrowserPayload`，这是 AppShot 原生捕捉到
 
 为了靠近 Codex browser runtime state，JSON capture 还会包含 `codexBrowserRuntimeState`，并把 `activeDesignChange` 镜像到 `codexBrowserPayload.localBrowserDesignChange.group`，对齐 Codex browser comment payload 的结构。CLI 和 MCP 可以通过 `--browser-annotation-editor-mode design`、`--browser-original-view-enabled`、`--browser-design-modifier-pressed`、`--browser-tweaks-editor-open`、`--browser-active-design-change-json '{"id":"design","declarations":[]}'` 设置这些 adapter 字段。JSON capture 也会包含 `codexBrowserRuntimeProtocol`，这是基于 Codex 522 证据的完整 `browser-sidebar-runtime-*` 事件协议适配，并镜像到 `codexBrowserPayload.localBrowserRuntimeProtocol`。
 
-对于支持的前台浏览器 App，`--include-browser-dom` 会额外生成 `codexBrowserDOMIntegration`。它通过短超时的 Apple Events JavaScript probe 只读 Safari 和 Chromium 系浏览器页面，提取图片和可设计元素候选，再生成 Codex runtime event 形状的候选数据，例如 `browser-sidebar-runtime-open-editor`、`browser-sidebar-runtime-create-comment-at-point`、`browser-sidebar-runtime-update-anchor`、`browser-sidebar-runtime-open-design-editor`、`browser-sidebar-runtime-design-scrub-changed`、`browser-sidebar-runtime-image-drag-started`、`browser-sidebar-runtime-image-drag-ended`。`--browser-dom-install-bridge` 会再向 Codex 靠近一步：安装临时页面监听器和页面级 `window.codex_desktop` shim，提供 `sendMessageToHost` / `subscribeToHostMessages`，把真实 pointer、keyboard、drag、sync 和 shim message 事件记录到 `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`。如果需要 browser-owned bridge，可以在浏览器里加载 unpacked helper：`~/.local/share/appshot/browser-extension/appshot-bridge`；其中 `page-bridge.js`、`content.js`、`background.js` 会把同一组 Codex-shaped messages 通过 `window.postMessage+extension-runtime` 转发。如果需要 Electron-owned bridge，并且你控制目标 Electron App，可以把 `~/.local/share/appshot/electron-preload/appshot-host-bridge/preload.cjs` 接进 `BrowserWindow.webPreferences.preload`，再从 `host.cjs` 注册 `installAppShotElectronHostBridge(ipcMain)`。查看 `codexBrowserDOMIntegration.browserRuntimeBridge.codexDesktopShimAvailable`、`extensionHelperAvailable`、`electronHostBridgeAvailable`、`hostAPI`、`hostChannel`、`hostOwner`、`hostTransport` 可以确认当前 bridge。bridge 事件会合并进 `codexBrowserPayload.localBrowserRuntimeEvents`，并让当前 tab 的 `localBrowserRuntimeProtocol.liveEventStreamAvailable` 变为 true。如果 Apple Events scripting 不可用、被权限挡住或超时，capture 会返回 `available: false` 和原因，不会卡住。这个 bridge 是页面级/browser-extension/Electron-preload instrumentation，不是 Codex 内部 Electron preload/host IPC。
+对于支持的前台浏览器 App，`--include-browser-dom` 会额外生成 `codexBrowserDOMIntegration`。它通过短超时的 Apple Events JavaScript probe 只读 Safari 和 Chromium 系浏览器页面，提取图片和可设计元素候选，再生成 Codex runtime event 形状的候选数据，例如 `browser-sidebar-runtime-open-editor`、`browser-sidebar-runtime-create-comment-at-point`、`browser-sidebar-runtime-update-anchor`、`browser-sidebar-runtime-open-design-editor`、`browser-sidebar-runtime-design-scrub-changed`、`browser-sidebar-runtime-image-drag-started`、`browser-sidebar-runtime-image-drag-ended`。`--browser-dom-install-bridge` 会再向 Codex 靠近一步：安装临时页面监听器和页面级 `window.codex_desktop` shim，提供 `sendMessageToHost` / `subscribeToHostMessages`，把真实 pointer、keyboard、drag、sync 和 shim message 事件记录到 `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`。如果需要 browser-owned bridge，可以在浏览器里加载 unpacked helper：`~/.local/share/appshot/browser-extension/appshot-bridge`；其中 `page-bridge.js`、`content.js`、`background.js` 会把同一组 Codex-shaped messages 通过 `window.postMessage+extension-runtime` 转发。如果需要 Electron-owned bridge，并且你控制目标 Electron App，可以把 `~/.local/share/appshot/electron-preload/appshot-host-bridge/preload.cjs` 接进 `BrowserWindow.webPreferences.preload`，再从 `host.cjs` 注册 `installAppShotElectronHostBridge(ipcMain)`。如果要做 Codex-side host integration 实验，需要在真实 Codex Electron host 内加载 `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs` 并调用 `installAppShotCodexHostBridge(ipcMain)`。查看 `codexBrowserDOMIntegration.browserRuntimeBridge.codexDesktopShimAvailable`、`extensionHelperAvailable`、`electronHostBridgeAvailable`、`hostAPI`、`hostChannel`、`hostOwner`、`hostTransport` 可以确认当前 bridge；查看 `codexComputerUseStatus.hostBridge.codexHostIntegration` 可以确认 adapter artifact 是否已安装，以及私有 Codex webview host 是否真的接入。bridge 事件会合并进 `codexBrowserPayload.localBrowserRuntimeEvents`，并让当前 tab 的 `localBrowserRuntimeProtocol.liveEventStreamAvailable` 变为 true。如果 Apple Events scripting 不可用、被权限挡住或超时，capture 会返回 `available: false` 和原因，不会卡住。这个 bridge 是页面级/browser-extension/Electron-preload/Codex-host instrumentation；standalone CLI/MCP 路径仍不能声称拥有 Codex 内部 Electron preload lifecycle。
 
 对于 Electron App，可以显式加 `--include-electron-debugging`，也可以对 Electron 目标使用 `--include-browser-dom`。AppShot 会输出 `codexElectronRemoteDebugging`，包含扫描端口、DevTools targets、目标评分和可选的 CDP DOM/AX snapshot。这是靠近 Codex Electron 内容提取的公开 DevTools 路径，但仍依赖目标 App 暴露 inspectable WebContents。
 

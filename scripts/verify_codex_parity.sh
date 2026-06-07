@@ -156,6 +156,12 @@ for anchor in \
   "electron-ipc" \
   "browser-extension/appshot-bridge" \
   "electron-preload/appshot-host-bridge" \
+  "codex-integration/appshot-codex-host-bridge" \
+  "codex-host-adapter.cjs" \
+  "codexHostIntegration" \
+  "privateCodexWebviewHostAttached" \
+  "codex-electron-host" \
+  "codex-electron-ipc+appshot-electron-ipc" \
   "Browser runtime bridge event log" \
   "codex-browser-runtime-state-adapter" \
   "codex-browser-runtime-protocol-adapter" \
@@ -222,6 +228,9 @@ extension_background = (root / "browser-extension/appshot-bridge/background.js")
 electron_preload = (root / "electron-preload/appshot-host-bridge/preload.cjs").read_text()
 electron_host = (root / "electron-preload/appshot-host-bridge/host.cjs").read_text()
 electron_host_readme = (root / "electron-preload/appshot-host-bridge/README.md").read_text()
+codex_host_adapter = (root / "codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs").read_text()
+codex_host_readme = (root / "codex-integration/appshot-codex-host-bridge/README.md").read_text()
+codex_host_verifier = (root / "scripts/verify_codex_host_integration.mjs").read_text()
 server = (root / "mcp/server.js").read_text()
 installer = (root / "install.sh").read_text()
 release = (root / "scripts/build_release.sh").read_text()
@@ -234,7 +243,7 @@ qa = (root / "scripts/qa_app_capture.py").read_text()
 tcc = (root / "scripts/diagnose_tcc_identity.sh").read_text()
 skill = (root / "skills/appshot/SKILL.md").read_text()
 
-expected = "0.1.12"
+expected = "0.1.13"
 checks = {
     "plugin version": plugin.get("version"),
     "mcp package version": mcp.get("version"),
@@ -280,7 +289,7 @@ for name, text, needles in [
     ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--activate-target", "--no-activate-target", "--request-app-capture", "--app-capture-timeout", "--window-title", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
     ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "windowTitle", "--window-title", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout", "get_app_state", "list_apps", "appshot_codex_computer_use_status"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
-    ("browser/electron bridge installer/release", installer + release, ["APPSHOT_BROWSER_EXTENSION_DIR", "browser-extension/appshot-bridge", "FOUND_BROWSER_EXTENSION", "load unpacked", "ditto \"$ROOT/browser-extension/appshot-bridge\"", "APPSHOT_ELECTRON_PRELOAD_DIR", "electron-preload/appshot-host-bridge", "FOUND_ELECTRON_PRELOAD", "ditto \"$ROOT/electron-preload/appshot-host-bridge\""]),
+    ("browser/electron/codex bridge installer/release", installer + release, ["APPSHOT_BROWSER_EXTENSION_DIR", "browser-extension/appshot-bridge", "FOUND_BROWSER_EXTENSION", "load unpacked", "ditto \"$ROOT/browser-extension/appshot-bridge\"", "APPSHOT_ELECTRON_PRELOAD_DIR", "electron-preload/appshot-host-bridge", "FOUND_ELECTRON_PRELOAD", "ditto \"$ROOT/electron-preload/appshot-host-bridge\"", "APPSHOT_CODEX_INTEGRATION_DIR", "codex-integration/appshot-codex-host-bridge", "FOUND_CODEX_INTEGRATION", "ditto \"$ROOT/codex-integration/appshot-codex-host-bridge\""]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "bestCandidateIsAXWindow", "codexIsMenuBarElement", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("AX window discovery", core + cli + server + parity + skill, ["accessibilityWindows", "windowDiscovery", "accessibilityWindow", "preferredAccessibilityWindow", "hasAccessibilityOnlyWindows", "resolveCaptureTargetByWindowTitle", "--window-title", "captureMode", "screenshotRectArgument", "titlesCompatible"]),
@@ -291,10 +300,11 @@ for name, text, needles in [
     ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents", "window.codex_desktop", "codexDesktopShimAvailable", "extensionHelperAvailable", "electronHostBridgeAvailable", "hostAPI", "hostChannel", "hostOwner", "hostTransport"]),
     ("Browser bridge extension helper", json.dumps(extension_manifest) + extension_page + extension_content + extension_background + installer + release + parity + skill, ["manifest_version", "service_worker", "content_scripts", "page-bridge.js", "content.js", "background.js", "window.codex_desktop", "sendMessageToHost", "subscribeToHostMessages", "codex_desktop:browser-sidebar-runtime-message", "window.postMessage+extension-runtime", "browser-extension", "extensionHelperAvailable", "hostOwner", "hostTransport"]),
     ("Electron host preload helper", electron_preload + electron_host + electron_host_readme + installer + release + parity + skill, ["preload.cjs", "host.cjs", "window.codex_desktop", "sendMessageToHost", "subscribeToHostMessages", "installAppShotElectronHostBridge", "codex_desktop:browser-sidebar-runtime-message", "electron-preload", "electron-ipc", "electronHostBridgeAvailable", "hostOwner", "hostTransport"]),
+    ("Codex host integration adapter", codex_host_adapter + codex_host_readme + codex_host_verifier + core + installer + release + parity + skill, ["codex-host-adapter.cjs", "installAppShotCodexHostBridge", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "codex-electron-host", "codex-electron-ipc+appshot-electron-ipc", "host-managed-browser-state", "codexHostIntegration", "privateCodexWebviewHostAttached", "scripts/verify_codex_host_integration.mjs"]),
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
     ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
-    ("Codex Computer Use bridge diagnostics", core + cli + server + parity, ["codexComputerUseStatus", "codex-computer-use-status", "codex-computer-use-status", "com.openai.sky.CUAService", "SkyComputerUseService", "SkyComputerUseClient", "ComputerUseAppApprovals.json", "SKY_CUA_NATIVE_PIPE", "x-codex-turn-metadata", "codexTurnMetadata", "requestComputerUseApproval", "get_app_state", "list_apps"]),
+    ("Codex Computer Use bridge diagnostics", core + cli + server + parity, ["codexComputerUseStatus", "codex-computer-use-status", "codex-computer-use-status", "com.openai.sky.CUAService", "SkyComputerUseService", "SkyComputerUseClient", "ComputerUseAppApprovals.json", "SKY_CUA_NATIVE_PIPE", "x-codex-turn-metadata", "codexTurnMetadata", "requestComputerUseApproval", "get_app_state", "list_apps", "codexHostIntegration", "privateCodexWebviewHostAttached"]),
     ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
@@ -313,6 +323,8 @@ log "checking browser bridge extension helper"
 (cd "$ROOT" && node scripts/verify_browser_bridge_extension.mjs >/dev/null)
 log "checking Electron host bridge helper"
 (cd "$ROOT" && node scripts/verify_electron_host_bridge.mjs >/dev/null)
+log "checking Codex host integration adapter"
+(cd "$ROOT" && node scripts/verify_codex_host_integration.mjs >/dev/null)
 
 STATUS_JSON="$(mktemp)"
 CODEX_APPS_JSON="$(mktemp)"
@@ -341,8 +353,8 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --request-app-capture --app-capture-timeout 0.1 --pretty >"$APP_REQUEST_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
-(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","extensionHelperAvailable":true,"hostOwner":"browser-extension","hostTransport":"window.postMessage+extension-runtime","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
-(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/electron","title":"Electron Bridge Fixture","viewportSize":{"width":800,"height":600},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","electronHostBridgeAvailable":true,"hostOwner":"electron-preload","hostTransport":"electron-ipc","eventCount":1,"events":[{"type":"browser-sidebar-runtime-message","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"hostOwner":"electron-preload","hostTransport":"electron-ipc"}]},"designTargets":[{"selector":"main","role":"document","text":"Electron Bridge","rect":{"x":0,"y":0,"width":800,"height":600}}]}' --pretty >"$ELECTRON_BRIDGE_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.13","source":"appshot-browser-runtime-bridge","extensionHelperAvailable":true,"hostOwner":"browser-extension","hostTransport":"window.postMessage+extension-runtime","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/electron","title":"Electron Bridge Fixture","viewportSize":{"width":800,"height":600},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.13","source":"appshot-browser-runtime-bridge","electronHostBridgeAvailable":true,"hostOwner":"electron-preload","hostTransport":"electron-ipc","eventCount":1,"events":[{"type":"browser-sidebar-runtime-message","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"hostOwner":"electron-preload","hostTransport":"electron-ipc"}]},"designTargets":[{"selector":"main","role":"document","text":"Electron Bridge","rect":{"x":0,"y":0,"width":800,"height":600}}]}' --pretty >"$ELECTRON_BRIDGE_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"http://127.0.0.1:9222/json","title":"Inspectable WebContents","viewportSize":{"width":900,"height":700},"designTargets":[{"selector":"body","role":"document","text":"Inspectable WebContents","rect":{"x":0,"y":0,"width":900,"height":700}}]}' --pretty >"$DEBUG_DOM_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --include-electron-debugging --electron-debugging-timeout 0.5 --pretty >"$ELECTRON_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
@@ -369,6 +381,65 @@ def require_keys(name, payload, keys):
     if missing:
         raise SystemExit(f"{name} missing keys: {', '.join(missing)}")
 
+def check_codex_host_integration(name, payload):
+    require_keys(name, payload, ["format", "hostBridge"])
+    if payload.get("format") != "codex-computer-use-status":
+        raise SystemExit(f"{name} returned unexpected format")
+    host_bridge = payload.get("hostBridge", {})
+    require_keys(
+        f"{name} hostBridge",
+        host_bridge,
+        ["requiresCodexHostBridge", "nativePipeEnvironment", "requiredSignals", "codexHostIntegration"],
+    )
+    integration = host_bridge.get("codexHostIntegration", {})
+    require_keys(
+        f"{name} codexHostIntegration",
+        integration,
+        [
+            "format",
+            "source",
+            "requiredCodexSideIntegration",
+            "privateCodexWebviewHostAttached",
+            "codexAppBundle",
+            "integrationArtifacts",
+            "hostAPI",
+            "hostChannel",
+            "expectedHostOwners",
+            "expectedHostTransports",
+            "verifiedBy",
+            "nonClaim",
+            "nextAction",
+        ],
+    )
+    if integration.get("format") != "codex-electron-host-integration-status":
+        raise SystemExit(f"{name} codexHostIntegration format drifted")
+    if integration.get("requiredCodexSideIntegration") is not True:
+        raise SystemExit(f"{name} codexHostIntegration lost requiredCodexSideIntegration")
+    if integration.get("privateCodexWebviewHostAttached") is not False:
+        raise SystemExit(f"{name} must not claim Codex private host attachment from standalone CLI/MCP")
+    if integration.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
+        raise SystemExit(f"{name} codexHostIntegration hostChannel drifted")
+    if sorted(integration.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
+        raise SystemExit(f"{name} codexHostIntegration host API drifted")
+    if "codex-electron-host" not in integration.get("expectedHostOwners", []):
+        raise SystemExit(f"{name} codexHostIntegration missing Codex host owner")
+    if "codex-electron-ipc+appshot-electron-ipc" not in integration.get("expectedHostTransports", []):
+        raise SystemExit(f"{name} codexHostIntegration missing Codex host transport")
+    artifacts = integration.get("integrationArtifacts", {})
+    require_keys(
+        f"{name} codexHostIntegration.integrationArtifacts",
+        artifacts,
+        ["codexHostAdapter", "electronPreloadHelper", "browserExtensionHelper"],
+    )
+    for artifact_name, artifact in artifacts.items():
+        require_keys(
+            f"{name} codexHostIntegration.integrationArtifacts.{artifact_name}",
+            artifact,
+            ["path", "available", "allRequiredFilesAvailable", "requiredFiles"],
+        )
+        if not isinstance(artifact.get("requiredFiles"), list):
+            raise SystemExit(f"{name} {artifact_name} requiredFiles was not a list")
+
 require_keys(
     "status",
     status,
@@ -379,6 +450,10 @@ require_keys(
     capture,
     ["schemaVersion", "permissions", "codexAppsStatus", "codexComputerUseStatus", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
 )
+
+check_codex_host_integration("status codexComputerUseStatus", status.get("codexComputerUseStatus", {}))
+check_codex_host_integration("capture codexComputerUseStatus", capture.get("codexComputerUseStatus", {}))
+check_codex_host_integration("codex-apps-status codexComputerUseStatus", codex_apps.get("codexComputerUseStatus", {}))
 require_keys(
     "app capture request",
     app_request,
@@ -784,13 +859,13 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"appshot_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"codex","maxDepth":1,"useRecentCache":false}}}' \
   '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserAnnotationScreenshotsMode":"always","screenshotPath":'"$MCP_POLICY_SCREENSHOT_JSON"',"browserAnnotationEditorMode":"design","browserOriginalViewEnabled":true,"browserDesignModifierPressed":true,"browserTweaksEditorOpen":true,"browserActiveDesignChange":{"id":"mcp-design","declarations":[]}}}}' \
-  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","extensionHelperAvailable":true,"hostOwner":"browser-extension","hostTransport":"window.postMessage+extension-runtime","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
+  '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp","title":"MCP Fixture","viewportSize":{"width":1024,"height":768},"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.13","source":"appshot-browser-runtime-bridge","extensionHelperAvailable":true,"hostOwner":"browser-extension","hostTransport":"window.postMessage+extension-runtime","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"a.primary"}}}]},"images":[{"sourceUrl":"https://example.test/mcp.png","selector":"img.mcp","rect":{"x":1,"y":2,"width":30,"height":40}}],"designTargets":[{"selector":"a.primary","role":"link","text":"Open","rect":{"x":5,"y":6,"width":70,"height":24}}]}}}}' \
   '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"http://localhost:9229/json","title":"Content Shell Remote Debugging","viewportSize":{"width":640,"height":480},"designTargets":[{"selector":"main","role":"document","text":"Content Shell Remote Debugging","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
   '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"appshot_codex_apps_status","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"list_apps","arguments":{}}}' \
   '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"get_app_state","arguments":{"app":"com.openai.codex"}}}' \
   '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"appshot_codex_computer_use_status","arguments":{}}}' \
-  '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp-electron","title":"MCP Electron Bridge","runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","electronHostBridgeAvailable":true,"hostOwner":"electron-preload","hostTransport":"electron-ipc","events":[{"type":"browser-sidebar-runtime-message","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"hostOwner":"electron-preload","hostTransport":"electron-ipc"}]},"designTargets":[{"selector":"main","role":"document","text":"Electron Bridge","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
+  '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"appshot_capture","arguments":{"format":"json","maxDepth":1,"useRecentCache":false,"browserDOMFixture":{"pageUrl":"https://example.test/mcp-electron","title":"MCP Electron Bridge","runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.13","source":"appshot-browser-runtime-bridge","electronHostBridgeAvailable":true,"hostOwner":"electron-preload","hostTransport":"electron-ipc","events":[{"type":"browser-sidebar-runtime-message","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"hostOwner":"electron-preload","hostTransport":"electron-ipc"}]},"designTargets":[{"selector":"main","role":"document","text":"Electron Bridge","rect":{"x":0,"y":0,"width":640,"height":480}}]}}}}' \
   | (cd "$RUN_DIR" && APPSHOT_BIN="$APP_BIN" node "$ROOT/mcp/server.js" >"$MCP_JSONL")
 
 "$PYTHON" - "$MCP_JSONL" <<'PY'
@@ -959,6 +1034,31 @@ if mcp_cua.get("format") != "codex-computer-use-status":
     raise SystemExit("MCP Codex Computer Use status returned unexpected format")
 if mcp_cua.get("serviceBundleIdentifier") != "com.openai.sky.CUAService":
     raise SystemExit("MCP Codex Computer Use status lost service bundle identifier")
+for name, payload in [
+    ("MCP Codex Computer Use status", mcp_cua),
+    ("MCP codex apps nested Computer Use status", mcp_codex_apps.get("codexComputerUseStatus", {})),
+]:
+    host_bridge = payload.get("hostBridge", {})
+    integration = host_bridge.get("codexHostIntegration", {})
+    if integration.get("format") != "codex-electron-host-integration-status":
+        raise SystemExit(f"{name} lost codexHostIntegration format")
+    if integration.get("requiredCodexSideIntegration") is not True:
+        raise SystemExit(f"{name} lost requiredCodexSideIntegration")
+    if integration.get("privateCodexWebviewHostAttached") is not False:
+        raise SystemExit(f"{name} must not claim Codex private host attachment from standalone MCP")
+    if integration.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
+        raise SystemExit(f"{name} codexHostIntegration hostChannel drifted")
+    if sorted(integration.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
+        raise SystemExit(f"{name} codexHostIntegration host API drifted")
+    if "codex-electron-host" not in integration.get("expectedHostOwners", []):
+        raise SystemExit(f"{name} codexHostIntegration missing Codex host owner")
+    if "codex-electron-ipc+appshot-electron-ipc" not in integration.get("expectedHostTransports", []):
+        raise SystemExit(f"{name} codexHostIntegration missing Codex host transport")
+    artifacts = integration.get("integrationArtifacts", {})
+    for artifact_name in ["codexHostAdapter", "electronPreloadHelper", "browserExtensionHelper"]:
+        artifact = artifacts.get(artifact_name, {})
+        if "path" not in artifact or "requiredFiles" not in artifact:
+            raise SystemExit(f"{name} missing integration artifact diagnostics for {artifact_name}")
 PY
 
 log "ok"

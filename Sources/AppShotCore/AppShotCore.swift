@@ -637,6 +637,11 @@ public enum AppShotCore {
         let serviceRelativePath = "Contents/MacOS/SkyComputerUseService"
         let clientRelativePath = "Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient"
         let approvalsPath = "\(home)/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json"
+        let appShotSharePath = "\(home)/.local/share/appshot"
+        let browserExtensionHelperPath = "\(appShotSharePath)/browser-extension/appshot-bridge"
+        let electronPreloadHelperPath = "\(appShotSharePath)/electron-preload/appshot-host-bridge"
+        let codexHostIntegrationPath = "\(appShotSharePath)/codex-integration/appshot-codex-host-bridge"
+        let codexAppBundlePath = "/Applications/Codex.app"
 
         func appBundleStatus(path: String) -> JSONObject {
             [
@@ -646,6 +651,30 @@ public enum AppShotCore {
                 "serviceExecutableAvailable": fileManager.isExecutableFile(atPath: "\(path)/\(serviceRelativePath)"),
                 "clientExecutablePath": "\(path)/\(clientRelativePath)",
                 "clientExecutableAvailable": fileManager.isExecutableFile(atPath: "\(path)/\(clientRelativePath)")
+            ]
+        }
+
+        func fileStatus(path: String) -> JSONObject {
+            [
+                "path": path,
+                "available": fileManager.fileExists(atPath: path),
+                "readable": fileManager.isReadableFile(atPath: path),
+                "executable": fileManager.isExecutableFile(atPath: path)
+            ]
+        }
+
+        func directoryStatus(path: String, requiredFiles: [String]) -> JSONObject {
+            let files = requiredFiles.map { relativePath in
+                fileStatus(path: "\(path)/\(relativePath)")
+            }
+            let allRequiredFilesAvailable = files.allSatisfy { status in
+                status["available"] as? Bool == true
+            }
+            return [
+                "path": path,
+                "available": fileManager.fileExists(atPath: path),
+                "allRequiredFilesAvailable": allRequiredFilesAvailable,
+                "requiredFiles": files
             ]
         }
 
@@ -700,6 +729,66 @@ public enum AppShotCore {
                     "x-codex-turn-metadata",
                     "codexTurnMetadata",
                     "requestComputerUseApproval"
+                ],
+                "codexHostIntegration": [
+                    "format": "codex-electron-host-integration-status",
+                    "source": "appshot-codex-host-integration-diagnostics",
+                    "requiredCodexSideIntegration": true,
+                    "privateCodexWebviewHostAttached": false,
+                    "selfReportedCodexHostAttached": environment["APPSHOT_CODEX_ELECTRON_HOST_ATTACHED"] == "1",
+                    "codexAppBundle": [
+                        "path": codexAppBundlePath,
+                        "available": fileManager.fileExists(atPath: codexAppBundlePath)
+                    ],
+                    "integrationArtifacts": [
+                        "codexHostAdapter": directoryStatus(
+                            path: codexHostIntegrationPath,
+                            requiredFiles: [
+                                "codex-host-adapter.cjs",
+                                "README.md"
+                            ]
+                        ),
+                        "electronPreloadHelper": directoryStatus(
+                            path: electronPreloadHelperPath,
+                            requiredFiles: [
+                                "preload.cjs",
+                                "host.cjs",
+                                "README.md"
+                            ]
+                        ),
+                        "browserExtensionHelper": directoryStatus(
+                            path: browserExtensionHelperPath,
+                            requiredFiles: [
+                                "manifest.json",
+                                "page-bridge.js",
+                                "content.js",
+                                "background.js"
+                            ]
+                        )
+                    ],
+                    "hostAPI": [
+                        "sendMessageToHost",
+                        "subscribeToHostMessages"
+                    ],
+                    "hostChannel": "codex_desktop:browser-sidebar-runtime-message",
+                    "expectedHostOwners": [
+                        "apple-events-page-bridge",
+                        "browser-extension",
+                        "electron-preload",
+                        "codex-electron-host"
+                    ],
+                    "expectedHostTransports": [
+                        "page-local",
+                        "window.postMessage+extension-runtime",
+                        "electron-ipc",
+                        "codex-electron-ipc+appshot-electron-ipc"
+                    ],
+                    "verifiedBy": [
+                        "scripts/verify_codex_host_integration.mjs",
+                        "scripts/verify_codex_parity.sh"
+                    ],
+                    "nonClaim": "Installed AppShot bridge artifacts do not mean Codex private Electron webview host IPC is attached.",
+                    "nextAction": "Load codex-host-adapter.cjs inside the actual Codex Electron browser host process; AppShot CLI/MCP cannot attach Codex's private preload lifecycle by itself."
                 ],
                 "bareMCPObservation": "cua mcp can list tools, but get_app_state depends on Codex host bridge/session metadata and app approval handling."
             ],
