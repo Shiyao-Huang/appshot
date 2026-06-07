@@ -365,7 +365,35 @@ RUN_DIR="$(mktemp -d)"
 POLICY_SCREENSHOT="$RUN_DIR/policy.png"
 MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
 MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
+RULE_GOVERNANCE_JSON="$RUN_DIR/rule-governance.json"
+RULE_TRAINING_JSON="$RUN_DIR/rule-training.json"
 trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$LIST_WINDOWS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$ELECTRON_BRIDGE_JSON" "$NATIVE_CODEX_BRIDGE_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
+
+log "checking rule governance CLI + schema"
+"$PYTHON" -m json.tool "$ROOT/rules/seed/local-app-strategies.json" >/dev/null
+"$PYTHON" -m json.tool "$ROOT/rules/benchmarks/local-smoke.example.json" >/dev/null
+"$PYTHON" "$ROOT/scripts/verify_rule_governance.py" --appshot-bin "$APP_BIN" --catalog "$ROOT/rules/seed/local-app-strategies.json" >"$RULE_GOVERNANCE_JSON"
+"$PYTHON" "$ROOT/scripts/train_local_app_rules.py" --appshot-bin "$APP_BIN" --db "$RUN_DIR/rule-training.sqlite" --output-dir "$RUN_DIR/rule-training" --target-bundle no.such.bundle --max-windows 1 --command-timeout 20 >"$RULE_TRAINING_JSON"
+"$PYTHON" - "$RULE_GOVERNANCE_JSON" "$RULE_TRAINING_JSON" <<'PY'
+import json
+import pathlib
+import sys
+
+governance = json.loads(pathlib.Path(sys.argv[1]).read_text())
+training = json.loads(pathlib.Path(sys.argv[2]).read_text())
+if governance.get("status") != "ok":
+    raise SystemExit(f"rule governance smoke failed: {governance}")
+if governance.get("renderedRuleCount", 0) < 1:
+    raise SystemExit("rule governance smoke rendered no JSON rules")
+if governance.get("anchorRecall") != 1:
+    raise SystemExit(f"rule governance anchorRecall drifted: {governance.get('anchorRecall')}")
+if governance.get("baselineRecall", 1) >= governance.get("anchorRecall", 0):
+    raise SystemExit("rule governance output did not improve baseline recall")
+if training.get("failureCount") != 0:
+    raise SystemExit(f"rule trainer smoke reported failures: {training}")
+if training.get("sampleCount") != 0:
+    raise SystemExit(f"empty-target trainer smoke should not capture samples: {training}")
+PY
 
 log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
