@@ -83,7 +83,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
     Read `codexBrowserDOMIntegration.remoteDebuggingTarget` when the page might be a Codex/Electron remote-debugging surface such as `content shell remote debugging`, `inspectable webcontents`, or localhost ports `9222` / `9229`.
     For Electron apps such as VS Code, add `--include-electron-debugging`, or add `--include-browser-dom` when you also want a browser-shaped payload. Read `codexElectronRemoteDebugging.scannedPorts`, `targets`, `selectedTarget`, `cdpSnapshot`, and `reason`. If the reason is `noInspectableTargets`, the app did not expose a Chrome DevTools Protocol WebContents target, so AppShot cannot extract Electron DOM/AX content through CDP for that run.
-    When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, especially `codexDesktopShimAvailable`, `nativeCodexDesktopAvailable`, `codexHostBridgeAvailable`, `extensionHelperAvailable`, `electronHostBridgeAvailable`, `hostAPI`, `hostChannel`, `hostOwner`, `hostTransport`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. The bridge exposes a page-local `window.codex_desktop.sendMessageToHost` / `subscribeToHostMessages` shim, but this is still not Codex's private Electron host IPC. If an observable native Codex preload host API is already present, expect `nativeCodexDesktopAvailable: true`, `codexHostBridgeAvailable: true`, `hostOwner: codex-electron-host`, `hostTransport: codex-electron-ipc`, and `codexDesktopShimAvailable: false`. When you need a browser-owned transport instead of Apple Events injection, load the unpacked helper at `~/.local/share/appshot/browser-extension/appshot-bridge` and expect `hostOwner: browser-extension` plus `hostTransport: window.postMessage+extension-runtime`. When you control an Electron host, wire `~/.local/share/appshot/electron-preload/appshot-host-bridge/preload.cjs` into `BrowserWindow.webPreferences.preload`, register `installAppShotElectronHostBridge(ipcMain)` from `host.cjs`, and expect `hostOwner: electron-preload` plus `hostTransport: electron-ipc`. When you control the actual Codex Electron host process, load `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs`, call `installAppShotCodexHostBridge(ipcMain)`, and expect `hostOwner: codex-electron-host` plus `hostTransport: codex-electron-ipc+appshot-electron-ipc`; until that host process is wired, `codexComputerUseStatus.hostBridge.codexHostIntegration.privateCodexWebviewHostAttached` should remain `false`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
+    When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, especially `codexDesktopShimAvailable`, `nativeCodexDesktopAvailable`, `codexHostBridgeAvailable`, `extensionHelperAvailable`, `electronHostBridgeAvailable`, `hostAPI`, `hostChannel`, `hostInboundChannel`, `hostOutboundChannel`, `ipcPattern`, `hostOwner`, `hostTransport`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. The bridge exposes a page-local `window.codex_desktop.sendMessageToHost` / `subscribeToHostMessages` shim, but this is still not Codex's private Electron host IPC. If an observable native Codex preload host API is already present, expect `nativeCodexDesktopAvailable: true`, `codexHostBridgeAvailable: true`, `hostOwner: codex-electron-host`, `hostTransport: codex-electron-ipc`, `hostInboundChannel: codex_desktop:browser-sidebar-runtime-message`, `hostOutboundChannel: codex_desktop:message-for-view`, and `codexDesktopShimAvailable: false`. When you need a browser-owned transport instead of Apple Events injection, load the unpacked helper at `~/.local/share/appshot/browser-extension/appshot-bridge` and expect `hostOwner: browser-extension` plus `hostTransport: window.postMessage+extension-runtime`. When you control an Electron host, wire `~/.local/share/appshot/electron-preload/appshot-host-bridge/preload.cjs` into `BrowserWindow.webPreferences.preload`, register `installAppShotElectronHostBridge(ipcMain)` from `host.cjs`, and expect `hostOwner: electron-preload` plus `hostTransport: electron-ipc`. When you control the actual Codex Electron host process, first run `scripts/analyze_codex_electron_host_injection.mjs`, then load `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs` before Codex registers `ipcMain.handle(Ts)`, or wrap the existing handler with `wrapCodexRuntimeMessageHandler`; expect `hostOwner: codex-electron-host`, `hostTransport: codex-electron-ipc+appshot-electron-ipc`, and `ipcPattern: ipcRenderer.invoke/ipcMain.handle + webContents.send/ipcRenderer.on`. Until that host process is wired, `codexComputerUseStatus.hostBridge.codexHostIntegration.privateCodexWebviewHostAttached` should remain `false`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
 15. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 16. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
 17. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
@@ -92,6 +92,171 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    scripts/qa_app_capture.py --bundle-id com.apple.dt.Xcode --window-title 'appshot —' --accessibility-timeout 20 --expect-hierarchy 'Source Editor'
    ```
    A valid QA report checks target-window screenshot metadata, image dimensions against window bounds, OCR-visible text, Accessibility text, and hierarchy anchors.
+
+## Training And Rules
+
+Training is something **you (the agent) drive by calling tools** — there is no training
+script. AppShot's job is to extract structured window content through the **Accessibility
+(AX) API**. OCR is a *teacher* used only to measure what is truly on screen; it is never
+emitted as rule output, because the consuming agent is already multimodal and reads the
+screenshot itself. Your goal when training: make the AX-only output recover as much of
+the on-screen content as possible (recall) **at high information density** (useful info
+per token — don't dump the whole tree). Rules are JSON, versioned, app-scoped, and
+agent-editable; the strategy catalog lives at `rules/seed/local-app-strategies.json`.
+Nothing about a strategy is hard-coded — edit that JSON or call `rules upsert`/`rules patch`.
+
+The rule library is SQLite at `~/Library/Application Support/AppShot/rules.sqlite`.
+
+### The training loop (you orchestrate; tools do the work)
+
+1. **Discover targets.** `"$APPSHOT_BIN" list-windows --pretty`. Every app is trainable;
+   an app without a tuned bucket uses the catalog's `generic` bucket.
+2. **Capture with OCR as teacher.** OCR must be present in the capture so you can measure
+   the AX gap, even though it never enters rule output:
+   ```sh
+   "$APPSHOT_BIN" capture --bundle-id com.microsoft.VSCode --window-title '…' \
+     --include-screenshot --include-ocr --max-depth 60 --accessibility-timeout 20 \
+     --screenshot cap.png --output cap.json --pretty
+   ```
+3. **Record a sample with source-tagged anchors.** Derive ground-truth anchors from the
+   capture: lines the OCR teacher (and visible text) shows. Tag each anchor's `source`
+   so teacher (`ocr`) vs AX anchors are distinguishable, and weight the visually
+   prominent ones higher. Also extract `codex.text` from `cap.json` into `codex.txt`
+   before recording the sample, so the baseline is the actual model-facing text rather
+   than the full JSON capture. Pass anchors as JSON:
+   ```sh
+   "$APPSHOT_BIN" rules record-sample --sample-id vscode-20260607 \
+     --capture-json cap.json --codex-text codex.txt --screenshot cap.png \
+     --app-bundle-id com.microsoft.VSCode --window-title '…' \
+     --anchor-json-file anchors.json \
+     --notes '{"trainingRun":"…","privacyMode":"skip-sensitive"}'
+   ```
+   `anchors.json` is an array of `{regex, source, required, weight}`, e.g.
+   `[{"regex":"Crunched for","source":"ocr","weight":2.0}, {"regex":"scheduleScroll","source":"accessibility","weight":1.0}]`.
+   (Plain repeatable `--anchor` still works; those default to `source=expected`.)
+4. **Apply each candidate rule to the capture → AX student output.** This is a pure
+   transform; OCR is stripped from the output no matter what the rule lists in `sources`:
+   ```sh
+   "$APPSHOT_BIN" rules apply --rule-id vscode-workbench-text \
+     --capture-json cap.json --output student.txt --pretty
+   ```
+   (Use `--rule-json-file rule.json` to try a draft rule before upserting it.)
+5. **Evaluate the student output** against the teacher anchors → recall + density + axGap:
+   ```sh
+   "$APPSHOT_BIN" rules evaluate --sample-id vscode-20260607 --output-text student.txt --pretty
+   ```
+   Read `accessibilityRecall` (core objective), `informationDensity` (effective info per
+   token), `axGap` (teacher anchors the AX output missed — the blind spots to fix), and
+   `score` (a recall×density blend, so a token dump cannot win). Without `--output-text`,
+   pass `--rule-id`/`--rule-json` and the tool applies the rule for you.
+6. **Compare, select, iterate.** `rules measure` to compare versions, `rules select` the
+   best per bucket, `rules improvements` to list open AX/density gaps. Improve by editing
+   the catalog JSON or `rules patch` — broaden `treeRegex`, add `promoteTextKeys`, enable
+   `includeChildren`, raise the AX timeout, or tighten `keepRegex`/line caps for density.
+   **Never** close an AX gap by turning on OCR output; OCR stays teacher-only.
+7. **Benchmark before rollout.** Before `rules select` for a production bucket or before
+   shipping a release, run the fixed benchmark protocol in `docs/rule-benchmark.md`.
+   Benchmark suites live under `rules/benchmarks/`; they freeze capture/anchor evidence
+   and define thresholds for recall, density, AX gap, token cost, privacy leaks, and
+   regression against the selected baseline.
+
+### Rules are JSON
+
+Keep rules typed, versionable, and app-scoped. Shape:
+```json
+{
+  "id": "vscode-workbench-text",
+  "scope": "app",
+  "bucket": "vscode-workbench",
+  "strategy": "ax-document-balanced",
+  "match": {
+    "appBundleIds": ["com.microsoft.VSCode"],
+    "windowTitleRegex": ".*",
+    "treeRegex": "Terminal|Problems|Editor|AXTextArea|AXWebArea|AXGroup",
+    "pathRegex": "accessibility\\.root|accessibility\\.visibleText|accessibility\\.text|documentReferences"
+  },
+  "action": {
+    "includeChildren": true,
+    "sources": ["visible", "accessibility", "document"],
+    "promoteTextKeys": ["textContent", "value", "description", "title", "visibleTextFragments"],
+    "keepRegex": [".{4,}"],
+    "dropRegex": ["^\\s*$"],
+    "transport": { "format": "toon", "maxImportantLines": 180, "maxRichLines": 220, "preserveRaw": true }
+  },
+  "priority": 90,
+  "confidence": 0.65,
+  "enabled": true
+}
+```
+
+Rule grammar:
+- `scope`: `global`, `app`, `window`, or `session`; narrower scopes win when priorities tie.
+- `bucket`: the per-app strategy bucket this rule competes in.
+- `match.appBundleIds` / `match.windowTitleRegex` / `match.treeRegex` / `match.pathRegex`:
+  what the rule applies to and which AX nodes/evidence sections it reads.
+- `action.sources`: AX sources to read — `visible`, `accessibility`, `document`. `ocr` is
+  ignored if present (teacher-only).
+- `action.includeChildren` / `promoteTextKeys`: how much AX subtree/fields to lift.
+- `action.keepRegex` / `dropRegex`: keep/noise filters (tune these for density).
+- `action.transport`: TOON transport + line caps (`maxImportantLines`/`maxRichLines`)
+  — the main density lever.
+- `priority`, `confidence`, `enabled`: ranking and rollout.
+
+### Evaluation corpus matters
+
+`rules evaluate` scores against three corpora via `--corpus` when you don't pass
+`--output-text`:
+- `codex` (default): the text actually handed to the model. The real success criterion.
+- `capture`: the full capture JSON including OCR/AX evidence. High `capture` recall with
+  low `codex`/AX recall means "AppShot saw it but the rule dropped it" — a filtering bug.
+- `combined`: union of both.
+
+Use the AX student output (`rules apply` → `--output-text`) for the real objective, and
+`capture` recall to localize where content was lost.
+
+### Agent-facing rule governance
+
+Rule updates are done by agents, so the library is a governance API, not a manual SQLite
+chore. Do not edit the database by hand. Every create/upsert/patch/archive/activate/select
+is recorded in the change history.
+
+- `rules measure [--app-bundle-id …]` — score every rule/version across recorded samples,
+  including atomic `rules evaluate` results.
+- `rules patch --id … --patch-json '{…}'` — modify a rule in place (deep-merge); new version.
+- `rules history --id … --limit 20` — version chain + change events + run metrics + gaps.
+- `rules archive --id … --reason …` / `rules activate --id … --reason …` — retire/restore.
+- `rules select --bucket-id … --rule-id … --version N` — pick the winner for a bucket.
+- `rules improvements --status open` — open AX/density gaps with recommendations.
+
+### Benchmark protocol
+
+Treat benchmarks as release gates, not as training data to overfit. Use four tiers:
+`fixture` (committed synthetic captures), `local-smoke` (current machine, skip sensitive),
+`local-sensitive` (explicit opt-in real private apps), and `release-gate` (fixture +
+approved local suites). For each case, call `rules record-sample`, `rules apply`,
+`rules evaluate`, and `rules measure`; pass only when `accessibilityRecall`,
+`informationDensity`, `axGapCount`, `charCount`, privacy-pattern checks, and baseline
+regression all meet suite thresholds. See `rules/benchmarks/local-smoke.example.json`
+for suite shape.
+
+### Strategy buckets
+
+A bucket is a per-app (or per-app-family) slot holding several competing rule versions.
+The loop above runs the same captures through every candidate, scores each, and you
+`select` the best per bucket — an A/B of AX strategies per app. Variants compete on AX
+extraction shape and density (e.g. balanced vs dense line caps), never on OCR. Privacy is
+a training dimension: real captured text stays local (SQLite + `artifacts/`); summarize
+counts/recall in reports, and skip sensitive apps unless explicitly training them.
+
+### Token-efficient transport (TOON)
+
+Rule output carries a TOON (Token-Oriented Object Notation) rendering alongside plain
+text. Uniform line records collapse into a CSV-style table that declares fields once
+(`lines[N]{source,importance,text}:`), far cheaper in tokens than repeated JSON keys when
+handed to a model. `rules apply` returns this as `transportText`; use that for agent
+message passing and keep the raw capture locally for richer non-visual evidence.
+Configure under `action.transport`. See https://github.com/toon-format/toon.
+
 
 ## Install Notes
 

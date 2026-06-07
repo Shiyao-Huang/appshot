@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "suiteID": "local-smoke-example",
+  "description": "Example AppShot rule benchmark suite. Replace paths with local capture artifacts before running.",
+  "privacyMode": "skip-sensitive",
+  "metricWeights": {
+    "weightedVisualRecall": 0.55,
+    "anchorRecall": 0.25,
+    "informationDensity": 0.2
+  },
+  "thresholds": {
+    "minAccessibilityRecall": 0.75,
+    "minInformationDensity": 0.08,
+    "maxAxGapCount": 6,
+    "maxCharCount": 18000,
+    "maxRegression": 0.03
+  },
+  "privacy": {
+    "forbiddenOutputRegex": [
+      "(?i)password",
+      "(?i)secret",
+      "(?i)token",
+      "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}"
+    ]
+  },
+  "cases": [
+    {
+      "caseID": "vscode-workbench-smoke",
+      "bucketID": "vscode-workbench",
+      "appBundleID": "com.microsoft.VSCode",
+      "captureJSONPath": "artifacts/bench/vscode-workbench-smoke/capture.json",
+      "codexTextPath": "artifacts/bench/vscode-workbench-smoke/codex.txt",
+      "screenshotPath": "artifacts/bench/vscode-workbench-smoke/screenshot.png",
+      "anchorsPath": "artifacts/bench/vscode-workbench-smoke/anchors.json",
+      "rules": [
+        "vscode-workbench-text"
+      ]
+    },
+    {
+      "caseID": "terminal-buffer-smoke",
+      "bucketID": "terminal-buffer",
+      "appBundleID": "com.apple.Terminal",
+      "captureJSONPath": "artifacts/bench/terminal-buffer-smoke/capture.json",
+      "codexTextPath": "artifacts/bench/terminal-buffer-smoke/codex.txt",
+      "screenshotPath": "artifacts/bench/terminal-buffer-smoke/screenshot.png",
+      "anchorsPath": "artifacts/bench/terminal-buffer-smoke/anchors.json",
+      "rules": [
+        "terminal-buffer-text"
+      ]
+    }
+  ]
+}

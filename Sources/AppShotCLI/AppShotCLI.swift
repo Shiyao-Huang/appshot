@@ -56,7 +56,13 @@ struct CLIOptions {
 struct AppShotCLI {
     static func main() {
         do {
-            let options = try parseArguments(Array(CommandLine.arguments.dropFirst()))
+            let rawArgs = Array(CommandLine.arguments.dropFirst())
+            if rawArgs.first == "rules" {
+                let result = try runRulesCommand(Array(rawArgs.dropFirst()))
+                try write(payload: result.payload, to: result.outputPath, pretty: result.pretty, format: "json")
+                return
+            }
+            let options = try parseArguments(rawArgs)
             let payload: JSONObject
             switch options.command {
             case "capture":
@@ -122,6 +128,12 @@ struct AppShotCLI {
             exit(1)
         }
     }
+}
+
+struct RulesCommandResult {
+    var payload: JSONObject
+    var outputPath: String?
+    var pretty: Bool
 }
 
 func parseArguments(_ args: [String]) throws -> CLIOptions {
@@ -271,6 +283,290 @@ func parseJSONObject(_ text: String, optionName: String) throws -> JSONObject {
     }
 }
 
+func runRulesCommand(_ args: [String]) throws -> RulesCommandResult {
+    var index = 0
+    let subcommand: String
+    if let first = args.first, !first.hasPrefix("-") {
+        subcommand = first
+        index = 1
+    } else {
+        subcommand = "list"
+    }
+
+    var databasePath: String?
+    var outputPath: String?
+    var pretty = false
+    var ruleJSON: String?
+    var patchJSON: String?
+    var id: String?
+    var appBundleID: String?
+    var bucketID: String?
+    var windowTitle: String?
+    var screenshotPath: String?
+    var captureJSONPath: String?
+    var codexTextPath: String?
+    var sampleID: String?
+    var ruleID: String?
+    var corpus = "codex"
+    var version: Int?
+    var reason: String?
+    var status: String?
+    var limit = 50
+    var anchors: [String] = []
+    var anchorJSON: String?
+    var outputTextPath: String?
+    var metricWeightsJSON: String?
+    var notes: String?
+
+    while index < args.count {
+        let arg = args[index]
+        func nextValue() throws -> String {
+            index += 1
+            guard index < args.count else {
+                throw AppShotError.usage("Missing value for \(arg)")
+            }
+            return args[index]
+        }
+
+        switch arg {
+        case "--db", "--database":
+            databasePath = try nextValue()
+        case "--output", "-o":
+            outputPath = try nextValue()
+        case "--pretty":
+            pretty = true
+        case "--rule-json":
+            ruleJSON = try loadTextArgument(try nextValue())
+        case "--rule-json-file":
+            ruleJSON = try readTextFile(try nextValue())
+        case "--patch-json":
+            patchJSON = try loadTextArgument(try nextValue())
+        case "--patch-json-file":
+            patchJSON = try readTextFile(try nextValue())
+        case "--id":
+            id = try nextValue()
+        case "--app-bundle-id":
+            appBundleID = try nextValue()
+        case "--bucket-id":
+            bucketID = try nextValue()
+        case "--window-title":
+            windowTitle = try nextValue()
+        case "--screenshot":
+            screenshotPath = try nextValue()
+        case "--capture-json":
+            captureJSONPath = try nextValue()
+        case "--codex-text":
+            codexTextPath = try nextValue()
+        case "--sample-id":
+            sampleID = try nextValue()
+        case "--rule-id":
+            ruleID = try nextValue()
+        case "--corpus":
+            corpus = try nextValue()
+        case "--version":
+            let raw = try nextValue()
+            guard let parsed = Int(raw) else {
+                throw AppShotError.usage("--version must be an integer")
+            }
+            version = parsed
+        case "--reason":
+            reason = try nextValue()
+        case "--status":
+            status = try nextValue()
+        case "--limit":
+            let raw = try nextValue()
+            guard let parsed = Int(raw) else {
+                throw AppShotError.usage("--limit must be an integer")
+            }
+            limit = parsed
+        case "--anchor":
+            anchors.append(try nextValue())
+        case "--anchor-json":
+            anchorJSON = try loadTextArgument(try nextValue())
+        case "--anchor-json-file":
+            anchorJSON = try readTextFile(try nextValue())
+        case "--output-text":
+            outputTextPath = try nextValue()
+        case "--metric-weights-json":
+            metricWeightsJSON = try loadTextArgument(try nextValue())
+        case "--notes":
+            notes = try nextValue()
+        case "--help", "-h":
+            return RulesCommandResult(payload: rulesHelpPayload(), outputPath: outputPath, pretty: true)
+        default:
+            throw AppShotError.usage("Unknown rules option: \(arg)")
+        }
+        index += 1
+    }
+
+    let payload: JSONObject
+    switch subcommand {
+    case "init":
+        payload = try AppShotRuleStore.initialize(databasePath: databasePath)
+    case "list":
+        payload = try AppShotRuleStore.listRules(databasePath: databasePath, appBundleIdentifier: appBundleID)
+    case "upsert":
+        guard let ruleJSON else {
+            throw AppShotError.usage("rules upsert requires --rule-json or --rule-json-file")
+        }
+        payload = try AppShotRuleStore.upsertRule(databasePath: databasePath, ruleJSONText: ruleJSON)
+    case "patch":
+        guard let id else {
+            throw AppShotError.usage("rules patch requires --id")
+        }
+        guard let patchJSON else {
+            throw AppShotError.usage("rules patch requires --patch-json or --patch-json-file")
+        }
+        payload = try AppShotRuleStore.patchRule(databasePath: databasePath, id: id, patchJSONText: patchJSON)
+    case "delete":
+        guard let id else {
+            throw AppShotError.usage("rules delete requires --id")
+        }
+        payload = try AppShotRuleStore.deleteRule(databasePath: databasePath, id: id)
+    case "archive":
+        guard let id else {
+            throw AppShotError.usage("rules archive requires --id")
+        }
+        payload = try AppShotRuleStore.setRuleEnabled(databasePath: databasePath, id: id, enabled: false, reason: reason)
+    case "activate":
+        guard let id else {
+            throw AppShotError.usage("rules activate requires --id")
+        }
+        payload = try AppShotRuleStore.setRuleEnabled(databasePath: databasePath, id: id, enabled: true, reason: reason)
+    case "select":
+        guard let bucketID else {
+            throw AppShotError.usage("rules select requires --bucket-id")
+        }
+        guard let ruleID else {
+            throw AppShotError.usage("rules select requires --rule-id")
+        }
+        guard let version else {
+            throw AppShotError.usage("rules select requires --version")
+        }
+        payload = try AppShotRuleStore.selectStrategy(databasePath: databasePath, bucketID: bucketID, ruleID: ruleID, version: version)
+    case "measure":
+        payload = try AppShotRuleStore.measure(
+            databasePath: databasePath,
+            sampleID: sampleID,
+            appBundleIdentifier: appBundleID,
+            bucketID: bucketID,
+            limit: limit
+        )
+    case "history":
+        payload = try AppShotRuleStore.history(databasePath: databasePath, id: id ?? ruleID, bucketID: bucketID, limit: limit)
+    case "improvements":
+        payload = try AppShotRuleStore.improvements(
+            databasePath: databasePath,
+            status: status,
+            appBundleIdentifier: appBundleID,
+            bucketID: bucketID,
+            limit: limit
+        )
+    case "record-sample":
+        payload = try AppShotRuleStore.recordSample(
+            databasePath: databasePath,
+            sampleID: sampleID,
+            appBundleIdentifier: appBundleID,
+            windowTitle: windowTitle,
+            screenshotPath: screenshotPath,
+            captureJSONPath: captureJSONPath,
+            codexTextPath: codexTextPath,
+            anchors: anchors,
+            anchorJSONText: anchorJSON,
+            notes: notes
+        )
+    case "apply":
+        guard ruleJSON != nil || ruleID != nil else {
+            throw AppShotError.usage("rules apply requires --rule-json, --rule-json-file, or --rule-id")
+        }
+        // For apply, --output writes the plain student text (for piping into
+        // `rules evaluate --output-text`); the JSON payload still prints to stdout.
+        payload = try AppShotRuleStore.applyRule(
+            databasePath: databasePath,
+            ruleJSONText: ruleJSON,
+            ruleID: ruleID,
+            captureJSONPath: captureJSONPath,
+            sampleID: sampleID,
+            outputPath: outputPath
+        )
+        return RulesCommandResult(payload: payload, outputPath: nil, pretty: pretty)
+    case "evaluate":
+        guard let sampleID else {
+            throw AppShotError.usage("rules evaluate requires --sample-id")
+        }
+        let metricWeights = try metricWeightsJSON.map { try parseJSONObject($0, optionName: "--metric-weights-json") }
+        payload = try AppShotRuleStore.evaluate(
+            databasePath: databasePath,
+            sampleID: sampleID,
+            ruleID: ruleID,
+            corpus: corpus,
+            outputTextPath: outputTextPath,
+            ruleJSONText: ruleJSON,
+            metricWeights: metricWeights
+        )
+    case "help":
+        payload = rulesHelpPayload()
+        pretty = true
+    default:
+        throw AppShotError.usage("Unknown rules subcommand: \(subcommand)")
+    }
+    return RulesCommandResult(payload: payload, outputPath: outputPath, pretty: pretty)
+}
+
+func loadTextArgument(_ value: String) throws -> String {
+    let expanded = (value as NSString).expandingTildeInPath
+    if FileManager.default.fileExists(atPath: expanded) {
+        return try readTextFile(expanded)
+    }
+    return value
+}
+
+func readTextFile(_ path: String) throws -> String {
+    let expanded = (path as NSString).expandingTildeInPath
+    guard let text = try? String(contentsOfFile: expanded, encoding: .utf8) else {
+        throw AppShotError.usage("Failed to read \(path)")
+    }
+    return text
+}
+
+func rulesHelpPayload() -> JSONObject {
+    [
+        "usage": [
+            "appshot rules init [--db path] [--pretty]",
+            "appshot rules list [--db path] [--app-bundle-id id] [--pretty]",
+            "appshot rules upsert --rule-json '{...}' [--db path]",
+            "appshot rules upsert --rule-json-file rule.json [--db path]",
+            "appshot rules patch --id rule-id --patch-json '{...}' [--db path]",
+            "appshot rules delete --id rule-id [--db path]",
+            "appshot rules archive|activate --id rule-id [--reason text] [--db path]",
+            "appshot rules measure [--sample-id id] [--app-bundle-id id] [--bucket-id id] [--limit n] [--db path]",
+            "appshot rules history [--id rule-id] [--bucket-id id] [--limit n] [--db path]",
+            "appshot rules improvements [--status open] [--app-bundle-id id] [--bucket-id id] [--limit n] [--db path]",
+            "appshot rules select --bucket-id id --rule-id id --version n [--db path]",
+            "appshot rules record-sample --sample-id id --capture-json capture.json --codex-text capture.txt [--anchor regex...] [--anchor-json-file anchors.json] [--db path]",
+            "appshot rules apply --rule-id id|--rule-json-file rule.json --capture-json capture.json [--output student.txt] [--db path]",
+            "appshot rules evaluate --sample-id id [--output-text student.txt] [--rule-id id|--rule-json-file rule.json] [--corpus codex|capture|combined] [--metric-weights-json '{...}'] [--db path]"
+        ],
+        "ruleShape": [
+            "id": "vscode-terminal-visible-text-v1",
+            "scope": "app",
+            "match": [
+                "appBundleIds": ["com.microsoft.VSCode"],
+                "windowTitleRegex": ".*",
+                "treeRegex": "Terminal|AXTextArea|AXGroup"
+            ],
+            "action": [
+                "includeChildren": true,
+                "promoteTextKeys": ["textContent", "value", "description", "visibleTextFragments"],
+                "fallbackOCR": true
+            ],
+            "priority": 80,
+            "confidence": 0.72,
+            "enabled": true
+        ] as JSONObject
+    ]
+}
+
 func write(payload: JSONObject, to path: String?, pretty: Bool, format: String) throws {
     let string: String
     if format == "codex" {
@@ -303,6 +599,7 @@ func printHelp() {
       appshot codex-apps-status [--prompt] [--pretty]
       appshot codex-computer-use-status [--pretty]
       appshot capture [--window-id id] [--window-title title] [--pid pid] [--bundle-id id] [--activate-target|--no-activate-target] [--request-app-capture] [--app-capture-timeout seconds] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-electron-debugging] [--electron-debugging-timeout seconds] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot rules init|list|upsert|patch|delete|archive|activate|measure|history|improvements|select|record-sample|evaluate [--db path] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -326,5 +623,6 @@ func printHelp() {
       OCR is an explicit fallback for visible text that Accessibility does not expose.
       Accessibility content depends on what the target app exposes to macOS.
       --format codex prints a compact AppShot block similar to Codex built-in appshots.
+      rules stores app-specific extraction rules, training samples, expected anchors, rule-version outputs, measurements, history, selected strategies, and improvement pools in SQLite. Rule evaluation defaults to the Codex text corpus; pass --corpus capture or --corpus combined for diagnostic comparisons.
     """)
 }

@@ -1,7 +1,8 @@
 import { EventEmitter } from "node:events";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +13,7 @@ const require = createRequire(import.meta.url);
 const adapterPath = join(root, "codex-integration", "appshot-codex-host-bridge", "codex-host-adapter.cjs");
 const readmePath = join(root, "codex-integration", "appshot-codex-host-bridge", "README.md");
 const injectionAnalyzerPath = join(root, "scripts", "analyze_codex_electron_host_injection.mjs");
+const patcherPath = join(root, "scripts", "patch_codex_electron_host_for_appshot.mjs");
 const evidenceRoot = resolve(root, "..", "codex-522", "mac-app");
 const eventsPath = join(evidenceRoot, "artifacts", "comment-preload-runtime-events-522.txt");
 const snippetsPath = join(evidenceRoot, "appshots-evidence", "522-appshots-snippets.js");
@@ -28,6 +30,7 @@ for (const file of [
   adapterPath,
   readmePath,
   injectionAnalyzerPath,
+  patcherPath,
   eventsPath,
   snippetsPath,
   mainBundlePath,
@@ -39,6 +42,7 @@ for (const file of [
 const adapterSource = readFileSync(adapterPath, "utf8");
 const readme = readFileSync(readmePath, "utf8");
 const injectionAnalyzer = readFileSync(injectionAnalyzerPath, "utf8");
+const patcher = readFileSync(patcherPath, "utf8");
 const events = readFileSync(eventsPath, "utf8");
 const snippets = readFileSync(snippetsPath, "utf8");
 const mainBundle = readFileSync(mainBundlePath, "utf8");
@@ -48,6 +52,7 @@ for (const [name, text] of [
   ["codex-host-adapter.cjs", adapterSource],
   ["README.md", readme],
   ["analyze_codex_electron_host_injection.mjs", injectionAnalyzer],
+  ["patch_codex_electron_host_for_appshot.mjs", patcher],
   ["522-appshots-snippets.js", snippets],
   ["comment-preload.js", commentPreload]
 ]) {
@@ -64,6 +69,7 @@ for (const [name, text] of [
   ["codex-host-adapter.cjs", adapterSource],
   ["README.md", readme],
   ["analyze_codex_electron_host_injection.mjs", injectionAnalyzer],
+  ["patch_codex_electron_host_for_appshot.mjs", patcher],
   ["522-appshots-snippets.js", snippets],
   ["main-DVEWN1ng.js", mainBundle],
   ["comment-preload.js", commentPreload]
@@ -92,6 +98,7 @@ for (const needle of [
   "host-managed-browser-state",
   "ipcRenderer.invoke/ipcMain.handle",
   "webContents.send/ipcRenderer.on",
+  "patch_codex_electron_host_for_appshot",
   "browser-sidebar-runtime-sync",
   "browser-sidebar-runtime-message"
 ]) {
@@ -227,6 +234,45 @@ assert(analysis.preloadLifecycle?.browserSidebarUsesGuestWebview === true, "inje
 assert(analysis.preloadLifecycle?.willAttachWebviewSetsCommentPreload === true, "injection analyzer lost comment preload proof");
 assert(analysis.injectionPoints?.some((point) => point.id === "load-adapter-before-codex-runtime-handler-registration"), "injection analyzer missing host adapter load point");
 assert(analysis.injectionPoints?.some((point) => point.id === "send-host-state-to-comment-preload"), "injection analyzer missing host-to-view send point");
+
+const patchOutputRoot = mkdtempSync(join(tmpdir(), "appshot-codex-host-patch-"));
+try {
+  const patcherRun = spawnSync(process.execPath, [
+    patcherPath,
+    "--output-dir",
+    patchOutputRoot
+  ], {
+    cwd: root,
+    encoding: "utf8"
+  });
+  assert(patcherRun.status === 0, `Codex host patcher failed: ${patcherRun.stderr || patcherRun.stdout}`);
+  const patchPlan = JSON.parse(patcherRun.stdout);
+  assert(patchPlan.format === "appshot-codex-electron-host-patch-plan", "patcher returned wrong format");
+  assert(patchPlan.mode === "copy", "patcher did not run in copy mode");
+  assert(patchPlan.changed?.main === true, "patcher did not patch Codex main bundle");
+  assert(patchPlan.changed?.commentPreload === true, "patcher did not patch Codex comment preload");
+  const patchedMain = readFileSync(patchPlan.patchedFiles.main, "utf8");
+  const patchedPreload = readFileSync(patchPlan.patchedFiles.commentPreload, "utf8");
+  assert(patchedMain.includes(patchPlan.markers.main), "patched main bundle missing AppShot marker");
+  assert(patchedMain.includes("installAppShotCodexHostBridge"), "patched main bundle missing adapter install call");
+  assert(patchedPreload.includes(patchPlan.markers.preload), "patched comment preload missing AppShot marker");
+  assert(patchedPreload.includes("exposeInMainWorld(\"codex_desktop\""), "patched comment preload missing codex_desktop exposure");
+  const patchedAnalyzer = spawnSync(process.execPath, [injectionAnalyzerPath], {
+    cwd: root,
+    env: Object.assign({}, process.env, {
+      CODEX_EVIDENCE_ROOT: patchOutputRoot
+    }),
+    encoding: "utf8"
+  });
+  assert(patchedAnalyzer.status === 0, `patched Codex analyzer failed: ${patchedAnalyzer.stderr || patchedAnalyzer.stdout}`);
+  const patchedAnalysis = JSON.parse(patchedAnalyzer.stdout);
+  assert(patchedAnalysis.channels?.hostOutboundChannel === "codex_desktop:message-for-view", "patched analysis lost host outbound channel");
+} finally {
+  rmSync(patchOutputRoot, {
+    recursive: true,
+    force: true
+  });
+}
 
 bridge.dispose();
 assert(ipcMain.handle === originalHandle, "adapter dispose did not restore ipcMain.handle");

@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 2,
+  "description": "AppShot rule training catalog. Agents edit this JSON or call `appshot rules upsert/patch`; the trainer interprets JSON rules and does not hard-code app strategies. OCR is a teacher/evaluator signal by default, not a rule output source.",
+  "trainingDefaults": {
+    "ocrPolicy": "teacher-only",
+    "selectionMode": "accessibility-first",
+    "teacherSources": ["ocr", "visible", "accessibility", "document"],
+    "densityFloor": 0.02,
+    "captureArgs": [
+      "--max-depth",
+      "${capture.maxDepth}",
+      "--max-children",
+      "${capture.maxChildren}",
+      "--accessibility-timeout",
+      "${capture.accessibilityTimeout}",
+      "--screenshot-timeout",
+      "${capture.screenshotTimeout}",
+      "--include-screenshot",
+      "--include-ocr",
+      "--screenshot",
+      "${paths.screenshot}",
+      "--output",
+      "${paths.raw}",
+      "--pretty"
+    ],
+    "metricWeights": {
+      "weightedVisualRecall": 0.55,
+      "anchorRecall": 0.25,
+      "informationDensity": 0.2
+    }
+  },
+  "ruleTemplate": {
+    "id": "${variant.id}",
+    "scope": "app",
+    "bucket": "${bucket.bucketID}",
+    "strategy": "${variant.strategy}",
+    "match": {
+      "appBundleIds": "${bucket.appBundleIDs}",
+      "windowTitleRegex": ".*",
+      "treeRegex": "${bucket.treeRegex}",
+      "pathRegex": "accessibility\\.root|accessibility\\.visibleText|accessibility\\.text|documentReferences|codexBrowserDOMIntegration|codexElectronRemoteDebugging"
+    },
+    "action": {
+      "includeChildren": true,
+      "sources": "${variant.sources}",
+      "ocrPolicy": "teacher-only",
+      "promoteTextKeys": [
+        "textContent",
+        "value",
+        "description",
+        "title",
+        "visibleTextFragments"
+      ],
+      "keepRegex": [
+        ".{4,}"
+      ],
+      "dropRegex": [
+        "^\\s*$"
+      ],
+      "fallbackOCR": false,
+      "transport": {
+        "format": "toon",
+        "maxImportantLines": "${variant.maxImportantLines}",
+        "maxRichLines": "${variant.maxRichLines}",
+        "preserveRaw": true
+      }
+    },
+    "priority": "${variant.priority}",
+    "confidence": 0.65,
+    "enabled": true
+  },
+  "focusBundles": [
+    "com.apple.Safari",
+    "com.apple.Terminal",
+    "com.apple.dt.Xcode",
+    "com.apple.finder",
+    "com.electron.lark",
+    "com.google.Chrome",
+    "com.microsoft.VSCode",
+    "com.mitchellh.ghostty",
+    "com.openai.codex",
+    "com.tencent.flue.WeChatAppEx",
+    "com.tencent.xinWeChat"
+  ],
+  "sensitiveBundles": [
+    "com.apple.Safari",
+    "com.electron.lark",
+    "com.google.Chrome",
+    "com.openai.codex",
+    "com.tencent.flue.WeChatAppEx",
+    "com.tencent.xinWeChat"
+  ],
+  "sensitiveTitleRegex": "(微信|聊天记录|公众号|飞书|gmail|mail|邮箱|codex|chat|message|inbox|收件箱)",
+  "buckets": [
+    {
+      "bucketID": "vscode-workbench",
+      "name": "VS Code workbench",
+      "appBundleIDs": ["com.microsoft.VSCode"],
+      "treeRegex": "Terminal|Problems|Explorer|Editor|AXTextArea|AXWebArea|AXGroup",
+      "captureProfiles": ["electron-debugging"],
+      "variants": [
+        {
+          "id": "vscode-workbench-text",
+          "strategy": "ax-document-balanced",
+          "sources": ["visible", "accessibility", "document"],
+          "priority": 90,
+          "maxImportantLines": 180,
+          "maxRichLines": 260
+        },
+        {
+          "id": "vscode-workbench-text",
+          "strategy": "ax-document-dense",
+          "sources": ["visible", "document", "accessibility"],
+          "priority": 91,
+          "maxImportantLines": 120,
+          "maxRichLines": 140
+        }
+      ]
+    },
+    {
+      "bucketID": "electron-chat",
+      "name": "Electron chat/webview",
+      "appBundleIDs": ["com.openai.codex", "com.electron.lark"],
+      "treeRegex": "AXWebArea|AXTextArea|AXStaticText|AXGroup|conversation|message|chat|飞书|Codex",
+      "captureProfiles": ["electron-debugging"],
+      "variants": [
+        {
+          "id": "electron-chat-text",
+          "strategy": "ax-webarea-balanced",
+          "sources": ["visible", "accessibility", "document"],
+          "priority": 86,
+          "maxImportantLines": 160,
+          "maxRichLines": 180
+        },
+        {
+          "id": "electron-chat-text",
+          "strategy": "ax-webarea-dense",
+          "sources": ["visible", "accessibility"],
+          "priority": 87,
+          "maxImportantLines": 100,
+          "maxRichLines": 80
+        }
+      ]
+    },
+    {
+      "bucketID": "browser-webpage",
+      "name": "Browser webpage",
+      "appBundleIDs": ["com.google.Chrome", "com.apple.Safari"],
+      "treeRegex": "AXWebArea|AXLink|AXHeading|AXStaticText|AXTextField|AXGroup",
+      "captureProfiles": ["browser-dom"],
+      "variants": [
+        {
+          "id": "browser-webpage-text",
+          "strategy": "dom-ax-balanced",
+          "sources": ["visible", "accessibility", "document"],
+          "priority": 84,
+          "maxImportantLines": 180,
+          "maxRichLines": 220
+        },
+        {
+          "id": "browser-webpage-text",
+          "strategy": "dom-ax-dense",
+          "sources": ["visible", "document", "accessibility"],
+          "priority": 85,
+          "maxImportantLines": 110,
+          "maxRichLines": 100
+        }
+      ]
+    },
+    {
+      "bucketID": "wechat-chat",
+      "name": "WeChat chat and public account",
+      "appBundleIDs": ["com.tencent.xinWeChat", "com.tencent.flue.WeChatAppEx"],
+      "treeRegex": "微信|公众号|聊天记录|AXWebArea|AXStaticText|AXTextArea|AXGroup|AXScrollArea",
+      "variants": [
+        {
+          "id": "wechat-visible-text",
+          "strategy": "ax-window-balanced",
+          "sources": ["visible", "accessibility", "document"],
+          "priority": 88,
+          "maxImportantLines": 140,
+          "maxRichLines": 160
+        },
+        {
+          "id": "wechat-visible-text",
+          "strategy": "ax-window-dense",
+          "sources": ["visible", "accessibility"],
+          "priority": 89,
+          "maxImportantLines": 90,
+          "maxRichLines": 70
+        }
+      ]
+    },
+    {
+      "bucketID": "xcode-workbench",
+      "name": "Xcode workbench",
+      "appBundleIDs": ["com.apple.dt.Xcode"],
+      "treeRegex": "Source Editor|Issue navigator|Debug area|AXTextArea|AXStaticText|AXOutline|AXGroup",
+      "variants": [
+        {
+          "id": "xcode-workbench-text",
+          "strategy": "source-editor-balanced",
+          "sources": ["visible", "accessibility", "document"],
+          "priority": 82,
+          "maxImportantLines": 180,
+          "maxRichLines": 220
+        },
+        {
+          "id": "xcode-workbench-text",
+          "strategy": "source-editor-dense",
+          "sources": ["visible", "document", "accessibility"],
+          "priority": 83,
+          "maxImportantLines": 120,
+          "maxRichLines": 120
+        }
+      ]
+    },
+    {
+      "bucketID": "terminal-buffer",
+      "name": "Terminal buffer",
+      "appBundleIDs": ["com.apple.Terminal", "com.mitchellh.ghostty"],
+      "treeRegex": "AXTextArea|AXStaticText|AXScrollArea|Terminal|Ghostty|shell|zsh",
+      "variants": [
+        {
+          "id": "terminal-buffer-text",
+          "strategy": "ax-buffer-balanced",
+          "sources": ["visible", "accessibility"],
+          "priority": 80,
+          "maxImportantLines": 120,
+          "maxRichLines": 160
+        },
+        {
+          "id": "terminal-buffer-text",
+          "strategy": "ax-buffer-dense",
+          "sources": ["visible", "accessibility"],
+          "priority": 81,
+          "maxImportantLines": 80,
+          "maxRichLines": 50
+        }
+      ]
+    },
+    {
+      "bucketID": "finder-desktop",
+      "name": "Finder and desktop",
+      "appBundleIDs": ["com.apple.finder"],
+      "treeRegex": "AXBrowser|AXOutline|AXGrid|AXStaticText|AXGroup|Finder|Desktop|访达",
+      "variants": [
+        {
+          "id": "finder-desktop-text",
+          "strategy": "ax-items-balanced",
+          "sources": ["visible", "accessibility", "document"],
+          "priority": 76,
+          "maxImportantLines": 120,
+          "maxRichLines": 140
+        },
+        {
+          "id": "finder-desktop-text",
+          "strategy": "ax-items-dense",
+          "sources": ["visible", "accessibility"],
+          "priority": 77,
+          "maxImportantLines": 80,
+          "maxRichLines": 60
+        }
+      ]
+    }
+  ],
+  "generic": {
+    "treeRegex": "AXWebArea|AXTextArea|AXStaticText|AXTextField|AXScrollArea|AXOutline|AXGroup|AXButton|AXMenuItem|AXRow|AXCell",
+    "captureProfiles": [],
+    "variants": [
+      {
+        "strategy": "ax-first-balanced",
+        "sources": ["visible", "accessibility", "document"],
+        "priority": 50,
+        "maxImportantLines": 120,
+        "maxRichLines": 160
+      },
+      {
+        "strategy": "ax-first-dense",
+        "sources": ["visible", "accessibility"],
+        "priority": 51,
+        "maxImportantLines": 80,
+        "maxRichLines": 60
+      }
+    ]
+  },
+  "captureProfiles": {
+    "electron-debugging": {
+      "args": [
+        "--include-electron-debugging",
+        "--electron-debugging-timeout",
+        "${args.electronTimeout}"
+      ]
+    },
+    "browser-dom": {
+      "args": [
+        "--include-browser-dom",
+        "--browser-dom-timeout",
+        "${args.browserDOMTimeout}"
+      ]
+    }
+  },
+  "improvementRecommendations": {
+    "default": "Patch the JSON rule and replay the recorded samples before selecting it.",
+    "rule_output_missed_value_anchors": "Improve Accessibility/tree extraction or promote additional AX/document fields; OCR should remain teacher-only unless explicitly approved.",
+    "rule_output_low_information_density": "Reduce maxImportantLines/maxRichLines or tighten keepRegex so the rule carries more useful information per token.",
+    "low_density": "Reduce maxImportantLines/maxRichLines or tighten keepRegex so the rule carries more useful information per token.",
+    "missed_anchors": "Improve Accessibility/tree extraction or promote additional AX/document fields; OCR should remain teacher-only unless explicitly approved."
+  }
+}
