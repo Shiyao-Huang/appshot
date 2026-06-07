@@ -14,6 +14,7 @@ const adapterPath = join(root, "codex-integration", "appshot-codex-host-bridge",
 const readmePath = join(root, "codex-integration", "appshot-codex-host-bridge", "README.md");
 const injectionAnalyzerPath = join(root, "scripts", "analyze_codex_electron_host_injection.mjs");
 const patcherPath = join(root, "scripts", "patch_codex_electron_host_for_appshot.mjs");
+const materializerPath = join(root, "scripts", "materialize_codex_host_patch_for_appshot.mjs");
 const evidenceRoot = resolve(root, "..", "codex-522", "mac-app");
 const eventsPath = join(evidenceRoot, "artifacts", "comment-preload-runtime-events-522.txt");
 const snippetsPath = join(evidenceRoot, "appshots-evidence", "522-appshots-snippets.js");
@@ -33,6 +34,7 @@ for (const file of [
   readmePath,
   injectionAnalyzerPath,
   patcherPath,
+  materializerPath,
   eventsPath,
   snippetsPath,
   mainBundlePath,
@@ -45,6 +47,7 @@ const adapterSource = readFileSync(adapterPath, "utf8");
 const readme = readFileSync(readmePath, "utf8");
 const injectionAnalyzer = readFileSync(injectionAnalyzerPath, "utf8");
 const patcher = readFileSync(patcherPath, "utf8");
+const materializer = readFileSync(materializerPath, "utf8");
 const events = readFileSync(eventsPath, "utf8");
 const snippets = readFileSync(snippetsPath, "utf8");
 const mainBundle = readFileSync(mainBundlePath, "utf8");
@@ -101,15 +104,18 @@ for (const needle of [
   "ipcRenderer.invoke/ipcMain.handle",
   "webContents.send/ipcRenderer.on",
   "patch_codex_electron_host_for_appshot",
+  "materialize_codex_host_patch_for_appshot",
   "--asar-root",
   "--codex-app",
   "packed app.asar",
+  "app.asar.extracted",
+  "copy-app-bundle",
   "sourceMainBundle",
   "browser-sidebar-runtime-sync",
   "browser-sidebar-runtime-message"
 ]) {
   assert(
-    adapterSource.includes(needle) || readme.includes(needle) || injectionAnalyzer.includes(needle) || patcher.includes(needle) || events.includes(needle) || snippets.includes(needle),
+    adapterSource.includes(needle) || readme.includes(needle) || injectionAnalyzer.includes(needle) || patcher.includes(needle) || materializer.includes(needle) || events.includes(needle) || snippets.includes(needle),
     `missing Codex host integration anchor: ${needle}`
   );
 }
@@ -346,6 +352,36 @@ if (existsSync(alternateAsarRoot)) {
 }
 
 if (existsSync(packedCodexApp)) {
+  const materializedRoot = mkdtempSync(join(tmpdir(), "appshot-codex-host-materialized-"));
+  try {
+    const materializerRun = spawnSync(process.execPath, [
+      materializerPath,
+      "--codex-app",
+      packedCodexApp,
+      "--output-dir",
+      materializedRoot
+    ], {
+      cwd: root,
+      encoding: "utf8"
+    });
+    assert(materializerRun.status === 0, `Codex host materializer failed: ${materializerRun.stderr || materializerRun.stdout}`);
+    const materialized = JSON.parse(materializerRun.stdout);
+    assert(materialized.format === "appshot-codex-host-materialization", "materializer returned wrong format");
+    assert(materialized.sourceKind === "codex-app-packed-asar", "materializer did not detect packed Codex app asar");
+    assert(materialized.extraction?.fileCount > 100, "materializer extracted too few asar files");
+    assert(materialized.extraction?.unpackedFileCount > 0, "materializer did not copy unpacked asar sidecar files");
+    assert(materialized.patch?.changed?.main === true, "materializer did not patch extracted Codex main bundle");
+    assert(materialized.patch?.changed?.commentPreload === true, "materializer did not patch extracted Codex comment preload");
+    assert(materialized.syntaxChecks?.length === 2 && materialized.syntaxChecks.every((entry) => entry.ok === true), "materializer did not syntax-check patched Codex JS");
+    assert(materialized.analysis?.channels?.hostInboundChannel === "codex_desktop:browser-sidebar-runtime-message", "materializer patched analysis lost host inbound channel");
+    assert(materialized.privateHostStillRequiresLaunchingPatchedCodex === true, "materializer should not claim live private host attachment");
+  } finally {
+    rmSync(materializedRoot, {
+      recursive: true,
+      force: true
+    });
+  }
+
   const packedAppAnalysis = spawnSync(process.execPath, [
     injectionAnalyzerPath,
     "--codex-app",

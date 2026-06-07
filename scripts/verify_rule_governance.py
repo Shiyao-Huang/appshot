@@ -49,6 +49,14 @@ def main():
         not any("ocr" in (rule.get("action", {}).get("sources") or []) for rule in rules),
         "default rendered rules must not output OCR",
     )
+    assert_true(
+        all((rule.get("action") or {}).get("ocrPolicy") == "teacher-only" for rule in rules),
+        "rendered rules must keep OCR teacher-only",
+    )
+    assert_true(
+        not any((rule.get("action") or {}).get("fallbackOCR") for rule in rules),
+        "rendered rules must not enable OCR fallback as output",
+    )
     assert_true(catalog.get("captureProfiles"), "catalog must declare named captureProfiles")
 
     appshot = str(pathlib.Path(args.appshot_bin))
@@ -168,6 +176,7 @@ def main():
 
         print(json.dumps({
             "status": "ok",
+            "ruleOutputKind": "upsertable-json-rule",
             "catalogSchemaVersion": catalog.get("schemaVersion"),
             "renderedRuleCount": len(rules),
             "smokeRuleID": rule["id"],

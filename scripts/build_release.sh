@@ -133,6 +133,7 @@ ditto "$ROOT/codex-integration/appshot-codex-host-bridge" "$PACKAGE_DIR/codex-in
 mkdir -p "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts"
 ditto "$ROOT/scripts/analyze_codex_electron_host_injection.mjs" "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts/analyze_codex_electron_host_injection.mjs"
 ditto "$ROOT/scripts/patch_codex_electron_host_for_appshot.mjs" "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts/patch_codex_electron_host_for_appshot.mjs"
+ditto "$ROOT/scripts/materialize_codex_host_patch_for_appshot.mjs" "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts/materialize_codex_host_patch_for_appshot.mjs"
 chmod +x "$PACKAGE_DIR/bin/appshot" "$PACKAGE_DIR/mcp/server.js"
 
 codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$PACKAGE_DIR/bin/appshot"

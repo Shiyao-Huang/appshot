@@ -269,7 +269,12 @@ def upsert_rule(appshot, db_path, rule, rule_dir):
     rule_dir.mkdir(parents=True, exist_ok=True)
     path = rule_dir / f"{rule['id']}-{slug(rule.get('strategy', 'variant'))}.json"
     path.write_text(json.dumps(rule, ensure_ascii=False, indent=2), encoding="utf-8")
-    return run_json([appshot, "rules", "upsert", "--db", str(db_path), "--rule-json-file", str(path)])
+    payload = run_json([appshot, "rules", "upsert", "--db", str(db_path), "--rule-json-file", str(path)])
+    payload["ruleID"] = rule["id"]
+    payload["strategy"] = rule.get("strategy")
+    payload["ruleJSONPath"] = str(path)
+    payload["outputKind"] = "upsertable-json-rule"
+    return payload
 
 
 def ensure_bucket(conn, bucket, selected=None):
@@ -759,10 +764,11 @@ def main():
 
     run_json([appshot, "rules", "init", "--db", str(db_path)])
     conn = sqlite3.connect(db_path)
+    rule_artifacts = []
     for bucket in BUCKETS:
         ensure_bucket(conn, bucket)
         for variant in bucket.get("variants") or []:
-            upsert_rule(appshot, db_path, rule_json(bucket, variant), rule_dir)
+            rule_artifacts.append(upsert_rule(appshot, db_path, rule_json(bucket, variant), rule_dir))
 
     windows = run_json([appshot, "list-windows", "--pretty"], timeout=args.command_timeout)
     (out_dir / "windows.json").write_text(json.dumps(windows, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -775,7 +781,7 @@ def main():
         if bucket["bucketID"] not in seeded_buckets:
             ensure_bucket(conn, bucket)
             for variant in bucket.get("variants") or []:
-                upsert_rule(appshot, db_path, rule_json(bucket, variant), rule_dir)
+                rule_artifacts.append(upsert_rule(appshot, db_path, rule_json(bucket, variant), rule_dir))
             seeded_buckets.add(bucket["bucketID"])
 
         label = slug(f"{index:02d}-{target['appName']}-{target['title'] or target['bundleID']}")
@@ -869,6 +875,11 @@ def main():
         "databasePath": str(db_path),
         "catalogPath": str(pathlib.Path(args.catalog).expanduser()),
         "catalogSchemaVersion": catalog.get("schemaVersion"),
+        "ruleOutputKind": "upsertable-json-rule",
+        "ruleArtifactFormat": "json",
+        "ruleDirectory": str(rule_dir),
+        "renderedRuleCount": len(rule_artifacts),
+        "ruleArtifacts": rule_artifacts,
         "outputDir": str(out_dir),
         "privacyMode": args.privacy_mode,
         "targetCount": len(targets),
@@ -884,6 +895,10 @@ def main():
         "trainingRun": run_id,
         "databasePath": str(db_path),
         "reportPath": str(report_path),
+        "ruleOutputKind": report["ruleOutputKind"],
+        "ruleArtifactFormat": report["ruleArtifactFormat"],
+        "ruleDirectory": report["ruleDirectory"],
+        "renderedRuleCount": report["renderedRuleCount"],
         "sampleCount": len(samples),
         "failureCount": len(failures),
         "selectedStrategyCount": len(selected),

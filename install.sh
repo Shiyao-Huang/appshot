@@ -176,5 +176,6 @@ log "browser extension: load unpacked $BROWSER_EXTENSION_DIR/appshot-bridge when
 log "electron preload: use $ELECTRON_PRELOAD_DIR/appshot-host-bridge/preload.cjs and host.cjs for Electron-owned AppShot bridge experiments"
 log "codex host integration: inspect $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge/codex-host-adapter.cjs when wiring an actual Codex-side Electron host"
 log "codex host patcher: run node $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge/scripts/patch_codex_electron_host_for_appshot.mjs --help for explicit Codex host patch experiments"
+log "codex host materializer: run node $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge/scripts/materialize_codex_host_patch_for_appshot.mjs --help to extract packed app.asar into a patched copy"
 log "claude: rerun with APPSHOT_INSTALL_CLAUDE_CODE=1 to give Claude Code the Codex App Shot ability"
 log "permissions: grant Accessibility and Screen Recording to AppShot when prompted"

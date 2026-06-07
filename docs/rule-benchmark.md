@@ -112,6 +112,9 @@ A candidate passes a case only when all are true:
 
 For releases, require all fixture cases and local-smoke cases to pass. Sensitive local
 cases may block release only when the user explicitly opted in to include that benchmark.
+The rule trainer summary must also report `ruleOutputKind: upsertable-json-rule`,
+`ruleArtifactFormat: json`, and at least one rendered JSON rule artifact; release gates
+should reject training output that turns strategy into hard-coded implementation logic.
 
 ## Why This Works
 
