@@ -1,3 +1,27 @@
+# AppShot v0.1.14
+
+## English
+
+AppShot v0.1.14 tightens the Codex browser-host parity surface:
+
+- Added observable native Codex preload host detection in browser DOM captures, reporting `nativeCodexDesktopAvailable`, `codexHostBridgeAvailable`, `hostOwner: codex-electron-host`, and `hostTransport: codex-electron-ipc` when a native Codex host API is visible.
+- Kept AppShot's page-local shim distinct from native Codex host APIs by preserving `codexDesktopShimAvailable: false` for native Codex fixtures.
+- Mirrored the native Codex host fields into `codexBrowserPayload.localBrowserCommentMetadata.browserDOMIntegration` and live runtime protocol metadata.
+- Tightened `scripts/verify_codex_parity.sh` with bundled Codex `comment-preload.js` source anchors plus CLI and MCP fixtures for native Codex host detection.
+- Expanded Codex text output for deeper app context by allowing `AXTextArea` child snapshots, increasing the appshot text line budget, and merging de-duplicated Accessibility text evidence with visible/document text evidence.
+- Fixed release version drift checks so the Core bridge and browser extension page bridge versions are verified with the package version.
+
+## 中文
+
+AppShot v0.1.14 继续收紧 Codex browser-host parity：
+
+- browser DOM capture 新增可观察原生 Codex preload host 检测；当页面可见原生 Codex host API 时，会报告 `nativeCodexDesktopAvailable`、`codexHostBridgeAvailable`、`hostOwner: codex-electron-host`、`hostTransport: codex-electron-ipc`。
+- AppShot page-local shim 和原生 Codex host API 现在明确区分；native Codex fixture 会保持 `codexDesktopShimAvailable: false`。
+- 新字段会同步到 `codexBrowserPayload.localBrowserCommentMetadata.browserDOMIntegration` 和 live runtime protocol metadata。
+- `scripts/verify_codex_parity.sh` 增加 Codex bundled `comment-preload.js` 源码锚点，以及 CLI/MCP native Codex host fixture。
+- 扩大 Codex text 输出：允许继续展开 `AXTextArea` 子节点，提高 appshot text 行数预算，并把去重后的 Accessibility text evidence 与 visible/document text evidence 合并。
+- release version drift 检查现在会覆盖 Core bridge 和 browser extension page bridge 版本。
+
 # AppShot v0.1.13
 
 ## English

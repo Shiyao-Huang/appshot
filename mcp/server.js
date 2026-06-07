@@ -59,7 +59,7 @@ function handleLine(line) {
       respond(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "appshot", version: "0.1.13" }
+        serverInfo: { name: "appshot", version: "0.1.14" }
       });
     } else if (method === "tools/list") {
       respond(id, { tools: tools() });

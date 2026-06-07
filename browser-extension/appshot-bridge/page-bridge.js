@@ -1,6 +1,6 @@
 (() => {
   const source = "appshot-browser-runtime-bridge";
-  const version = "0.1.12";
+  const version = "0.1.14";
   const hostChannel = "codex_desktop:browser-sidebar-runtime-message";
   const hostOwner = "browser-extension";
   const hostTransport = "window.postMessage+extension-runtime";

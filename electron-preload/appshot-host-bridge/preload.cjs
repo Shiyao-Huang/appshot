@@ -1,6 +1,6 @@
 (function installAppShotElectronPreloadBridge() {
   const source = "appshot-electron-preload-bridge";
-  const version = "0.1.13";
+  const version = "0.1.14";
   const hostChannel = "codex_desktop:browser-sidebar-runtime-message";
   const hostOwner = "electron-preload";
   const hostTransport = "electron-ipc";

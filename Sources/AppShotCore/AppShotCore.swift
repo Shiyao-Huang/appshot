@@ -2459,7 +2459,6 @@ private func axShouldSnapshotChildren(_ snapshot: JSONObject) -> Bool {
          "AXSlider",
          "AXStaticText",
          "AXSwitch",
-         "AXTextArea",
          "AXTextField":
         return false
     default:
@@ -4326,10 +4325,33 @@ private func codexBrowserDOMIntegrationPayload(
         options: options
     )
     var runtimeBridge = domSnapshot["runtimeBridge"] as? JSONObject ?? [:]
-    if codexTrimmedString(runtimeBridge["source"]) == "appshot-browser-runtime-bridge"
-        || (runtimeBridge["installed"] as? Bool) == true {
+    if !runtimeBridge.isEmpty {
+        let bridgeSource = codexTrimmedString(runtimeBridge["source"]) ?? ""
         let existingHostOwner = codexTrimmedString(runtimeBridge["hostOwner"]) ?? ""
         let existingHostTransport = codexTrimmedString(runtimeBridge["hostTransport"]) ?? ""
+        let hasCodexHostOwner = existingHostOwner == "codex-electron-host"
+        let hasCodexHostTransport = existingHostTransport.contains("codex-electron-ipc")
+        let nativeCodexDesktopAvailable: Bool
+        if let value = runtimeBridge["nativeCodexDesktopAvailable"] as? Bool {
+            nativeCodexDesktopAvailable = value
+        } else {
+            nativeCodexDesktopAvailable = hasCodexHostOwner
+                && (existingHostTransport.isEmpty || existingHostTransport == "codex-electron-ipc")
+        }
+        let codexHostBridgeAvailable: Bool
+        if let value = runtimeBridge["codexHostBridgeAvailable"] as? Bool {
+            codexHostBridgeAvailable = nativeCodexDesktopAvailable || value
+        } else {
+            codexHostBridgeAvailable = nativeCodexDesktopAvailable
+                || hasCodexHostOwner
+                || hasCodexHostTransport
+        }
+        let shouldNormalizeRuntimeBridge = bridgeSource == "appshot-browser-runtime-bridge"
+            || (runtimeBridge["installed"] as? Bool) == true
+            || nativeCodexDesktopAvailable
+            || codexHostBridgeAvailable
+            || !existingHostOwner.isEmpty
+            || !existingHostTransport.isEmpty
         let extensionHelperAvailable: Bool
         if let value = runtimeBridge["extensionHelperAvailable"] as? Bool {
             extensionHelperAvailable = value
@@ -4342,7 +4364,13 @@ private func codexBrowserDOMIntegrationPayload(
             electronHostBridgeAvailable = value
         } else {
             electronHostBridgeAvailable = existingHostOwner == "electron-preload"
-                || existingHostTransport.contains("electron-ipc")
+                || existingHostTransport == "electron-ipc"
+        }
+        if runtimeBridge["nativeCodexDesktopAvailable"] == nil {
+            runtimeBridge["nativeCodexDesktopAvailable"] = nativeCodexDesktopAvailable
+        }
+        if runtimeBridge["codexHostBridgeAvailable"] == nil {
+            runtimeBridge["codexHostBridgeAvailable"] = codexHostBridgeAvailable
         }
         if runtimeBridge["extensionHelperAvailable"] == nil {
             runtimeBridge["extensionHelperAvailable"] = extensionHelperAvailable
@@ -4351,7 +4379,10 @@ private func codexBrowserDOMIntegrationPayload(
             runtimeBridge["electronHostBridgeAvailable"] = electronHostBridgeAvailable
         }
         if runtimeBridge["codexDesktopShimAvailable"] == nil {
-            runtimeBridge["codexDesktopShimAvailable"] = runtimeBridge["installed"] as? Bool ?? false
+            runtimeBridge["codexDesktopShimAvailable"] = shouldNormalizeRuntimeBridge
+                && !nativeCodexDesktopAvailable
+                && !codexHostBridgeAvailable
+                && (runtimeBridge["installed"] as? Bool ?? false)
         }
         if runtimeBridge["hostAPI"] == nil {
             runtimeBridge["hostAPI"] = [
@@ -4364,7 +4395,12 @@ private func codexBrowserDOMIntegrationPayload(
         }
         let defaultHostOwner: String
         let defaultHostTransport: String
-        if electronHostBridgeAvailable {
+        if codexHostBridgeAvailable {
+            defaultHostOwner = "codex-electron-host"
+            defaultHostTransport = nativeCodexDesktopAvailable
+                ? "codex-electron-ipc"
+                : "codex-electron-ipc+appshot-electron-ipc"
+        } else if electronHostBridgeAvailable {
             defaultHostOwner = "electron-preload"
             defaultHostTransport = "electron-ipc"
         } else if extensionHelperAvailable {
@@ -4388,6 +4424,7 @@ private func codexBrowserDOMIntegrationPayload(
         .prefix(200)
         .map { $0 }
     let liveEventStreamAvailable = (runtimeBridge["liveEventStreamAvailable"] as? Bool)
+        ?? (runtimeBridge["codexHostBridgeAvailable"] as? Bool)
         ?? (runtimeBridge["installed"] as? Bool)
         ?? !runtimeBridgeEvents.isEmpty
     let runtimeEvents = runtimeBridgeEvents + runtimeCandidateEvents
@@ -4705,7 +4742,7 @@ private func browserDOMPageProbeJavaScript(
     JSON.stringify((function() {
       const appshotInstallBridge = \#(installBridgeLiteral);
       const appshotClearBridgeLog = \#(clearBridgeLogLiteral);
-      const appshotBridgeVersion = "0.1.12";
+      const appshotBridgeVersion = "0.1.14";
       const appshotBridgeSource = "appshot-browser-runtime-bridge";
       function textOf(element) {
         return (element.innerText || element.alt || element.getAttribute("aria-label") || element.title || element.value || "").replace(/\s+/g, " ").trim().slice(0, 240);
@@ -5008,20 +5045,28 @@ private func browserDOMPageProbeJavaScript(
       });
       const runtimeBridgeLog = ensureRuntimeEventLog();
       const bridgeHost = window.__appshotBrowserBridgeHost || {};
-      const codexDesktopShimAvailable = Boolean(window.__appshotCodexDesktopShimInstalled && window.codex_desktop && typeof window.codex_desktop.sendMessageToHost === "function" && typeof window.codex_desktop.subscribeToHostMessages === "function");
-      const extensionHelperAvailable = Boolean(bridgeHost.extensionHelperAvailable || bridgeHost.owner === "browser-extension" || (window.codex_desktop && window.codex_desktop.__appshotHostOwner === "browser-extension"));
-      const electronHostBridgeAvailable = Boolean(bridgeHost.electronHostBridgeAvailable || bridgeHost.owner === "electron-preload" || (window.codex_desktop && window.codex_desktop.__appshotHostOwner === "electron-preload"));
-      const hostOwner = bridgeHost.owner || (electronHostBridgeAvailable ? "electron-preload" : (extensionHelperAvailable ? "browser-extension" : (codexDesktopShimAvailable ? "apple-events-page-bridge" : "")));
-      const hostTransport = bridgeHost.transport || (electronHostBridgeAvailable ? "electron-ipc" : (extensionHelperAvailable ? "window.postMessage+extension-runtime" : (codexDesktopShimAvailable ? "page-local" : "")));
+      const codexDesktopAPIAvailable = Boolean(window.codex_desktop && typeof window.codex_desktop.sendMessageToHost === "function" && typeof window.codex_desktop.subscribeToHostMessages === "function");
+      const codexDesktopHostOwner = window.codex_desktop && window.codex_desktop.__appshotHostOwner;
+      const codexDesktopHostTransport = window.codex_desktop && window.codex_desktop.__appshotHostTransport;
+      const codexDesktopShimAvailable = Boolean(window.__appshotCodexDesktopShimInstalled && codexDesktopAPIAvailable);
+      const nativeCodexDesktopAvailable = Boolean(codexDesktopAPIAvailable && !window.__appshotCodexDesktopShimInstalled && !bridgeHost.owner && !codexDesktopHostOwner);
+      const codexHostBridgeAvailable = Boolean(nativeCodexDesktopAvailable || bridgeHost.codexHostBridgeAvailable || bridgeHost.owner === "codex-electron-host" || codexDesktopHostOwner === "codex-electron-host");
+      const extensionHelperAvailable = Boolean(bridgeHost.extensionHelperAvailable || bridgeHost.owner === "browser-extension" || codexDesktopHostOwner === "browser-extension");
+      const electronHostBridgeAvailable = Boolean(bridgeHost.electronHostBridgeAvailable || bridgeHost.owner === "electron-preload" || codexDesktopHostOwner === "electron-preload");
+      const codexDefaultTransport = nativeCodexDesktopAvailable && !bridgeHost.owner && !codexDesktopHostOwner ? "codex-electron-ipc" : "codex-electron-ipc+appshot-electron-ipc";
+      const hostOwner = bridgeHost.owner || codexDesktopHostOwner || (codexHostBridgeAvailable ? "codex-electron-host" : (electronHostBridgeAvailable ? "electron-preload" : (extensionHelperAvailable ? "browser-extension" : (codexDesktopShimAvailable ? "apple-events-page-bridge" : ""))));
+      const hostTransport = bridgeHost.transport || codexDesktopHostTransport || (codexHostBridgeAvailable ? codexDefaultTransport : (electronHostBridgeAvailable ? "electron-ipc" : (extensionHelperAvailable ? "window.postMessage+extension-runtime" : (codexDesktopShimAvailable ? "page-local" : ""))));
       const runtimeBridge = {
         installed: Boolean(window.__appshotRuntimeBridgeInstalled),
         installRequested: appshotInstallBridge,
         clearRequested: appshotClearBridgeLog,
-        liveEventStreamAvailable: Boolean(window.__appshotRuntimeBridgeInstalled),
+        liveEventStreamAvailable: Boolean(window.__appshotRuntimeBridgeInstalled || codexHostBridgeAvailable),
         version: window.__appshotRuntimeBridgeVersion || appshotBridgeVersion,
         source: appshotBridgeSource,
         extensionHelperAvailable: extensionHelperAvailable,
         electronHostBridgeAvailable: electronHostBridgeAvailable,
+        nativeCodexDesktopAvailable: nativeCodexDesktopAvailable,
+        codexHostBridgeAvailable: codexHostBridgeAvailable,
         codexDesktopShimAvailable: codexDesktopShimAvailable,
         hostAPI: ["sendMessageToHost", "subscribeToHostMessages"],
         hostChannel: "codex_desktop:browser-sidebar-runtime-message",
@@ -5196,6 +5241,8 @@ public func codexBrowserPayload(
             "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false,
             "extensionHelperAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["extensionHelperAvailable"] ?? false,
             "electronHostBridgeAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["electronHostBridgeAvailable"] ?? false,
+            "nativeCodexDesktopAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["nativeCodexDesktopAvailable"] ?? false,
+            "codexHostBridgeAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["codexHostBridgeAvailable"] ?? false,
             "codexDesktopShimAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["codexDesktopShimAvailable"] ?? false,
             "hostAPI": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostAPI"] ?? [],
             "hostChannel": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostChannel"] ?? NSNull(),
@@ -5465,7 +5512,7 @@ private func codexSummaryBody(appName: String, windowTitle: String, nearbyText: 
     return lines.joined(separator: "\n")
 }
 
-public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 420) -> String {
+public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 900) -> String {
     let app = payload["targetApplication"] as? JSONObject
         ?? payload["currentApplication"] as? JSONObject
         ?? payload["frontmostApplication"] as? JSONObject
@@ -5529,7 +5576,7 @@ public func codexSummaryText(from payload: JSONObject, maxTreeLines: Int = 420) 
     return lines.joined(separator: "\n")
 }
 
-private func codexWindowTextEvidenceLines(from payload: JSONObject, maxLines: Int = 180) -> [String] {
+private func codexWindowTextEvidenceLines(from payload: JSONObject, maxLines: Int = 260) -> [String] {
     let accessibility = payload["accessibility"] as? JSONObject
     var sections: [(title: String, lines: [String])] = []
 
@@ -5562,10 +5609,13 @@ private func codexWindowTextEvidenceLines(from payload: JSONObject, maxLines: In
         }
     }
 
-    if sections.isEmpty,
-       codexShouldUseAccessibilityTextEvidence(accessibility),
+    if codexShouldUseAccessibilityTextEvidence(accessibility),
        let accessibilityText = codexTrimmedString(accessibility?["text"]) {
-        let textLines = codexPreviewTextLines(accessibilityText, maxLines: 90, maxLineLength: 220)
+        let existingEvidence = sections.flatMap(\.lines).joined(separator: "\n")
+        let textLines = codexPreviewTextLines(accessibilityText, maxLines: sections.isEmpty ? 120 : 180, maxLineLength: 220)
+            .filter { line in
+                !existingEvidence.contains(line)
+            }
         if !textLines.isEmpty {
             sections.append(("Accessibility Text", textLines))
         }
