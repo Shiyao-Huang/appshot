@@ -2684,7 +2684,9 @@ private func matchingAXWindowResult(
     scoredCandidates.sort {
         (($0["score"] as? Double) ?? 0) > (($1["score"] as? Double) ?? 0)
     }
-    let matched = (best?.score ?? 0) >= 50
+    let bestRole = best?.diagnostics["role"] as? String ?? ""
+    let bestIsAXWindow = bestRole == "AXWindow"
+    let matched = (best?.score ?? 0) >= 50 && bestIsAXWindow
     let hasAXWindowRoles = (roleCounts["AXWindow"] ?? 0) > 0
     let suspectedSelfReferentialAXWindows = !hasAXWindowRoles
         && candidates.count > 0
@@ -2699,6 +2701,7 @@ private func matchingAXWindowResult(
         ],
         "bestScore": best?.score ?? 0,
         "bestCandidate": best?.diagnostics ?? [:],
+        "bestCandidateIsAXWindow": bestIsAXWindow,
         "topCandidates": Array(scoredCandidates.prefix(8)),
         "targetTitle": targetTitle,
         "focusedWindowResult": String(describing: discovery.focusedWindowResult),
@@ -5328,6 +5331,7 @@ private func codexWindowTextEvidenceLines(from payload: JSONObject, maxLines: In
     }
 
     if sections.isEmpty,
+       codexShouldUseAccessibilityTextEvidence(accessibility),
        let accessibilityText = codexTrimmedString(accessibility?["text"]) {
         let textLines = codexPreviewTextLines(accessibilityText, maxLines: 90, maxLineLength: 220)
         if !textLines.isEmpty {
@@ -5360,6 +5364,11 @@ private func codexWindowTextEvidenceLines(from payload: JSONObject, maxLines: In
         output.append("\t... window text evidence truncated")
     }
     return output
+}
+
+private func codexShouldUseAccessibilityTextEvidence(_ accessibility: JSONObject?) -> Bool {
+    let rootSource = codexTrimmedString(accessibility?["rootSource"]) ?? ""
+    return rootSource != "targetWindowUnmatchedApplication"
 }
 
 private func codexPreviewTextLines(_ text: String, maxLines: Int, maxLineLength: Int) -> [String] {
@@ -5920,7 +5929,7 @@ private func codexSemanticChildren(of element: JSONObject) -> [JSONObject] {
         guard let children = element[key] as? [JSONObject], !children.isEmpty else {
             continue
         }
-        for child in children where !codexIsColumn(child) && !codexIsWindowChromeElement(child) {
+        for child in children where !codexIsColumn(child) && !codexIsWindowChromeElement(child) && !codexIsMenuBarElement(child) {
             let identity = codexChildIdentity(child)
             guard !seen.contains(identity) else {
                 continue
@@ -6014,6 +6023,15 @@ private func codexIsWindowChromeElement(_ element: JSONObject) -> Bool {
         "缩放按钮"
     ])
     return chromeDescriptions.contains(roleDescription)
+}
+
+private func codexIsMenuBarElement(_ element: JSONObject) -> Bool {
+    switch codexTrimmedString(element["role"]) {
+    case "AXMenuBar", "AXMenuBarItem", "AXMenu":
+        return true
+    default:
+        return false
+    }
 }
 
 private func codexPrimaryDescendantLabel(_ element: JSONObject) -> String? {

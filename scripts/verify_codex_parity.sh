@@ -261,9 +261,9 @@ for name, text, needles in [
     ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "windowTitle", "--window-title", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout", "get_app_state", "list_apps", "appshot_codex_computer_use_status"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
-    ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
+    ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "bestCandidateIsAXWindow", "codexIsMenuBarElement", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("AX window discovery", core + cli + server + parity + skill, ["accessibilityWindows", "windowDiscovery", "accessibilityWindow", "preferredAccessibilityWindow", "hasAccessibilityOnlyWindows", "resolveCaptureTargetByWindowTitle", "--window-title", "captureMode", "screenshotRectArgument", "titlesCompatible"]),
-    ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
+    ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "codexShouldUseAccessibilityTextEvidence", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
@@ -426,21 +426,27 @@ if accessibility.get("rootSource") not in {"targetWindow", "focusedWindow", "app
     raise SystemExit(f"unexpected accessibility.rootSource: {accessibility.get('rootSource')!r}")
 if "targetWindow" in accessibility:
     target_window_match = accessibility.get("targetWindowMatch", {})
-    require_keys("capture targetWindowMatch", target_window_match, ["matched", "candidateCount", "axWindowExposure", "bestScore", "topCandidates", "focusedWindowResult", "mainWindowResult", "recoverySteps"])
+    require_keys("capture targetWindowMatch", target_window_match, ["matched", "candidateCount", "axWindowExposure", "bestScore", "bestCandidateIsAXWindow", "topCandidates", "focusedWindowResult", "mainWindowResult", "recoverySteps"])
     if not isinstance(target_window_match.get("matched"), bool):
         raise SystemExit("targetWindowMatch matched was not a boolean")
     if not isinstance(target_window_match.get("candidateCount"), int):
         raise SystemExit("targetWindowMatch candidateCount was not an integer")
     if not isinstance(target_window_match.get("topCandidates"), list):
         raise SystemExit("targetWindowMatch topCandidates was not a list")
+    if target_window_match.get("matched") and target_window_match.get("bestCandidateIsAXWindow") is not True:
+        raise SystemExit("targetWindowMatch matched without an AXWindow best candidate")
     ax_window_exposure = target_window_match.get("axWindowExposure", {})
     require_keys("capture axWindowExposure", ax_window_exposure, ["hasAXWindowRoles", "roleCounts", "suspectedSelfReferentialAXWindows"])
     if not isinstance(ax_window_exposure.get("hasAXWindowRoles"), bool):
         raise SystemExit("axWindowExposure hasAXWindowRoles was not a boolean")
     if not isinstance(ax_window_exposure.get("roleCounts"), dict):
         raise SystemExit("axWindowExposure roleCounts was not an object")
-if accessibility.get("trusted") and accessibility.get("visibleTextLineCount", 0) <= 0:
-    raise SystemExit("trusted accessibility capture has no visibleText lines")
+if (
+    accessibility.get("trusted")
+    and accessibility.get("rootSource") in {"targetWindow", "focusedWindow"}
+    and accessibility.get("visibleTextLineCount", 0) <= 0
+):
+    raise SystemExit("trusted window accessibility capture has no visibleText lines")
 electron_accessibility = accessibility.get("electronAccessibility", {})
 require_keys("capture electronAccessibility", electron_accessibility, ["requested", "enabled", "attempts", "enhancedUserInterface"])
 attempts = electron_accessibility.get("attempts", [])
