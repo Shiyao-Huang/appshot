@@ -4236,7 +4236,25 @@ private func codexBrowserDOMIntegrationPayload(
         designTargets: designTargets,
         options: options
     )
-    let runtimeBridge = domSnapshot["runtimeBridge"] as? JSONObject ?? [:]
+    var runtimeBridge = domSnapshot["runtimeBridge"] as? JSONObject ?? [:]
+    if codexTrimmedString(runtimeBridge["source"]) == "appshot-browser-runtime-bridge"
+        || (runtimeBridge["installed"] as? Bool) == true {
+        if runtimeBridge["codexDesktopShimAvailable"] == nil {
+            runtimeBridge["codexDesktopShimAvailable"] = runtimeBridge["installed"] as? Bool ?? false
+        }
+        if runtimeBridge["hostAPI"] == nil {
+            runtimeBridge["hostAPI"] = [
+                "sendMessageToHost",
+                "subscribeToHostMessages"
+            ]
+        }
+        if runtimeBridge["hostChannel"] == nil {
+            runtimeBridge["hostChannel"] = "codex_desktop:browser-sidebar-runtime-message"
+        }
+        if runtimeBridge["hostShim"] == nil {
+            runtimeBridge["hostShim"] = runtimeBridge["codexDesktopShimAvailable"] as? Bool ?? false
+        }
+    }
     let runtimeBridgeEvents = ((runtimeBridge["events"] as? [JSONObject]) ?? (domSnapshot["browserRuntimeBridgeEvents"] as? [JSONObject]) ?? [])
         .prefix(200)
         .map { $0 }
@@ -4660,6 +4678,12 @@ private func browserDOMPageProbeJavaScript(
         }
         return window.__appshotRuntimeEventLog;
       }
+      function ensureHostSubscribers() {
+        if (!Array.isArray(window.__appshotCodexDesktopSubscribers)) {
+          window.__appshotCodexDesktopSubscribers = [];
+        }
+        return window.__appshotCodexDesktopSubscribers;
+      }
       function pushRuntimeEvent(type, event, fields) {
         const element = elementFromEventTarget(event && event.target);
         const payload = Object.assign({
@@ -4679,6 +4703,62 @@ private func browserDOMPageProbeJavaScript(
         }
         return payload;
       }
+      function notifyHostSubscribers(message) {
+        const subscribers = ensureHostSubscribers().slice();
+        subscribers.forEach(function(callback) {
+          try {
+            callback(message);
+          } catch (_) {}
+        });
+      }
+      function installCodexDesktopShim() {
+        const existing = window.codex_desktop;
+        const base = (existing && typeof existing === "object") ? existing : {};
+        if (!base.__appshotBridgeShim) {
+          try {
+            Object.defineProperties(base, {
+              __appshotBridgeShim: { value: true, configurable: true },
+              __appshotBridgeSource: { value: appshotBridgeSource, configurable: true },
+              __appshotBridgeVersion: { value: appshotBridgeVersion, configurable: true }
+            });
+          } catch (_) {
+            base.__appshotBridgeShim = true;
+            base.__appshotBridgeSource = appshotBridgeSource;
+            base.__appshotBridgeVersion = appshotBridgeVersion;
+          }
+        }
+        base.sendMessageToHost = function(message) {
+          const event = pushRuntimeEvent("browser-sidebar-runtime-message", null, {
+            hostShim: true,
+            hostChannel: "codex_desktop:browser-sidebar-runtime-message",
+            message: message
+          });
+          notifyHostSubscribers({
+            type: "codex_desktop:browser-sidebar-runtime-message",
+            source: appshotBridgeSource,
+            hostShim: true,
+            message: message,
+            event: event
+          });
+          return event;
+        };
+        base.subscribeToHostMessages = function(callback) {
+          if (typeof callback !== "function") {
+            return function() {};
+          }
+          const subscribers = ensureHostSubscribers();
+          subscribers.push(callback);
+          return function unsubscribeFromAppShotHostMessages() {
+            const index = subscribers.indexOf(callback);
+            if (index >= 0) {
+              subscribers.splice(index, 1);
+            }
+          };
+        };
+        window.codex_desktop = base;
+        window.__appshotCodexDesktopShimInstalled = true;
+        return base;
+      }
       function installRuntimeBridge() {
         const log = ensureRuntimeEventLog();
         if (appshotClearBridgeLog) {
@@ -4686,6 +4766,7 @@ private func browserDOMPageProbeJavaScript(
         }
         window.__appshotRuntimeBridgeVersion = appshotBridgeVersion;
         if (!appshotInstallBridge) return;
+        installCodexDesktopShim();
         if (window.__appshotRuntimeBridgeInstalled) return;
         window.__appshotRuntimeBridgeInstalled = true;
         document.addEventListener("pointerdown", function(event) {
@@ -4797,6 +4878,7 @@ private func browserDOMPageProbeJavaScript(
         };
       });
       const runtimeBridgeLog = ensureRuntimeEventLog();
+      const codexDesktopShimAvailable = Boolean(window.__appshotCodexDesktopShimInstalled && window.codex_desktop && typeof window.codex_desktop.sendMessageToHost === "function" && typeof window.codex_desktop.subscribeToHostMessages === "function");
       const runtimeBridge = {
         installed: Boolean(window.__appshotRuntimeBridgeInstalled),
         installRequested: appshotInstallBridge,
@@ -4804,6 +4886,11 @@ private func browserDOMPageProbeJavaScript(
         liveEventStreamAvailable: Boolean(window.__appshotRuntimeBridgeInstalled),
         version: window.__appshotRuntimeBridgeVersion || appshotBridgeVersion,
         source: appshotBridgeSource,
+        codexDesktopShimAvailable: codexDesktopShimAvailable,
+        hostAPI: ["sendMessageToHost", "subscribeToHostMessages"],
+        hostChannel: "codex_desktop:browser-sidebar-runtime-message",
+        hostShim: codexDesktopShimAvailable,
+        hostSubscriberCount: ensureHostSubscribers().length,
         eventCount: runtimeBridgeLog.length,
         events: runtimeBridgeLog.slice(-80)
       };
@@ -4969,6 +5056,9 @@ public func codexBrowserPayload(
             "browserRuntimeBridgeEventCount": browserDOMIntegration["browserRuntimeBridgeEventCount"] ?? 0,
             "browserRuntimeCandidateEventCount": browserDOMIntegration["browserRuntimeCandidateEventCount"] ?? 0,
             "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false,
+            "codexDesktopShimAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["codexDesktopShimAvailable"] ?? false,
+            "hostAPI": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostAPI"] ?? [],
+            "hostChannel": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostChannel"] ?? NSNull(),
             "remoteDebuggingTarget": browserDOMIntegration["remoteDebuggingTarget"] ?? NSNull()
         ]
     }

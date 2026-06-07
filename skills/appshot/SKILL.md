@@ -83,7 +83,7 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
     For a supported frontmost browser where Apple Events allows page scripting, add `--include-browser-dom` to gather `codexBrowserDOMIntegration.browserRuntimeEvents`, including comment editor, comment preview, screenshot, design scrub, design modifier, image-drag `sourceUrl`, and design-editor `anchorState` / `designEditorState` candidates.
     Read `codexBrowserDOMIntegration.remoteDebuggingTarget` when the page might be a Codex/Electron remote-debugging surface such as `content shell remote debugging`, `inspectable webcontents`, or localhost ports `9222` / `9229`.
     For Electron apps such as VS Code, add `--include-electron-debugging`, or add `--include-browser-dom` when you also want a browser-shaped payload. Read `codexElectronRemoteDebugging.scannedPorts`, `targets`, `selectedTarget`, `cdpSnapshot`, and `reason`. If the reason is `noInspectableTargets`, the app did not expose a Chrome DevTools Protocol WebContents target, so AppShot cannot extract Electron DOM/AX content through CDP for that run.
-    When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
+    When you need a closer Codex browser runtime match, add `--browser-dom-install-bridge` once, interact with the page, then capture with `--include-browser-dom`. Read `codexBrowserDOMIntegration.browserRuntimeBridge`, especially `codexDesktopShimAvailable`, `hostAPI`, `hostChannel`, `browserRuntimeBridgeEvents`, `browserRuntimeCandidateEvents`, and `liveEventStreamAvailable`. The bridge exposes a page-local `window.codex_desktop.sendMessageToHost` / `subscribeToHostMessages` shim, but this is still not Codex's private Electron host IPC. Use `--browser-dom-clear-bridge-log` to clear the tab-local bridge log before a new run.
 15. Add `--include-screenshot --screenshot <path.png>` when a bitmap file is also needed.
 16. Use `--include-ocr` only as an explicit fallback when Accessibility text and document references are empty or the target app does not expose visible content through Accessibility.
 17. Treat hidden/offscreen text as best-effort only after permissions are fully enabled: AppShot can only report accessibility content and local document references exposed by the target app, while OCR can only report visible screenshot text.
@@ -161,6 +161,9 @@ The CLI returns JSON with:
 - `codexBrowserRuntimeProtocol.liveEventStreamAvailable`
 - `codexBrowserDOMIntegration`
 - `codexBrowserDOMIntegration.browserRuntimeBridge`
+- `codexBrowserDOMIntegration.browserRuntimeBridge.codexDesktopShimAvailable`
+- `codexBrowserDOMIntegration.browserRuntimeBridge.hostAPI`
+- `codexBrowserDOMIntegration.browserRuntimeBridge.hostChannel`
 - `codexBrowserDOMIntegration.browserRuntimeBridgeEvents`
 - `codexBrowserDOMIntegration.browserRuntimeCandidateEvents`
 - `codexBrowserDOMIntegration.browserRuntimeEvents`

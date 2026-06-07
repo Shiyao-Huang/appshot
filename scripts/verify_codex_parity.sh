@@ -144,6 +144,10 @@ for anchor in \
   "browserRuntimeBridgeEvents" \
   "browserRuntimeCandidateEvents" \
   "appshot-browser-runtime-bridge" \
+  "codexDesktopShimAvailable" \
+  "window.codex_desktop" \
+  "hostAPI" \
+  "hostChannel" \
   "Browser runtime bridge event log" \
   "codex-browser-runtime-state-adapter" \
   "codex-browser-runtime-protocol-adapter" \
@@ -267,7 +271,7 @@ for name, text, needles in [
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
     ("Codex browser runtime protocol", core + skill, ["codexBrowserRuntimeProtocol", "codexBrowserRuntimeProtocolPayload", "codex-browser-runtime-protocol-adapter", "codexBrowserRuntimeEventTypes", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "browser-sidebar-runtime-design-modifier-state", "browser-sidebar-runtime-design-scrub-changed", "browser-sidebar-runtime-open-comment-preview", "browser-sidebar-runtime-clear-comment-screenshot", "liveEventStreamAvailable"]),
-    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents"]),
+    ("Codex browser DOM integration", core + cli + server + skill, ["codexBrowserDOMIntegration", "codexBrowserDOMIntegrationPayload", "codex-browser-dom-integration", "browser-apple-events-dom-probe", "includeBrowserDOM", "browserDOMFixture", "browserRuntimeEvents", "localBrowserRuntimeEvents", "browser-sidebar-runtime-image-drag-started", "browser-sidebar-runtime-image-drag-ended", "sourceUrl", "browser-sidebar-runtime-open-design-editor", "browser-sidebar-runtime-open-design-editor-at-point", "browser-sidebar-runtime-create-comment-at-point", "browser-sidebar-runtime-update-anchor", "anchorState", "designEditorState", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "appshot-browser-runtime-bridge", "browserRuntimeBridge", "browserRuntimeBridgeEvents", "browserRuntimeCandidateEvents", "window.codex_desktop", "codexDesktopShimAvailable", "hostAPI", "hostChannel"]),
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
     ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
@@ -601,6 +605,12 @@ if dom_integration.get("available") is not True:
 bridge = dom_integration.get("browserRuntimeBridge", {})
 if bridge.get("source") != "appshot-browser-runtime-bridge":
     raise SystemExit("browser DOM bridge fixture did not preserve bridge source")
+if bridge.get("codexDesktopShimAvailable") is not True:
+    raise SystemExit("browser DOM bridge fixture did not expose Codex desktop shim availability")
+if bridge.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
+    raise SystemExit("browser DOM bridge fixture did not preserve Codex host channel")
+if sorted(bridge.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
+    raise SystemExit("browser DOM bridge fixture did not expose Codex host API names")
 if dom_integration.get("liveEventStreamAvailable") is not True:
     raise SystemExit("browser DOM bridge fixture should report liveEventStreamAvailable")
 if dom_integration.get("browserRuntimeBridgeEventCount") != 1:
@@ -633,6 +643,11 @@ if len(dom_browser_payload.get("localBrowserRuntimeEvents", [])) != len(expected
     raise SystemExit("browser DOM runtime events were not mirrored into codexBrowserPayload")
 if dom_browser_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEvent") is not True:
     raise SystemExit("browser DOM bridge event was not first in codexBrowserPayload runtime events")
+dom_metadata_bridge = dom_browser_payload.get("localBrowserCommentMetadata", {}).get("browserDOMIntegration", {})
+if dom_metadata_bridge.get("codexDesktopShimAvailable") is not True:
+    raise SystemExit("browser DOM payload metadata did not summarize Codex desktop shim availability")
+if sorted(dom_metadata_bridge.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
+    raise SystemExit("browser DOM payload metadata did not summarize Codex host API names")
 if dom_browser_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("browser DOM bridge availability was not mirrored into codexBrowserPayload runtime protocol")
 dom_context = dom_browser_payload.get("localBrowserContext", {})
@@ -778,6 +793,13 @@ if mcp_dom_integration.get("format") != "codex-browser-dom-integration":
     raise SystemExit("MCP DOM fixture did not return codex browser DOM integration")
 if mcp_dom_integration.get("browserRuntimeBridgeEventCount") != 1:
     raise SystemExit("MCP DOM fixture did not preserve bridge events")
+bridge = mcp_dom_integration.get("browserRuntimeBridge", {})
+if bridge.get("codexDesktopShimAvailable") is not True:
+    raise SystemExit("MCP DOM fixture did not expose Codex desktop shim availability")
+if bridge.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
+    raise SystemExit("MCP DOM fixture did not preserve Codex host channel")
+if sorted(bridge.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
+    raise SystemExit("MCP DOM fixture did not expose Codex host API names")
 if mcp_dom_integration.get("browserRuntimeCandidateEventCount") != 22:
     raise SystemExit("MCP DOM fixture did not preserve candidate event set")
 if mcp_dom_integration.get("liveEventStreamAvailable") is not True:
@@ -792,6 +814,9 @@ if len(mcp_dom_payload.get("localBrowserRuntimeEvents", [])) != 23:
     raise SystemExit("MCP DOM fixture did not mirror bridge plus the full Codex runtime candidate event set")
 if mcp_dom_payload.get("localBrowserRuntimeEvents", [{}])[0].get("bridgeEvent") is not True:
     raise SystemExit("MCP DOM fixture did not put bridge event into payload")
+metadata_bridge = mcp_dom_payload.get("localBrowserCommentMetadata", {}).get("browserDOMIntegration", {})
+if metadata_bridge.get("codexDesktopShimAvailable") is not True:
+    raise SystemExit("MCP DOM payload metadata did not summarize Codex desktop shim availability")
 if mcp_dom_payload.get("localBrowserRuntimeProtocol", {}).get("liveEventStreamAvailable") is not True:
     raise SystemExit("MCP DOM fixture did not mirror liveEventStreamAvailable into payload protocol")
 mcp_dom_context = mcp_dom_payload.get("localBrowserContext", {})
