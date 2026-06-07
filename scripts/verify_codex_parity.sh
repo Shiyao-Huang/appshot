@@ -256,12 +256,12 @@ for name, text, pattern in [
         raise SystemExit(f"{name} is not aligned to {expected}")
 
 for name, text, needles in [
-    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM", "browserDOMInstallBridge", "Browser Bridge"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout"]),
+    ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "appShotCaptureRequestNotificationName", "appShotCaptureRequestCacheTrigger", "handleAppCaptureRequest", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM", "browserDOMInstallBridge", "Browser Bridge"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--activate-target", "--no-activate-target", "--request-app-capture", "--app-capture-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
-    ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetWindowMatch", "matchingAXWindowResult", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
+    ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
@@ -271,7 +271,7 @@ for name, text, needles in [
     ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
     ("Electron accessibility unlock", core + parity + skill, ["enableElectronAccessibility", "electronAccessibility", "AXManualAccessibility", "AXEnhancedUserInterface", "enhancedUserInterface", "Electron/VS Code AX unlock"]),
-    ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "maxDepth: 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
+    ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
     ("QA capture checks", qa, ["--expect-ax", "--expect-visible", "--expect-ocr", "--expect-hierarchy", "screenshot captured", "screenshot matches target window", "screenshot size matches window bounds", "visible text available", "accessibility root is target window", "hierarchy contains"]),
@@ -287,6 +287,7 @@ PY
 STATUS_JSON="$(mktemp)"
 CODEX_APPS_JSON="$(mktemp)"
 CAPTURE_JSON="$(mktemp)"
+APP_REQUEST_JSON="$(mktemp)"
 POLICY_JSON="$(mktemp)"
 RUNTIME_JSON="$(mktemp)"
 DOM_JSON="$(mktemp)"
@@ -298,12 +299,13 @@ RUN_DIR="$(mktemp -d)"
 POLICY_SCREENSHOT="$RUN_DIR/policy.png"
 MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
 MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
-trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
 
 log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" codex-apps-status --pretty >"$CODEX_APPS_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --request-app-capture --app-capture-timeout 0.1 --pretty >"$APP_REQUEST_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-editor-mode design --browser-original-view-enabled --browser-design-modifier-pressed --browser-tweaks-editor-open --browser-active-design-change-json '{"id":"verifier-design","declarations":[]}' --pretty >"$RUNTIME_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-dom-fixture-json '{"pageUrl":"https://example.test/page","title":"Fixture Page","viewportSize":{"width":800,"height":600},"devicePixelRatio":2,"runtimeBridge":{"installed":true,"liveEventStreamAvailable":true,"version":"0.1.12","source":"appshot-browser-runtime-bridge","eventCount":1,"events":[{"type":"browser-sidebar-runtime-open-editor","source":"appshot-browser-runtime-bridge","bridgeEvent":true,"candidate":false,"anchorState":{"anchor":{"selector":"button.cta"}}}]},"images":[{"sourceUrl":"https://example.test/hero.png","alt":"Hero","selector":"img.hero","rect":{"x":10,"y":20,"width":300,"height":200},"naturalSize":{"width":600,"height":400}}],"designTargets":[{"selector":"button.cta","role":"button","text":"Buy","rect":{"x":50,"y":80,"width":120,"height":44}}]}' --pretty >"$DOM_JSON")
@@ -311,19 +313,20 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --include-electron-debugging --electron-debugging-timeout 0.5 --pretty >"$ELECTRON_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
 
-"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
 status = json.load(open(sys.argv[1]))
 codex_apps = json.load(open(sys.argv[2]))
 capture = json.load(open(sys.argv[3]))
-policy = json.load(open(sys.argv[4]))
-runtime = json.load(open(sys.argv[5]))
-dom = json.load(open(sys.argv[6]))
-debug_dom = json.load(open(sys.argv[7]))
-electron = json.load(open(sys.argv[8]))
-codex_text = open(sys.argv[9]).read()
+app_request = json.load(open(sys.argv[4]))
+policy = json.load(open(sys.argv[5]))
+runtime = json.load(open(sys.argv[6]))
+dom = json.load(open(sys.argv[7]))
+debug_dom = json.load(open(sys.argv[8]))
+electron = json.load(open(sys.argv[9]))
+codex_text = open(sys.argv[10]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -340,6 +343,18 @@ require_keys(
     capture,
     ["schemaVersion", "permissions", "codexAppsStatus", "frontmostApplication", "currentApplication", "targetApplication", "windows", "accessibility", "codex", "codexBrowserSettings", "codexBrowserPayload", "codexBrowserRuntimeState", "codexBrowserRuntimeProtocol"],
 )
+require_keys(
+    "app capture request",
+    app_request,
+    ["schemaVersion", "appCaptureRequest", "captureCache", "accessibility", "codex"],
+)
+require_keys(
+    "app capture request diagnostics",
+    app_request.get("appCaptureRequest", {}),
+    ["requested", "available", "source", "requestID", "trigger", "timeoutSeconds", "reason"],
+)
+if app_request["appCaptureRequest"].get("requested") is not True:
+    raise SystemExit("appCaptureRequest did not record a requested GUI capture")
 
 require_keys(
     "CLI codex apps status",
@@ -374,7 +389,11 @@ for name, payload in [("status", status.get("codexAppsStatus", {})), ("capture",
 
 if isinstance(capture.get("primaryWindow"), dict):
     require_keys("capture primaryWindow", capture["primaryWindow"], ["windowID", "windowNumber", "ownerPID", "bounds", "isOnScreen"])
-    require_keys("capture", capture, ["frontmostWindow", "currentWindow"])
+    require_keys("capture", capture, ["frontmostWindow", "currentWindow", "targetActivation"])
+    target_activation = capture.get("targetActivation", {})
+    require_keys("capture targetActivation", target_activation, ["requested"])
+    if target_activation.get("requested") is True:
+        require_keys("capture targetActivation", target_activation, ["appActivateResult", "frontmostBefore", "frontmostAfter", "frontmostMatchedTarget"])
 
 accessibility = capture.get("accessibility", {})
 require_keys("capture accessibility", accessibility, ["trusted", "rootSource", "root", "text", "textLineCount", "visibleText", "visibleTextLineCount", "electronAccessibility"])
@@ -382,13 +401,19 @@ if accessibility.get("rootSource") not in {"targetWindow", "focusedWindow", "app
     raise SystemExit(f"unexpected accessibility.rootSource: {accessibility.get('rootSource')!r}")
 if "targetWindow" in accessibility:
     target_window_match = accessibility.get("targetWindowMatch", {})
-    require_keys("capture targetWindowMatch", target_window_match, ["matched", "candidateCount", "bestScore", "topCandidates", "focusedWindowResult", "mainWindowResult", "recoverySteps"])
+    require_keys("capture targetWindowMatch", target_window_match, ["matched", "candidateCount", "axWindowExposure", "bestScore", "topCandidates", "focusedWindowResult", "mainWindowResult", "recoverySteps"])
     if not isinstance(target_window_match.get("matched"), bool):
         raise SystemExit("targetWindowMatch matched was not a boolean")
     if not isinstance(target_window_match.get("candidateCount"), int):
         raise SystemExit("targetWindowMatch candidateCount was not an integer")
     if not isinstance(target_window_match.get("topCandidates"), list):
         raise SystemExit("targetWindowMatch topCandidates was not a list")
+    ax_window_exposure = target_window_match.get("axWindowExposure", {})
+    require_keys("capture axWindowExposure", ax_window_exposure, ["hasAXWindowRoles", "roleCounts", "suspectedSelfReferentialAXWindows"])
+    if not isinstance(ax_window_exposure.get("hasAXWindowRoles"), bool):
+        raise SystemExit("axWindowExposure hasAXWindowRoles was not a boolean")
+    if not isinstance(ax_window_exposure.get("roleCounts"), dict):
+        raise SystemExit("axWindowExposure roleCounts was not an object")
 if accessibility.get("trusted") and accessibility.get("visibleTextLineCount", 0) <= 0:
     raise SystemExit("trusted accessibility capture has no visibleText lines")
 electron_accessibility = accessibility.get("electronAccessibility", {})

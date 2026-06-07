@@ -66,9 +66,12 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 60 --accessibility-timeout 30
    ```
-11. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`.
+11. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`. Explicit target captures activate the target by default to match Codex's front-window behavior; add `--no-activate-target` only when focus must not change. If CLI/MCP frontmost state is unreliable or reports `loginwindow`, prefer the GUI App path while AppShot.app is running:
+   ```sh
+   "$APPSHOT_BIN" capture --request-app-capture --app-capture-timeout 3 --pretty --max-depth 60 --accessibility-timeout 20
+   ```
 12. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `codexAppsStatus.codexAppsReady`, `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, `accessibility.electronAccessibility`, and `accessibility.documentReferences[].textPreview`.
-    If `accessibility.rootSource` starts with `targetWindowUnmatched`, do not treat the app-level tree as a successful capture of the requested window. Read `accessibility.targetWindowMatch` for candidate scores and recovery steps, then retry with the target app/window active, enable Electron/VS Code screen reader accessibility support when appropriate, or use screenshot/OCR as fallback evidence.
+    If `accessibility.rootSource` starts with `targetWindowUnmatched`, do not treat the app-level tree as a successful capture of the requested window. Read `appCaptureRequest`, `targetActivation`, and `accessibility.targetWindowMatch`, especially `axWindowExposure.roleCounts` and `axWindowExposure.suspectedSelfReferentialAXWindows`, then retry through `--request-app-capture`, with the target app/window active, enable Electron/VS Code screen reader accessibility support when appropriate, or use screenshot/OCR as fallback evidence. For Electron helper/renderer investigation, explicit `--pid` can probe non-`NSRunningApplication` PIDs and will report `auxiliaryProcessCapture`.
     When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`. For browser DOM captures, inspect exact Codex-shaped values such as `localBrowserContext.pageUrl`, `frameUrl`, `targetSelector`, `targetImmediateText`, `targetPath`, `localBrowserCommentMetadata.markerViewportPoint`, and `localBrowserDesignChange.group`.
     For Codex browser runtime-state parity, also read `codexBrowserRuntimeState.interactionMode`, `annotationEditorMode`, `isOriginalViewEnabled`, `isDesignModifierPressed`, `isTweaksEditorOpen`, `activeDesignChange`, `viewportScale`, and `zoomPercent`.
     For Codex browser runtime-protocol parity, read `codexBrowserRuntimeProtocol.eventTypes`, `codexBrowserRuntimeProtocol.channel`, `codexBrowserRuntimeProtocol.liveEventStreamAvailable`, and `codexBrowserPayload.localBrowserRuntimeProtocol`.
@@ -121,6 +124,11 @@ The CLI returns JSON with:
 - `frontmostWindow`
 - `currentWindow`
 - `windows`
+- `targetActivation`
+- `targetActivation.frontmostMatchedTarget`
+- `appCaptureRequest`
+- `appCaptureRequest.reason`
+- `auxiliaryProcessCapture`
 - `captureCache`
 - `codexBrowserSettings`
 - `codexBrowserSettings.browser-annotation-screenshots-mode`
@@ -172,6 +180,8 @@ The CLI returns JSON with:
 - `accessibility.root`
 - `accessibility.rootSource`
 - `accessibility.targetWindowMatch`
+- `accessibility.targetWindowMatch.axWindowExposure`
+- `accessibility.targetWindowMatch.axWindowExposure.suspectedSelfReferentialAXWindows`
 - `accessibility.focusedElement`
 - `accessibility.electronAccessibility`
 - `accessibility.electronAccessibility.attempts`

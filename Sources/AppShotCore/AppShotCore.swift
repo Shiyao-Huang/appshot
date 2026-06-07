@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
 import Vision
 
@@ -44,6 +45,11 @@ public let codexBrowserRuntimeEventTypes = [
     "browser-sidebar-runtime-sync",
     "browser-sidebar-runtime-update-anchor"
 ]
+public let appShotCaptureRequestNotificationName = "com.qppshot.AppShot.CaptureRequest"
+
+public func appShotCaptureRequestCacheTrigger(_ requestID: String) -> String {
+    "app-request:\(requestID)"
+}
 
 public struct AppShotCaptureOptions {
     public var screenshotPath: String?
@@ -72,6 +78,9 @@ public struct AppShotCaptureOptions {
     public var maxOCRObservations: Int
     public var accessibilityTimeoutSeconds: TimeInterval
     public var screenshotTimeoutSeconds: TimeInterval
+    public var activateTarget: Bool
+    public var requestAppCapture: Bool
+    public var appCaptureTimeoutSeconds: TimeInterval
     public var preferRecentCache: Bool
     public var writeCache: Bool
     public var cacheMaxAgeSeconds: TimeInterval
@@ -107,6 +116,9 @@ public struct AppShotCaptureOptions {
         maxOCRObservations: Int = 240,
         accessibilityTimeoutSeconds: TimeInterval = 20.0,
         screenshotTimeoutSeconds: TimeInterval = 3.0,
+        activateTarget: Bool = true,
+        requestAppCapture: Bool = false,
+        appCaptureTimeoutSeconds: TimeInterval = 2.0,
         preferRecentCache: Bool = true,
         writeCache: Bool = false,
         cacheMaxAgeSeconds: TimeInterval = 15.0,
@@ -141,6 +153,9 @@ public struct AppShotCaptureOptions {
         self.maxOCRObservations = maxOCRObservations
         self.accessibilityTimeoutSeconds = accessibilityTimeoutSeconds
         self.screenshotTimeoutSeconds = screenshotTimeoutSeconds
+        self.activateTarget = activateTarget
+        self.requestAppCapture = requestAppCapture
+        self.appCaptureTimeoutSeconds = appCaptureTimeoutSeconds
         self.preferRecentCache = preferRecentCache
         self.writeCache = writeCache
         self.cacheMaxAgeSeconds = cacheMaxAgeSeconds
@@ -190,17 +205,41 @@ public enum AppShotCore {
             return cachedPayload
         }
 
+        let appCaptureRequest = options.requestAppCapture && !options.writeCache
+            ? requestGUIAppCapture(options: options)
+            : nil
+        if let payload = appCaptureRequest?.payload {
+            return payload
+        }
+
+        if let processIdentifier = options.targetProcessIdentifier,
+           options.targetWindowID == nil,
+           options.targetBundleIdentifier == nil,
+           !NSWorkspace.shared.runningApplications.contains(where: { $0.processIdentifier == processIdentifier }) {
+            return try captureAuxiliaryProcess(
+                pid: processIdentifier,
+                options: options,
+                appCaptureRequest: appCaptureRequest
+            )
+        }
+
         let target = try resolveCaptureTarget(
             windowID: options.targetWindowID,
             processIdentifier: options.targetProcessIdentifier,
             bundleIdentifier: options.targetBundleIdentifier
         )
         let app = target.application
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
         let pid = app.processIdentifier
         let windows = target.windows
         let primaryWindow = target.window ?? windows.first
         let windowID = primaryWindow?["windowID"] as? UInt32
+        let targetActivation = options.activateTarget
+            ? activateCaptureTarget(application: app, window: primaryWindow)
+            : [
+                "requested": false,
+                "reason": "disabled"
+            ] as JSONObject
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
         let browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode)
         let includeBrowserAnnotationScreenshot = browserAnnotationScreenshotsMode == browserAnnotationScreenshotsModeAlways
         let screenshot = try maybeCaptureScreenshot(
@@ -219,6 +258,7 @@ public enum AppShotCore {
             "frontmostApplication": appInfo(frontmostApp ?? app),
             "currentApplication": appInfo(app),
             "targetApplication": appInfo(app),
+            "targetActivation": targetActivation,
             "codexBrowserSettings": codexBrowserSettingsPayload(annotationScreenshotsMode: browserAnnotationScreenshotsMode),
             "windows": windows,
             "accessibility": accessibilitySnapshot(
@@ -229,6 +269,9 @@ public enum AppShotCore {
                 timeoutSeconds: options.accessibilityTimeoutSeconds
             )
         ]
+        if let appCaptureRequest {
+            payload["appCaptureRequest"] = appCaptureRequest.diagnostics
+        }
 
         if let targetSelection = target.selection {
             payload["targetSelection"] = targetSelection
@@ -285,6 +328,88 @@ public enum AppShotCore {
             }
             payload["codexBrowserDOMIntegration"] = domIntegration
         }
+        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: browserAnnotationScreenshotsMode)
+        if options.writeCache {
+            payload = try payloadByWritingCaptureCache(
+                payload,
+                trigger: options.cacheTrigger ?? "capture",
+                maxAgeSeconds: options.cacheMaxAgeSeconds
+            )
+        } else {
+            payload["captureCache"] = captureCacheMetadata(
+                hit: false,
+                trigger: nil,
+                writtenAt: nil,
+                ageSeconds: nil,
+                maxAgeSeconds: options.cacheMaxAgeSeconds,
+                reason: shouldReadRecentCaptureCache(options) ? "miss" : cacheBypassReason(options),
+                servedAt: nil
+            )
+        }
+        payload["codex"] = codexSummaryPayload(from: payload)
+        return payload
+    }
+
+    private static func captureAuxiliaryProcess(
+        pid: pid_t,
+        options: AppShotCaptureOptions,
+        appCaptureRequest: GUIAppCaptureRequestResult?
+    ) throws -> JSONObject {
+        let permissionPayload = permissions(prompt: false)
+        let processPayload = processInfo(pid: pid)
+        let browserAnnotationScreenshotsMode = normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode)
+        var payload: JSONObject = [
+            "schemaVersion": 1,
+            "capturedAt": ISO8601DateFormatter().string(from: Date()),
+            "permissions": permissionPayload,
+            "codexAppsStatus": codexAppsStatus(permissions: permissionPayload),
+            "frontmostApplication": NSWorkspace.shared.frontmostApplication.map { appInfo($0) } ?? NSNull(),
+            "currentApplication": processPayload,
+            "targetApplication": processPayload,
+            "targetSelection": [
+                "type": "pid",
+                "pid": pid
+            ],
+            "targetActivation": [
+                "requested": false,
+                "reason": "auxiliaryProcess"
+            ],
+            "auxiliaryProcessCapture": [
+                "requested": true,
+                "reason": "pidNotNSRunningApplication",
+                "process": processPayload
+            ],
+            "codexBrowserSettings": codexBrowserSettingsPayload(annotationScreenshotsMode: browserAnnotationScreenshotsMode),
+            "windows": [],
+            "primaryWindow": NSNull(),
+            "currentWindow": NSNull(),
+            "frontmostWindow": NSNull(),
+            "accessibility": accessibilitySnapshot(
+                pid: pid,
+                targetWindow: nil,
+                maxDepth: options.maxDepth,
+                maxChildren: options.maxChildren,
+                timeoutSeconds: options.accessibilityTimeoutSeconds
+            )
+        ]
+        if let appCaptureRequest {
+            payload["appCaptureRequest"] = appCaptureRequest.diagnostics
+        }
+        if options.includeScreenshot || options.includeOCR || options.screenshotPath != nil {
+            payload["screenshot"] = [
+                "captured": false,
+                "reason": "auxiliaryProcessHasNoWindow"
+            ]
+        }
+        if options.includeOCR {
+            payload["ocr"] = ocrSnapshot(
+                screenshotPath: options.screenshotPath,
+                screenshotCaptured: false,
+                maxObservations: options.maxOCRObservations
+            )
+        }
+        payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
+        payload["codexBrowserRuntimeProtocol"] = codexBrowserRuntimeProtocolPayload(options: options)
         payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: browserAnnotationScreenshotsMode)
         if options.writeCache {
             payload = try payloadByWritingCaptureCache(
@@ -610,6 +735,120 @@ public enum AppShotCore {
         return payload
     }
 
+    private struct GUIAppCaptureRequestResult {
+        var payload: JSONObject?
+        var diagnostics: JSONObject
+    }
+
+    private static func requestGUIAppCapture(options: AppShotCaptureOptions) -> GUIAppCaptureRequestResult {
+        let requestID = UUID().uuidString
+        let trigger = appShotCaptureRequestCacheTrigger(requestID)
+        var userInfo: [String: Any] = [
+            "requestID": requestID,
+            "includeScreenshot": options.includeScreenshot,
+            "includeOCR": options.includeOCR,
+            "browserAnnotationScreenshotsMode": normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode),
+            "browserAnnotationEditorMode": normalizedBrowserAnnotationEditorMode(options.browserAnnotationEditorMode),
+            "browserDesignModifierPressed": options.browserIsDesignModifierPressed,
+            "browserOriginalViewEnabled": options.browserIsOriginalViewEnabled,
+            "browserTweaksEditorOpen": options.browserIsTweaksEditorOpen,
+            "includeBrowserDOM": options.includeBrowserDOM,
+            "browserDOMInstallBridge": options.browserDOMInstallBridge,
+            "maxDepth": options.maxDepth,
+            "maxChildren": options.maxChildren,
+            "accessibilityTimeoutSeconds": options.accessibilityTimeoutSeconds,
+            "screenshotTimeoutSeconds": options.screenshotTimeoutSeconds
+        ]
+        if let targetWindowID = options.targetWindowID {
+            userInfo["targetWindowID"] = Int(targetWindowID)
+        }
+        if let targetProcessIdentifier = options.targetProcessIdentifier {
+            userInfo["targetProcessIdentifier"] = Int(targetProcessIdentifier)
+        }
+        if let targetBundleIdentifier = options.targetBundleIdentifier {
+            userInfo["targetBundleIdentifier"] = targetBundleIdentifier
+        }
+
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name(appShotCaptureRequestNotificationName),
+            object: nil,
+            userInfo: userInfo,
+            deliverImmediately: true
+        )
+
+        let timeoutSeconds = max(0.1, options.appCaptureTimeoutSeconds)
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let entry = readCaptureCache(),
+               var payload = payloadFromGUIAppCaptureCacheEntry(
+                   entry,
+                   trigger: trigger,
+                   options: options
+               ) {
+                var diagnostics: JSONObject = [
+                    "requested": true,
+                    "available": true,
+                    "source": "AppShot.app",
+                    "requestID": requestID,
+                    "trigger": trigger,
+                    "timeoutSeconds": timeoutSeconds,
+                    "reason": "cacheWritten"
+                ]
+                diagnostics["cachePath"] = entry.url.path
+                payload["appCaptureRequest"] = diagnostics
+                return GUIAppCaptureRequestResult(payload: payload, diagnostics: diagnostics)
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        return GUIAppCaptureRequestResult(
+            payload: nil,
+            diagnostics: [
+                "requested": true,
+                "available": false,
+                "source": "AppShot.app",
+                "requestID": requestID,
+                "trigger": trigger,
+                "timeoutSeconds": timeoutSeconds,
+                "reason": "timeoutWaitingForCache"
+            ]
+        )
+    }
+
+    private static func payloadFromGUIAppCaptureCacheEntry(
+        _ entry: (payload: JSONObject, url: URL, writtenAt: Date?),
+        trigger: String,
+        options: AppShotCaptureOptions
+    ) -> JSONObject? {
+        guard let writtenAt = entry.writtenAt,
+              let metadata = entry.payload["captureCache"] as? JSONObject,
+              metadata["trigger"] as? String == trigger else {
+            return nil
+        }
+
+        let ageSeconds = Date().timeIntervalSince(writtenAt)
+        guard ageSeconds >= 0, ageSeconds <= max(options.cacheMaxAgeSeconds, options.appCaptureTimeoutSeconds + 2.0),
+              captureCacheSatisfies(options: options, payload: entry.payload) else {
+            return nil
+        }
+
+        var payload = entry.payload
+        var updatedMetadata = metadata
+        updatedMetadata["hit"] = true
+        updatedMetadata["path"] = entry.url.path
+        updatedMetadata["ageSeconds"] = roundedSeconds(ageSeconds)
+        updatedMetadata["maxAgeSeconds"] = options.cacheMaxAgeSeconds
+        updatedMetadata["reason"] = "appRequest"
+        updatedMetadata["servedAt"] = ISO8601DateFormatter().string(from: Date())
+        payload["captureCache"] = updatedMetadata
+        let mode = codexBrowserAnnotationScreenshotsMode(from: payload)
+        payload["codexBrowserSettings"] = codexBrowserSettingsPayload(annotationScreenshotsMode: mode)
+        payload["codexBrowserRuntimeState"] = codexBrowserRuntimeStatePayload(options: options)
+        payload["codexBrowserPayload"] = codexBrowserPayload(from: payload, annotationScreenshotsMode: mode)
+        payload["codex"] = codexSummaryPayload(from: payload)
+        return payload
+    }
+
     private static func captureCacheSatisfies(options: AppShotCaptureOptions, payload: JSONObject) -> Bool {
         let requestedMode = normalizedBrowserAnnotationScreenshotsMode(options.browserAnnotationScreenshotsMode)
         let payloadMode = codexBrowserAnnotationScreenshotsMode(from: payload)
@@ -887,6 +1126,58 @@ private func resolveCaptureTarget(
     return CaptureTarget(application: app, windows: windows, window: windows.first, selection: nil)
 }
 
+private func activateCaptureTarget(application: NSRunningApplication, window: JSONObject?) -> JSONObject {
+    let frontmostBefore = NSWorkspace.shared.frontmostApplication
+    let targetPID = application.processIdentifier
+    var payload: JSONObject = [
+        "requested": true,
+        "targetProcessIdentifier": targetPID,
+        "frontmostBefore": frontmostBefore.map { appInfo($0) } ?? NSNull()
+    ]
+
+    let appActivateResult = application.activate(options: [.activateIgnoringOtherApps])
+    payload["appActivateResult"] = appActivateResult
+
+    let appElement = AXUIElementCreateApplication(targetPID)
+    AXUIElementSetMessagingTimeout(appElement, 0.5)
+    let axFrontmostResult = AXUIElementSetAttributeValue(
+        appElement,
+        kAXFrontmostAttribute as CFString,
+        kCFBooleanTrue
+    )
+    payload["axFrontmostResult"] = String(describing: axFrontmostResult)
+
+    let deadline = Date().addingTimeInterval(1.0)
+    while Date() < deadline {
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID {
+            break
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    if let window {
+        let match = matchingAXWindowResult(appElement: appElement, targetWindow: window)
+        payload["axWindowMatchAfterActivation"] = match.diagnostics
+        if let element = match.element {
+            AXUIElementSetMessagingTimeout(element, 0.5)
+            let raiseResult = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+            let focusResult = AXUIElementSetAttributeValue(
+                element,
+                kAXFocusedAttribute as CFString,
+                kCFBooleanTrue
+            )
+            payload["axRaiseResult"] = String(describing: raiseResult)
+            payload["axFocusedResult"] = String(describing: focusResult)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.12))
+        }
+    }
+
+    let frontmostAfter = NSWorkspace.shared.frontmostApplication
+    payload["frontmostAfter"] = frontmostAfter.map { appInfo($0) } ?? NSNull()
+    payload["frontmostMatchedTarget"] = frontmostAfter?.processIdentifier == targetPID
+    return payload
+}
+
 private func application(from candidate: JSONObject) -> NSRunningApplication? {
     guard let appPayload = candidate["application"] as? JSONObject,
           let pid = appPayload["processIdentifier"] as? pid_t else {
@@ -904,6 +1195,31 @@ public func appInfo(_ app: NSRunningApplication) -> JSONObject {
         "processIdentifier": app.processIdentifier,
         "activationPolicy": app.activationPolicy.rawValue
     ]
+}
+
+private func processInfo(pid: pid_t) -> JSONObject {
+    let executablePath = processExecutablePath(pid: pid) ?? ""
+    let localizedName = executablePath.isEmpty
+        ? "pid \(pid)"
+        : URL(fileURLWithPath: executablePath).lastPathComponent
+    return [
+        "localizedName": localizedName,
+        "bundleIdentifier": "",
+        "bundleURL": "",
+        "executableURL": executablePath,
+        "processIdentifier": pid,
+        "activationPolicy": NSApplication.ActivationPolicy.prohibited.rawValue
+    ]
+}
+
+private func processExecutablePath(pid: pid_t) -> String? {
+    var buffer = [CChar](repeating: 0, count: 4096)
+    let result = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+    guard result > 0 else {
+        return nil
+    }
+    let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+    return String(decoding: bytes, as: UTF8.self)
 }
 
 public func windowsForPID(_ pid: pid_t) -> [JSONObject] {
@@ -1817,12 +2133,14 @@ private func matchingAXWindowResult(
     let targetWindowNumber = numberValue(targetWindow["windowNumber"]) ?? numberValue(targetWindow["windowID"])
     var best: (score: Double, element: AXUIElement, diagnostics: JSONObject)?
     var scoredCandidates: [JSONObject] = []
+    var roleCounts: [String: Int] = [:]
 
     for candidate in candidates {
         let window = candidate.element
         var score = 0.0
         var reasons: [String] = []
         let role = copyAXValue(window, kAXRoleAttribute) as? String ?? ""
+        roleCounts[role.isEmpty ? "unknown" : role, default: 0] += 1
         if role == "AXWindow" {
             score += 20
             reasons.append("role")
@@ -1901,9 +2219,18 @@ private func matchingAXWindowResult(
         (($0["score"] as? Double) ?? 0) > (($1["score"] as? Double) ?? 0)
     }
     let matched = (best?.score ?? 0) > 0
+    let hasAXWindowRoles = (roleCounts["AXWindow"] ?? 0) > 0
+    let suspectedSelfReferentialAXWindows = !hasAXWindowRoles
+        && candidates.count > 0
+        && ((roleCounts["AXApplication"] ?? 0) > 0 || (roleCounts["unknown"] ?? 0) > 0)
     var diagnostics: JSONObject = [
         "matched": matched,
         "candidateCount": candidates.count,
+        "axWindowExposure": [
+            "hasAXWindowRoles": hasAXWindowRoles,
+            "roleCounts": roleCounts,
+            "suspectedSelfReferentialAXWindows": suspectedSelfReferentialAXWindows
+        ],
         "bestScore": best?.score ?? 0,
         "bestCandidate": best?.diagnostics ?? [:],
         "topCandidates": Array(scoredCandidates.prefix(8)),

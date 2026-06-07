@@ -106,6 +106,9 @@ function tools() {
           windowID: { type: "number" },
           pid: { type: "number" },
           bundleID: { type: "string" },
+          activateTarget: { type: "boolean", default: true },
+          requestAppCapture: { type: "boolean", default: false },
+          appCaptureTimeout: { type: "number", default: 2 },
           format: { type: "string", enum: ["json", "codex"], default: "json" },
           maxDepth: { type: "number", default: 60 },
           maxChildren: { type: "number", default: 240 },
@@ -189,6 +192,9 @@ function callTool(params = {}) {
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
     if (args.pid != null) cliArgs.push("--pid", String(args.pid));
     if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
+    if (args.activateTarget === false) cliArgs.push("--no-activate-target");
+    if (args.requestAppCapture) cliArgs.push("--request-app-capture");
+    if (args.appCaptureTimeout != null) cliArgs.push("--app-capture-timeout", String(args.appCaptureTimeout));
     if (args.useRecentCache === false || args.preferRecentCache === false) cliArgs.push("--no-cache");
     if (args.cacheMaxAge != null) cliArgs.push("--cache-max-age", String(args.cacheMaxAge));
     if (args.writeCache) cliArgs.push("--write-cache");

@@ -32,6 +32,9 @@ struct CLIOptions {
     var maxOCRObservations = 240
     var accessibilityTimeoutSeconds = 20.0
     var screenshotTimeoutSeconds = 3.0
+    var activateTarget = true
+    var requestAppCapture = false
+    var appCaptureTimeoutSeconds = 2.0
     var preferRecentCache = true
     var writeCache = false
     var cacheMaxAgeSeconds = 15.0
@@ -83,6 +86,9 @@ struct AppShotCLI {
                     maxOCRObservations: options.maxOCRObservations,
                     accessibilityTimeoutSeconds: options.accessibilityTimeoutSeconds,
                     screenshotTimeoutSeconds: options.screenshotTimeoutSeconds,
+                    activateTarget: options.activateTarget,
+                    requestAppCapture: options.requestAppCapture,
+                    appCaptureTimeoutSeconds: options.appCaptureTimeoutSeconds,
                     preferRecentCache: options.preferRecentCache,
                     writeCache: options.writeCache,
                     cacheMaxAgeSeconds: options.cacheMaxAgeSeconds,
@@ -208,6 +214,14 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.accessibilityTimeoutSeconds = Double(try nextValue()) ?? options.accessibilityTimeoutSeconds
         case "--screenshot-timeout":
             options.screenshotTimeoutSeconds = Double(try nextValue()) ?? options.screenshotTimeoutSeconds
+        case "--activate-target":
+            options.activateTarget = true
+        case "--no-activate-target":
+            options.activateTarget = false
+        case "--request-app-capture":
+            options.requestAppCapture = true
+        case "--app-capture-timeout":
+            options.appCaptureTimeoutSeconds = Double(try nextValue()) ?? options.appCaptureTimeoutSeconds
         case "--ignore-cache", "--no-cache", "--fresh":
             options.preferRecentCache = false
         case "--write-cache":
@@ -281,7 +295,7 @@ func printHelp() {
     Usage:
       appshot status [--prompt] [--pretty]
       appshot codex-apps-status [--prompt] [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-electron-debugging] [--electron-debugging-timeout seconds] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--activate-target|--no-activate-target] [--request-app-capture] [--app-capture-timeout seconds] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-electron-debugging] [--electron-debugging-timeout seconds] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -291,6 +305,8 @@ func printHelp() {
       Use --ignore-cache, --no-cache, or --fresh to force a fresh frontmost-window capture.
       AppShot.app writes the shortcut cache when both left and right Option keys are pressed together.
       Use list-windows first. Then pass the chosen windowID, pid, or bundleID to capture.
+      Target activation is enabled by default so explicit captures more closely match Codex's front-window AppShot behavior.
+      --request-app-capture asks the running GUI AppShot.app to perform the capture and waits for its shared cache before falling back to direct CLI capture.
       Accessibility permission is required for rich text/UI trees.
       Screen Recording permission is required for screenshots.
       --browser-annotation-screenshots-mode always captures a screenshot for codexBrowserPayload by default.

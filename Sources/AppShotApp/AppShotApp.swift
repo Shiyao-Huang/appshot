@@ -1,4 +1,4 @@
-import AppKit
+@preconcurrency import AppKit
 #if canImport(AppShotCore)
 import AppShotCore
 #endif
@@ -67,6 +67,7 @@ final class AppShotModel: ObservableObject {
     private static let includeBrowserDOMKey = "AppShot.includeBrowserDOM"
     private static let browserDOMInstallBridgeKey = "AppShot.browserDOMInstallBridge"
     private let optionShortcutMonitor = OptionPairShortcutMonitor()
+    private var appCaptureRequestObserver: NSObjectProtocol?
 
     @Published var state: String = "checking"
     @Published var accessibility = false
@@ -184,6 +185,13 @@ final class AppShotModel: ObservableObject {
             }
         }
         configureGlobalShortcut()
+        configureAppCaptureRequestObserver()
+    }
+
+    deinit {
+        if let appCaptureRequestObserver {
+            DistributedNotificationCenter.default().removeObserver(appCaptureRequestObserver)
+        }
     }
 
     var globalShortcutLabel: String {
@@ -342,6 +350,19 @@ final class AppShotModel: ObservableObject {
         }
     }
 
+    private func configureAppCaptureRequestObserver() {
+        appCaptureRequestObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name(appShotCaptureRequestNotificationName),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let request = Self.stringDictionary(from: notification.userInfo)
+            Task { @MainActor in
+                self?.handleAppCaptureRequest(request)
+            }
+        }
+    }
+
     private func handleGlobalShortcut() {
         guard isGlobalShortcutEnabled, !isCapturing else {
             return
@@ -352,6 +373,36 @@ final class AppShotModel: ObservableObject {
             preferRecentCache: false,
             writeCache: true,
             cacheTrigger: "left-right-option"
+        )
+    }
+
+    private func handleAppCaptureRequest(_ userInfo: [String: String]) {
+        guard !isCapturing,
+              let requestID = userInfo["requestID"],
+              !requestID.isEmpty else {
+            return
+        }
+
+        capture(
+            includeScreenshot: Self.boolValue(userInfo["includeScreenshot"], default: true),
+            includeOCR: Self.boolValue(userInfo["includeOCR"], default: false),
+            preferRecentCache: false,
+            writeCache: true,
+            cacheTrigger: appShotCaptureRequestCacheTrigger(requestID),
+            targetWindowID: Self.uint32Value(userInfo["targetWindowID"]),
+            targetProcessIdentifier: Self.pidValue(userInfo["targetProcessIdentifier"]),
+            targetBundleIdentifier: Self.stringValue(userInfo["targetBundleIdentifier"]),
+            maxDepth: Self.intValue(userInfo["maxDepth"], default: 60),
+            maxChildren: Self.intValue(userInfo["maxChildren"], default: 240),
+            accessibilityTimeoutSeconds: Self.doubleValue(userInfo["accessibilityTimeoutSeconds"], default: 20.0),
+            screenshotTimeoutSeconds: Self.doubleValue(userInfo["screenshotTimeoutSeconds"], default: 3.0),
+            browserAnnotationScreenshotsModeOverride: Self.stringValue(userInfo["browserAnnotationScreenshotsMode"]),
+            browserAnnotationEditorModeOverride: Self.stringValue(userInfo["browserAnnotationEditorMode"]),
+            browserDesignModifierPressedOverride: Self.boolOptionalValue(userInfo["browserDesignModifierPressed"]),
+            browserOriginalViewEnabledOverride: Self.boolOptionalValue(userInfo["browserOriginalViewEnabled"]),
+            browserTweaksEditorOpenOverride: Self.boolOptionalValue(userInfo["browserTweaksEditorOpen"]),
+            includeBrowserDOMOverride: Self.boolOptionalValue(userInfo["includeBrowserDOM"]),
+            browserDOMInstallBridgeOverride: Self.boolOptionalValue(userInfo["browserDOMInstallBridge"])
         )
     }
 
@@ -390,20 +441,34 @@ final class AppShotModel: ObservableObject {
         includeOCR: Bool = false,
         preferRecentCache: Bool = false,
         writeCache: Bool = false,
-        cacheTrigger: String? = nil
+        cacheTrigger: String? = nil,
+        targetWindowID: UInt32? = nil,
+        targetProcessIdentifier: pid_t? = nil,
+        targetBundleIdentifier: String? = nil,
+        maxDepth: Int = 60,
+        maxChildren: Int = 240,
+        accessibilityTimeoutSeconds: TimeInterval = 20.0,
+        screenshotTimeoutSeconds: TimeInterval = 3.0,
+        browserAnnotationScreenshotsModeOverride: String? = nil,
+        browserAnnotationEditorModeOverride: String? = nil,
+        browserDesignModifierPressedOverride: Bool? = nil,
+        browserOriginalViewEnabledOverride: Bool? = nil,
+        browserTweaksEditorOpenOverride: Bool? = nil,
+        includeBrowserDOMOverride: Bool? = nil,
+        browserDOMInstallBridgeOverride: Bool? = nil
     ) {
         guard !isCapturing else {
             return
         }
         captureRequestSerial += 1
         let requestID = captureRequestSerial
-        let browserAnnotationScreenshotsMode = self.browserAnnotationScreenshotsMode
-        let browserAnnotationEditorMode = self.browserAnnotationEditorMode
-        let browserOriginalViewEnabled = self.browserOriginalViewEnabled
-        let browserDesignModifierPressed = self.browserDesignModifierPressed
-        let browserTweaksEditorOpen = self.browserTweaksEditorOpen
-        let includeBrowserDOM = self.includeBrowserDOM
-        let browserDOMInstallBridge = self.browserDOMInstallBridge
+        let browserAnnotationScreenshotsMode = browserAnnotationScreenshotsModeOverride ?? self.browserAnnotationScreenshotsMode
+        let browserAnnotationEditorMode = browserAnnotationEditorModeOverride ?? self.browserAnnotationEditorMode
+        let browserOriginalViewEnabled = browserOriginalViewEnabledOverride ?? self.browserOriginalViewEnabled
+        let browserDesignModifierPressed = browserDesignModifierPressedOverride ?? self.browserDesignModifierPressed
+        let browserTweaksEditorOpen = browserTweaksEditorOpenOverride ?? self.browserTweaksEditorOpen
+        let includeBrowserDOM = includeBrowserDOMOverride ?? self.includeBrowserDOM
+        let browserDOMInstallBridge = browserDOMInstallBridgeOverride ?? self.browserDOMInstallBridge
         isCapturing = true
         lastError = nil
 
@@ -419,15 +484,18 @@ final class AppShotModel: ObservableObject {
                     browserIsTweaksEditorOpen: browserTweaksEditorOpen,
                     includeBrowserDOM: includeBrowserDOM,
                     browserDOMInstallBridge: browserDOMInstallBridge,
-                    maxDepth: 60,
-                    maxChildren: 240,
+                    maxDepth: maxDepth,
+                    maxChildren: maxChildren,
                     includeOCR: includeOCR,
-                    accessibilityTimeoutSeconds: 20.0,
-                    screenshotTimeoutSeconds: 3.0,
+                    accessibilityTimeoutSeconds: accessibilityTimeoutSeconds,
+                    screenshotTimeoutSeconds: screenshotTimeoutSeconds,
                     preferRecentCache: preferRecentCache,
                     writeCache: writeCache,
                     cacheMaxAgeSeconds: 15.0,
-                    cacheTrigger: cacheTrigger
+                    cacheTrigger: cacheTrigger,
+                    targetWindowID: targetWindowID,
+                    targetProcessIdentifier: targetProcessIdentifier,
+                    targetBundleIdentifier: targetBundleIdentifier
                 ))
                 result = .success(try AppShotCore.jsonString(payload, pretty: true))
             } catch {
@@ -451,6 +519,92 @@ final class AppShotModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private static func stringValue(_ value: Any?) -> String? {
+        if let string = value as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let string = value as? NSString {
+            let trimmed = String(string).trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return nil
+    }
+
+    private nonisolated static func stringDictionary(from userInfo: [AnyHashable: Any]?) -> [String: String] {
+        var out: [String: String] = [:]
+        for (key, value) in userInfo ?? [:] {
+            out[String(describing: key)] = String(describing: value)
+        }
+        return out
+    }
+
+    private static func boolValue(_ value: Any?, default defaultValue: Bool) -> Bool {
+        boolOptionalValue(value) ?? defaultValue
+    }
+
+    private static func boolOptionalValue(_ value: Any?) -> Bool? {
+        if let bool = value as? Bool {
+            return bool
+        }
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        if let string = stringValue(value)?.lowercased() {
+            if ["true", "yes", "1"].contains(string) {
+                return true
+            }
+            if ["false", "no", "0"].contains(string) {
+                return false
+            }
+        }
+        return nil
+    }
+
+    private static func intValue(_ value: Any?, default defaultValue: Int) -> Int {
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let string = stringValue(value),
+           let int = Int(string) {
+            return int
+        }
+        return defaultValue
+    }
+
+    private static func doubleValue(_ value: Any?, default defaultValue: Double) -> Double {
+        if let double = value as? Double {
+            return double
+        }
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = stringValue(value),
+           let double = Double(string) {
+            return double
+        }
+        return defaultValue
+    }
+
+    private static func uint32Value(_ value: Any?) -> UInt32? {
+        let int = intValue(value, default: -1)
+        guard int >= 0 else {
+            return nil
+        }
+        return UInt32(int)
+    }
+
+    private static func pidValue(_ value: Any?) -> pid_t? {
+        let int = intValue(value, default: -1)
+        guard int > 0 else {
+            return nil
+        }
+        return pid_t(Int32(int))
     }
 
     private static func payload(from json: String) -> JSONObject? {
