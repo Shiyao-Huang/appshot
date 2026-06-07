@@ -257,11 +257,12 @@ for name, text, pattern in [
 
 for name, text, needles in [
     ("App shortcut/settings", app, ["OptionPairShortcutMonitor", "Left Option + Right Option", "AppShotSettingsView", "isGlobalShortcutEnabled", "writeCache", "captureCacheSummary", "left-right-option", "appShotCaptureRequestNotificationName", "appShotCaptureRequestCacheTrigger", "handleAppCaptureRequest", "browserAnnotationScreenshotsMode", "Browser Screenshots", "browserAnnotationEditorMode", "Browser Editor", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "includeBrowserDOM", "Browser DOM", "browserDOMInstallBridge", "Browser Bridge"]),
-    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--activate-target", "--no-activate-target", "--request-app-capture", "--app-capture-timeout", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
-    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout", "get_app_state", "list_apps", "appshot_codex_computer_use_status"]),
+    ("CLI timeout/options", cli, ["--accessibility-timeout", "--screenshot-timeout", "--activate-target", "--no-activate-target", "--request-app-capture", "--app-capture-timeout", "--window-title", "--format", "--codex", "format == \"codex\"", "--ignore-cache", "--cache-max-age", "--write-cache", "--browser-annotation-screenshots-mode", "--browser-annotation-editor-mode", "--browser-original-view-enabled", "--browser-design-modifier-pressed", "--browser-tweaks-editor-open", "--browser-active-design-change-json", "--include-browser-dom", "--browser-dom-timeout", "--browser-dom-fixture-json", "--browser-dom-install-bridge", "--browser-dom-clear-bridge-log", "--include-electron-debugging", "--electron-debugging-timeout"]),
+    ("MCP timeout/schema/format", server, ["accessibilityTimeout", "screenshotTimeout", "activateTarget", "requestAppCapture", "appCaptureTimeout", "windowTitle", "--window-title", "format", "\"codex\"", "--format", "useRecentCache", "preferRecentCache", "cacheMaxAge", "writeCache", "cacheTrigger", "--no-cache", "browserAnnotationScreenshotsMode", "browserAnnotationEditorMode", "browserOriginalViewEnabled", "browserDesignModifierPressed", "browserTweaksEditorOpen", "browserActiveDesignChange", "includeBrowserDOM", "browserDOMTimeout", "browserDOMFixture", "browserDOMInstallBridge", "browserDOMClearBridgeLog", "includeElectronDebugging", "electronDebuggingTimeout", "get_app_state", "list_apps", "appshot_codex_computer_use_status"]),
     ("Claude Code installer", installer, ["APPSHOT_INSTALL_CLAUDE_CODE", "CLAUDE_SKILL_DIR", "claude mcp add", "APPSHOT_BIN=$BIN_PATH"]),
     ("public release gate", release, ["APPSHOT_PUBLIC_RELEASE", "Developer ID Application", "APPSHOT_NOTARY_PROFILE", "stapler validate", "spctl --assess"]),
     ("AX hierarchy safeguards", core, ["isAXDescendantAttribute", "localChildIDs", "focusedVisited", "mainWindowVisited", "targetActivation", "activateCaptureTarget", "appCaptureRequest", "requestGUIAppCapture", "auxiliaryProcessCapture", "captureAuxiliaryProcess", "targetWindowMatch", "matchingAXWindowResult", "axWindowExposure", "suspectedSelfReferentialAXWindows", "targetWindowUnmatchedApplication", "axShouldCompactRow", "axCompactInteractiveDescendants", "AXGroup"]),
+    ("AX window discovery", core + cli + server + parity + skill, ["accessibilityWindows", "windowDiscovery", "accessibilityWindow", "preferredAccessibilityWindow", "hasAccessibilityOnlyWindows", "resolveCaptureTargetByWindowTitle", "--window-title", "captureMode", "screenshotRectArgument", "titlesCompatible"]),
     ("Codex text formatter", core, ["codexSummaryPayload", "codexSummaryText", "codex-appshot-text", "<appshot", "Selected:", "Note: Pay special attention", "codexSettableAnnotation", "codexRoleName", "codexShouldDedupeStructuralLine", "HTML 内容"]),
     ("Codex browser payload adapter", core + server + skill, ["codexBrowserPayload", "codexBrowserPayload(from:", "codex-browser-comment-payload-adapter", "localBrowserContext", "localBrowserCommentMetadata", "localBrowserAttachedImages", "localBrowserDesignChange", "targetImmediateText", "markerViewportPoint", "localBrowserScreenshot", "codexBrowserSettings", "browser-annotation-screenshots-mode", "always", "necessary"]),
     ("Codex browser runtime adapter", core + cli + server + skill, ["codexBrowserRuntimeState", "codexBrowserRuntimeStatePayload", "codex-browser-runtime-state-adapter", "browser-sidebar-runtime-sync", "interactionMode", "annotationEditorMode", "isAgentControllingBrowser", "canUseTweaks", "isDesignModifierPressed", "isOriginalViewEnabled", "isTweaksEditorOpen", "activeDesignChange", "viewportScale", "zoomPercent"]),
@@ -275,7 +276,7 @@ for name, text, needles in [
     ("Default deep capture", core + app + cli + server + skill, ["maxDepth: Int = 60", "var maxDepth = 60", "default: 60", "args.maxDepth ?? 60", "--max-depth 60"]),
     ("Shortcut capture cache", core, ["captureCacheStatus", "recentCaptureCache", "payloadByWritingCaptureCache", "captureCacheMetadata", "captureCache", "cacheMaxAgeSeconds"]),
     ("Visible text ordering", core, ["visibleTextLines", "VisibleTextEntry", "visibleTextLineCount", "visibleTextFragments", "AXBoundsForRange", "AXStringForRange"]),
-    ("QA capture checks", qa, ["--expect-ax", "--expect-visible", "--expect-ocr", "--expect-hierarchy", "screenshot captured", "screenshot matches target window", "screenshot size matches window bounds", "visible text available", "accessibility root is target window", "hierarchy contains"]),
+    ("QA capture checks", qa, ["--expect-ax", "--expect-visible", "--expect-ocr", "--expect-hierarchy", "accessibilityWindows", "--window-title", "captureMode", "screenshot captured", "screenshot matches target window", "screenshot size matches window bounds", "visible text available", "accessibility root is target window", "hierarchy contains"]),
     ("TCC identity diagnostics", tcc, ["CDHash", "Signature", "TeamIdentifier", "ad-hoc", "APPSHOT_CODESIGN_IDENTITY", "security find-identity", "permissions.identity", "permissions.stability", "running app bundle"]),
     ("Permission identity JSON", core, ["permissionIdentity", "permissionStability", "recommendedGrantTarget", "currentExecutablePath", "stableInstalledApp", "commandLineTool"]),
     ("Codex skill workflow", skill, ["--accessibility-timeout 20", "--ignore-cache", "left and right Option", "captureCache", "scripts/qa_app_capture.py", "scripts/diagnose_tcc_identity.sh", "tccutil reset Accessibility", "permissions.identity", "permissions.stability", "target-window screenshot metadata", "appshot_status", "currentApplication", "targetApplication", "frontmostWindow", "currentWindow"]),
@@ -287,6 +288,7 @@ PY
 
 STATUS_JSON="$(mktemp)"
 CODEX_APPS_JSON="$(mktemp)"
+LIST_WINDOWS_JSON="$(mktemp)"
 CAPTURE_JSON="$(mktemp)"
 APP_REQUEST_JSON="$(mktemp)"
 POLICY_JSON="$(mktemp)"
@@ -300,11 +302,12 @@ RUN_DIR="$(mktemp -d)"
 POLICY_SCREENSHOT="$RUN_DIR/policy.png"
 MCP_POLICY_SCREENSHOT="$RUN_DIR/mcp-policy.png"
 MCP_POLICY_SCREENSHOT_JSON="$("$PYTHON" -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$MCP_POLICY_SCREENSHOT")"
-trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
+trap 'rm -f "$STATUS_JSON" "$CODEX_APPS_JSON" "$LIST_WINDOWS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" "$MCP_JSONL"; rm -rf "$RUN_DIR"' EXIT
 
 log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" status --pretty >"$STATUS_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" codex-apps-status --pretty >"$CODEX_APPS_JSON")
+(cd "$RUN_DIR" && "$APP_BIN" list-windows --pretty >"$LIST_WINDOWS_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --pretty >"$CAPTURE_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --request-app-capture --app-capture-timeout 0.1 --pretty >"$APP_REQUEST_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --browser-annotation-screenshots-mode always --screenshot "$POLICY_SCREENSHOT" --pretty >"$POLICY_JSON")
@@ -314,20 +317,21 @@ log "checking CLI status/capture schema"
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --include-electron-debugging --electron-debugging-timeout 0.5 --pretty >"$ELECTRON_JSON")
 (cd "$RUN_DIR" && "$APP_BIN" capture --max-depth 1 --ignore-cache --format codex >"$CODEX_TXT")
 
-"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" <<'PY'
+"$PYTHON" - "$STATUS_JSON" "$CODEX_APPS_JSON" "$LIST_WINDOWS_JSON" "$CAPTURE_JSON" "$APP_REQUEST_JSON" "$POLICY_JSON" "$RUNTIME_JSON" "$DOM_JSON" "$DEBUG_DOM_JSON" "$ELECTRON_JSON" "$CODEX_TXT" <<'PY'
 import json
 import sys
 
 status = json.load(open(sys.argv[1]))
 codex_apps = json.load(open(sys.argv[2]))
-capture = json.load(open(sys.argv[3]))
-app_request = json.load(open(sys.argv[4]))
-policy = json.load(open(sys.argv[5]))
-runtime = json.load(open(sys.argv[6]))
-dom = json.load(open(sys.argv[7]))
-debug_dom = json.load(open(sys.argv[8]))
-electron = json.load(open(sys.argv[9]))
-codex_text = open(sys.argv[10]).read()
+list_windows = json.load(open(sys.argv[3]))
+capture = json.load(open(sys.argv[4]))
+app_request = json.load(open(sys.argv[5]))
+policy = json.load(open(sys.argv[6]))
+runtime = json.load(open(sys.argv[7]))
+dom = json.load(open(sys.argv[8]))
+debug_dom = json.load(open(sys.argv[9]))
+electron = json.load(open(sys.argv[10]))
+codex_text = open(sys.argv[11]).read()
 
 def require_keys(name, payload, keys):
     missing = [key for key in keys if key not in payload]
@@ -379,6 +383,22 @@ if codex_apps.get("accessibleConnectorCount") != len(codex_apps.get("accessibleC
     raise SystemExit("codex-apps-status accessibleConnectorCount does not match accessibleConnectors")
 if codex_apps.get("evidence", {}).get("anchors") != ["AccessibleConnectorsStatus", "codex_apps_ready", "force_refetch", "ConnectorsSnapshot"]:
     raise SystemExit("codex-apps-status evidence anchors drifted")
+
+require_keys("list-windows", list_windows, ["schemaVersion", "capturedAt", "applications"])
+if not isinstance(list_windows.get("applications"), list):
+    raise SystemExit("list-windows applications was not a list")
+for app in list_windows.get("applications", []):
+    require_keys("list-windows app", app, ["windows", "accessibilityWindows", "windowDiscovery", "captureParameters"])
+    if not isinstance(app.get("accessibilityWindows"), list):
+        raise SystemExit("list-windows accessibilityWindows was not a list")
+    discovery = app.get("windowDiscovery", {})
+    require_keys(
+        "list-windows windowDiscovery",
+        discovery,
+        ["source", "cgWindowCount", "accessibilityWindowCount", "hasAccessibilityOnlyWindows", "preferredAccessibilityWindow"],
+    )
+    if not isinstance(discovery.get("hasAccessibilityOnlyWindows"), bool):
+        raise SystemExit("list-windows hasAccessibilityOnlyWindows was not a boolean")
 for name, payload in [("status", status.get("codexAppsStatus", {})), ("capture", capture.get("codexAppsStatus", {}))]:
     require_keys(f"{name} codexAppsStatus", payload, ["format", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "tools", "blockers", "codexComputerUseStatus"])
     if payload.get("format") != "codex-accessible-connectors-status":
@@ -389,7 +409,11 @@ for name, payload in [("status", status.get("codexAppsStatus", {})), ("capture",
         raise SystemExit(f"{name} codexAppsStatus readiness does not match blockers")
 
 if isinstance(capture.get("primaryWindow"), dict):
-    require_keys("capture primaryWindow", capture["primaryWindow"], ["windowID", "windowNumber", "ownerPID", "bounds", "isOnScreen"])
+    require_keys("capture primaryWindow", capture["primaryWindow"], ["ownerPID", "bounds", "isOnScreen"])
+    if capture["primaryWindow"].get("source") == "accessibilityWindow":
+        require_keys("capture AX primaryWindow", capture["primaryWindow"], ["source", "title", "captureParameters"])
+    else:
+        require_keys("capture CG primaryWindow", capture["primaryWindow"], ["windowID", "windowNumber"])
     require_keys("capture", capture, ["frontmostWindow", "currentWindow", "targetActivation"])
     target_activation = capture.get("targetActivation", {})
     require_keys("capture targetActivation", target_activation, ["requested"])
@@ -538,6 +562,9 @@ if policy_metadata.get("annotationScreenshotsMode") != "always":
     raise SystemExit(f"policy metadata did not preserve always mode: {policy_metadata.get('annotationScreenshotsMode')!r}")
 if "screenshot" not in policy:
     raise SystemExit("policy capture did not attempt a screenshot for always mode")
+require_keys("policy screenshot", policy.get("screenshot", {}), ["path", "captureMode", "captured"])
+if policy["screenshot"].get("captureMode") not in {"windowID", "bounds", "screen"}:
+    raise SystemExit("policy screenshot captureMode drifted")
 
 runtime_state = runtime.get("codexBrowserRuntimeState", {})
 runtime_payload = runtime.get("codexBrowserPayload", {})
@@ -723,6 +750,8 @@ if mcp_policy_metadata.get("annotationScreenshotsMode") != "always":
     raise SystemExit("MCP policy metadata did not preserve always mode")
 if "screenshot" not in mcp_policy:
     raise SystemExit("MCP policy capture did not attempt screenshot for always mode")
+if mcp_policy.get("screenshot", {}).get("captureMode") not in {"windowID", "bounds", "screen"}:
+    raise SystemExit("MCP policy screenshot captureMode drifted")
 if mcp_runtime_state.get("annotationEditorMode") != "design":
     raise SystemExit("MCP runtime capture did not preserve design annotation editor mode")
 if mcp_runtime_state.get("isOriginalViewEnabled") is not True:

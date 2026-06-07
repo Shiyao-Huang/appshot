@@ -88,6 +88,7 @@ public struct AppShotCaptureOptions {
     public var targetWindowID: UInt32?
     public var targetProcessIdentifier: pid_t?
     public var targetBundleIdentifier: String?
+    public var targetWindowTitle: String?
 
     public init(
         screenshotPath: String? = nil,
@@ -125,7 +126,8 @@ public struct AppShotCaptureOptions {
         cacheTrigger: String? = nil,
         targetWindowID: UInt32? = nil,
         targetProcessIdentifier: pid_t? = nil,
-        targetBundleIdentifier: String? = nil
+        targetBundleIdentifier: String? = nil,
+        targetWindowTitle: String? = nil
     ) {
         self.screenshotPath = screenshotPath
         self.includeScreenshot = includeScreenshot
@@ -163,6 +165,7 @@ public struct AppShotCaptureOptions {
         self.targetWindowID = targetWindowID
         self.targetProcessIdentifier = targetProcessIdentifier
         self.targetBundleIdentifier = targetBundleIdentifier
+        self.targetWindowTitle = targetWindowTitle
     }
 }
 
@@ -226,7 +229,8 @@ public enum AppShotCore {
         let target = try resolveCaptureTarget(
             windowID: options.targetWindowID,
             processIdentifier: options.targetProcessIdentifier,
-            bundleIdentifier: options.targetBundleIdentifier
+            bundleIdentifier: options.targetBundleIdentifier,
+            windowTitle: options.targetWindowTitle
         )
         let app = target.application
         let pid = app.processIdentifier
@@ -246,6 +250,7 @@ public enum AppShotCore {
             include: options.includeScreenshot || includeBrowserAnnotationScreenshot || options.screenshotPath != nil || options.includeOCR,
             requestedPath: options.screenshotPath,
             windowID: windowID,
+            windowBounds: primaryWindow?["bounds"] as? JSONObject,
             timeoutSeconds: options.screenshotTimeoutSeconds
         )
 
@@ -466,7 +471,14 @@ public enum AppShotCore {
             .filter { $0.activationPolicy == .regular }
             .map { app -> JSONObject in
                 var out = appInfo(app)
-                out["windows"] = windowsForPID(app.processIdentifier)
+                let windows = windowsForPID(app.processIdentifier)
+                let axDiscovery = accessibilityWindowsForApplication(app)
+                out["windows"] = windows
+                out["accessibilityWindows"] = axDiscovery["windows"] ?? []
+                out["windowDiscovery"] = windowDiscoveryPayload(
+                    cgWindows: windows,
+                    accessibilityWindows: axDiscovery
+                )
                 out["captureParameters"] = [
                     "pid": app.processIdentifier,
                     "bundleID": app.bundleIdentifier ?? ""
@@ -486,7 +498,7 @@ public enum AppShotCore {
         let hasScreenRecording = permissionPayload["screenRecording"] as? Bool ?? false
         let frontmost = NSWorkspace.shared.frontmostApplication
         let windows = frontmost.map { windowsForPID($0.processIdentifier) } ?? []
-        let primaryWindow = windows.first
+        let primaryWindow = frontmost.map { preferredCaptureWindow(application: $0, cgWindows: windows) } ?? windows.first
 
         var blockers = appshotReadinessBlockers(
             hasAccessibility: hasAccessibility,
@@ -1174,8 +1186,17 @@ private struct CaptureTarget {
 private func resolveCaptureTarget(
     windowID: UInt32?,
     processIdentifier: pid_t?,
-    bundleIdentifier: String?
+    bundleIdentifier: String?,
+    windowTitle: String?
 ) throws -> CaptureTarget {
+    if let title = normalizedWindowTitle(windowTitle), !title.isEmpty {
+        return try resolveCaptureTargetByWindowTitle(
+            title,
+            processIdentifier: processIdentifier,
+            bundleIdentifier: bundleIdentifier
+        )
+    }
+
     if let windowID {
         if let candidate = windowCandidate(windowID: windowID),
            let application = application(from: candidate),
@@ -1199,7 +1220,7 @@ private func resolveCaptureTarget(
         return CaptureTarget(
             application: application,
             windows: windows,
-            window: windows.first,
+            window: preferredCaptureWindow(application: application, cgWindows: windows),
             selection: [
                 "type": "pid",
                 "pid": processIdentifier
@@ -1214,7 +1235,7 @@ private func resolveCaptureTarget(
         return CaptureTarget(
             application: application,
             windows: windows,
-            window: windows.first,
+            window: preferredCaptureWindow(application: application, cgWindows: windows),
             selection: [
                 "type": "bundleID",
                 "bundleID": bundleIdentifier
@@ -1226,7 +1247,81 @@ private func resolveCaptureTarget(
         throw AppShotError.noFrontmostApplication
     }
     let windows = windowsForPID(app.processIdentifier)
-    return CaptureTarget(application: app, windows: windows, window: windows.first, selection: nil)
+    return CaptureTarget(application: app, windows: windows, window: preferredCaptureWindow(application: app, cgWindows: windows), selection: nil)
+}
+
+private func resolveCaptureTargetByWindowTitle(
+    _ title: String,
+    processIdentifier: pid_t?,
+    bundleIdentifier: String?
+) throws -> CaptureTarget {
+    let normalizedTitle = title.lowercased()
+    let apps = NSWorkspace.shared.runningApplications
+        .filter { app in
+            guard app.activationPolicy == .regular else { return false }
+            if let processIdentifier, app.processIdentifier != processIdentifier {
+                return false
+            }
+            if let bundleIdentifier,
+               !bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               app.bundleIdentifier != bundleIdentifier {
+                return false
+            }
+            return true
+        }
+
+    var best: (score: Int, application: NSRunningApplication, windows: [JSONObject], window: JSONObject, source: String)?
+    for app in apps {
+        let windows = windowsForPID(app.processIdentifier)
+        for window in windows {
+            let score = windowTitleScore(window["title"] as? String, normalizedTarget: normalizedTitle)
+            if score > (best?.score ?? 0) {
+                best = (score, app, windows, window, "cgWindow")
+            }
+        }
+
+        let axDiscovery = accessibilityWindowsForApplication(app)
+        for window in (axDiscovery["windows"] as? [JSONObject]) ?? [] {
+            let score = windowTitleScore(window["title"] as? String, normalizedTarget: normalizedTitle)
+            if score > (best?.score ?? 0) {
+                best = (score, app, windows, window, "accessibilityWindow")
+            }
+        }
+    }
+
+    if let best {
+        return CaptureTarget(
+            application: best.application,
+            windows: best.windows,
+            window: best.window,
+            selection: [
+                "type": "windowTitle",
+                "title": title,
+                "source": best.source,
+                "score": best.score
+            ]
+        )
+    }
+
+    throw AppShotError.targetNotFound(title)
+}
+
+private func normalizedWindowTitle(_ title: String?) -> String? {
+    guard let title else { return nil }
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+private func windowTitleScore(_ title: String?, normalizedTarget: String) -> Int {
+    let candidate = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !candidate.isEmpty else { return 0 }
+    if candidate == normalizedTarget {
+        return 300
+    }
+    if candidate.contains(normalizedTarget) || normalizedTarget.contains(candidate) {
+        return 140
+    }
+    return 0
 }
 
 private func activateCaptureTarget(application: NSRunningApplication, window: JSONObject?) -> JSONObject {
@@ -1366,6 +1461,253 @@ public func windowsForPID(_ pid: pid_t) -> [JSONObject] {
         ]
         return out
     }
+}
+
+private func accessibilityWindowsForApplication(_ app: NSRunningApplication) -> JSONObject {
+    guard AXIsProcessTrusted() else {
+        return [
+            "available": false,
+            "reason": "accessibilityPermissionMissing",
+            "windows": [],
+            "windowCount": 0
+        ]
+    }
+
+    let pid = app.processIdentifier
+    let appElement = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(appElement, 0.25)
+    let discovery = axWindowDiscovery(appElement: appElement)
+    let candidateWindows = discovery.candidates.enumerated().map { index, candidate in
+        accessibilityWindowPayload(
+            candidate: candidate,
+            index: index,
+            application: app
+        )
+    }
+    let roleCounts = candidateWindows.reduce(into: [String: Int]()) { counts, window in
+        let role = window["role"] as? String ?? "unknown"
+        counts[role.isEmpty ? "unknown" : role, default: 0] += 1
+    }
+    let windows = dedupedAccessibilityWindows(
+        candidateWindows.filter { ($0["role"] as? String) == "AXWindow" }
+    )
+
+    return [
+        "available": true,
+        "source": "macOS Accessibility",
+        "focusedWindowResult": String(describing: discovery.focusedWindowResult),
+        "mainWindowResult": String(describing: discovery.mainWindowResult),
+        "windowCount": windows.count,
+        "candidateCount": candidateWindows.count,
+        "windows": windows,
+        "axWindowExposure": [
+            "hasAXWindowRoles": (roleCounts["AXWindow"] ?? 0) > 0,
+            "roleCounts": roleCounts,
+            "suspectedSelfReferentialAXWindows": (roleCounts["AXWindow"] ?? 0) == 0
+                && candidateWindows.count > 0
+                && ((roleCounts["AXApplication"] ?? 0) > 0 || (roleCounts["unknown"] ?? 0) > 0)
+        ]
+    ]
+}
+
+private func dedupedAccessibilityWindows(_ windows: [JSONObject]) -> [JSONObject] {
+    var seen: [String: Int] = [:]
+    var out: [JSONObject] = []
+    for window in windows {
+        let key = accessibilityWindowDedupeKey(window)
+        if let index = seen[key] {
+            let existingSources = (out[index]["sources"] as? [String]) ?? []
+            let incomingSources = (window["sources"] as? [String]) ?? []
+            out[index]["sources"] = dedupeStrings(existingSources + incomingSources)
+        } else {
+            seen[key] = out.count
+            out.append(window)
+        }
+    }
+    return out
+}
+
+private func accessibilityWindowDedupeKey(_ window: JSONObject) -> String {
+    let title = window["title"] as? String ?? ""
+    let role = window["role"] as? String ?? ""
+    let bounds = window["bounds"] as? JSONObject ?? [:]
+    let x = numberValue(bounds["x"]) ?? 0
+    let y = numberValue(bounds["y"]) ?? 0
+    let width = numberValue(bounds["width"]) ?? 0
+    let height = numberValue(bounds["height"]) ?? 0
+    return "\(role)|\(title)|\(Int(x.rounded()))|\(Int(y.rounded()))|\(Int(width.rounded()))|\(Int(height.rounded()))"
+}
+
+private func accessibilityWindowPayload(
+    candidate: AXWindowCandidate,
+    index: Int,
+    application: NSRunningApplication
+) -> JSONObject {
+    let element = candidate.element
+    let role = copyAXValue(element, kAXRoleAttribute) as? String ?? ""
+    let title = (copyAXValue(element, kAXTitleAttribute) as? String ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    let axWindowNumber = numberValue(copyAXValue(element, "AXWindowNumber"))
+    var out: JSONObject = [
+        "source": "accessibilityWindow",
+        "accessibilityIndex": index,
+        "ownerPID": application.processIdentifier,
+        "ownerName": application.localizedName ?? "",
+        "role": role,
+        "title": title,
+        "sources": candidate.sources,
+        "isOnScreen": true,
+        "captureParameters": [
+            "pid": application.processIdentifier,
+            "bundleID": application.bundleIdentifier ?? "",
+            "windowTitle": title
+        ]
+    ]
+
+    if let axWindowNumber {
+        out["windowNumber"] = axWindowNumber
+        if axWindowNumber > 0 {
+            out["windowID"] = UInt32(axWindowNumber.rounded())
+            out["captureParameters"] = [
+                "pid": application.processIdentifier,
+                "bundleID": application.bundleIdentifier ?? "",
+                "windowID": UInt32(axWindowNumber.rounded()),
+                "windowTitle": title
+            ] as JSONObject
+        }
+    }
+
+    var point: CGPoint?
+    var size: CGSize?
+    if let position = copyAXValue(element, kAXPositionAttribute) {
+        point = axPoint(position)
+    }
+    if let axSizeValue = copyAXValue(element, kAXSizeAttribute) {
+        size = axSize(axSizeValue)
+    }
+    if let point {
+        out["position"] = ["x": point.x, "y": point.y]
+    }
+    if let size {
+        out["size"] = ["width": size.width, "height": size.height]
+    }
+    if let point, let size {
+        let bounds: JSONObject = [
+            "x": point.x,
+            "y": point.y,
+            "width": size.width,
+            "height": size.height
+        ]
+        out["bounds"] = bounds
+        out["area"] = size.width * size.height
+        if let screen = screenForWindowBounds([
+            "X": point.x,
+            "Y": point.y,
+            "Width": size.width,
+            "Height": size.height
+        ]) {
+            out["screen"] = screen
+        }
+    }
+
+    return out
+}
+
+private func windowDiscoveryPayload(
+    cgWindows: [JSONObject],
+    accessibilityWindows: JSONObject
+) -> JSONObject {
+    let axWindows = accessibilityWindows["windows"] as? [JSONObject] ?? []
+    let preferredAX = preferredAccessibilityWindow(from: axWindows)
+    var payload: JSONObject = [
+        "source": "cgwindow-plus-accessibility",
+        "cgWindowCount": cgWindows.count,
+        "accessibilityWindowCount": axWindows.count,
+        "hasAccessibilityOnlyWindows": axWindows.contains { matchingCGWindow(forAccessibilityWindow: $0, cgWindows: cgWindows) == nil },
+        "preferredAccessibilityWindow": preferredAX ?? NSNull()
+    ]
+    if let preferredAX {
+        payload["preferredMatchedCGWindow"] = matchingCGWindow(forAccessibilityWindow: preferredAX, cgWindows: cgWindows) ?? NSNull()
+    }
+    if let exposure = accessibilityWindows["axWindowExposure"] {
+        payload["axWindowExposure"] = exposure
+    }
+    return payload
+}
+
+private func preferredCaptureWindow(application: NSRunningApplication, cgWindows: [JSONObject]) -> JSONObject? {
+    let axDiscovery = accessibilityWindowsForApplication(application)
+    let axWindows = axDiscovery["windows"] as? [JSONObject] ?? []
+    if let preferredAX = preferredAccessibilityWindow(from: axWindows) {
+        if var matched = matchingCGWindow(forAccessibilityWindow: preferredAX, cgWindows: cgWindows) {
+            matched["accessibilityWindowMatch"] = preferredAX
+            return matched
+        }
+        return preferredAX
+    }
+    return cgWindows.first
+}
+
+private func preferredAccessibilityWindow(from windows: [JSONObject]) -> JSONObject? {
+    windows.first { (($0["sources"] as? [String]) ?? []).contains("focusedWindow") }
+        ?? windows.first { (($0["sources"] as? [String]) ?? []).contains("mainWindow") }
+        ?? windows.first { ($0["role"] as? String) == "AXWindow" }
+        ?? windows.first
+}
+
+private func matchingCGWindow(forAccessibilityWindow accessibilityWindow: JSONObject, cgWindows: [JSONObject]) -> JSONObject? {
+    var best: (score: CGFloat, window: JSONObject)?
+    for window in cgWindows {
+        let score = cgAccessibilityWindowMatchScore(cgWindow: window, accessibilityWindow: accessibilityWindow)
+        if score > (best?.score ?? 0) {
+            best = (score, window)
+        }
+    }
+    return (best?.score ?? 0) >= 50 ? best?.window : nil
+}
+
+private func cgAccessibilityWindowMatchScore(cgWindow: JSONObject, accessibilityWindow: JSONObject) -> CGFloat {
+    var score: CGFloat = 0
+    let cgTitle = (cgWindow["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let axTitle = (accessibilityWindow["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    var titlesCompatible = cgTitle.isEmpty || axTitle.isEmpty
+    if !cgTitle.isEmpty && !axTitle.isEmpty {
+        if cgTitle == axTitle {
+            score += 120
+            titlesCompatible = true
+        } else if cgTitle.contains(axTitle) || axTitle.contains(cgTitle) {
+            score += 50
+            titlesCompatible = true
+        }
+    }
+
+    if let cgNumber = numberValue(cgWindow["windowNumber"] ?? cgWindow["windowID"]),
+       let axNumber = numberValue(accessibilityWindow["windowNumber"]),
+       abs(cgNumber - axNumber) < 0.5 {
+        score += 200
+        titlesCompatible = true
+    }
+
+    if titlesCompatible,
+       let cgBounds = cgWindow["bounds"] as? JSONObject,
+       let axBounds = accessibilityWindow["bounds"] as? JSONObject,
+       let cgX = numberValue(cgBounds["x"]),
+       let cgY = numberValue(cgBounds["y"]),
+       let cgWidth = numberValue(cgBounds["width"]),
+       let cgHeight = numberValue(cgBounds["height"]),
+       let axX = numberValue(axBounds["x"]),
+       let axY = numberValue(axBounds["y"]),
+       let axWidth = numberValue(axBounds["width"]),
+       let axHeight = numberValue(axBounds["height"]) {
+        let delta = abs(cgX - axX) + abs(cgY - axY) + abs(cgWidth - axWidth) + abs(cgHeight - axHeight)
+        if delta < 12 {
+            score += 120
+        } else if delta < 80 {
+            score += 60
+        }
+    }
+
+    return score
 }
 
 public func normalizedBounds(_ bounds: JSONObject) -> JSONObject {
@@ -2179,10 +2521,13 @@ private struct AXWindowCandidate {
     let sources: [String]
 }
 
-private func matchingAXWindowResult(
-    appElement: AXUIElement,
-    targetWindow: JSONObject
-) -> (element: AXUIElement?, diagnostics: JSONObject) {
+private struct AXWindowDiscovery {
+    let candidates: [AXWindowCandidate]
+    let focusedWindowResult: AXError
+    let mainWindowResult: AXError
+}
+
+private func axWindowDiscovery(appElement: AXUIElement) -> AXWindowDiscovery {
     var focusedWindow: AnyObject?
     let focusedWindowResult = AXUIElementCopyAttributeValue(
         appElement,
@@ -2228,7 +2573,20 @@ private func matchingAXWindowResult(
             candidateOrder.append(id)
         }
     }
-    let candidates = candidateOrder.compactMap { candidatesByID[$0] }
+
+    return AXWindowDiscovery(
+        candidates: candidateOrder.compactMap { candidatesByID[$0] },
+        focusedWindowResult: focusedWindowResult,
+        mainWindowResult: mainWindowResult
+    )
+}
+
+private func matchingAXWindowResult(
+    appElement: AXUIElement,
+    targetWindow: JSONObject
+) -> (element: AXUIElement?, diagnostics: JSONObject) {
+    let discovery = axWindowDiscovery(appElement: appElement)
+    let candidates = discovery.candidates
 
     let targetTitle = (targetWindow["title"] as? String ?? "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2250,14 +2608,17 @@ private func matchingAXWindowResult(
         }
         let axTitle = (copyAXValue(window, kAXTitleAttribute) as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        var titlesCompatible = targetTitle.isEmpty || axTitle.isEmpty
 
         if !targetTitle.isEmpty && !axTitle.isEmpty {
             if axTitle == targetTitle {
                 score += 120
                 reasons.append("titleExact")
+                titlesCompatible = true
             } else if axTitle.contains(targetTitle) || targetTitle.contains(axTitle) {
                 score += 50
                 reasons.append("titleContains")
+                titlesCompatible = true
             }
         }
 
@@ -2267,6 +2628,7 @@ private func matchingAXWindowResult(
            abs(targetWindowNumber - axWindowNumber) < 0.5 {
             score += 200
             reasons.append("windowNumber")
+            titlesCompatible = true
         }
 
         var candidatePayload: JSONObject = [
@@ -2289,7 +2651,8 @@ private func matchingAXWindowResult(
             candidatePayload["size"] = ["width": cgSize.width, "height": cgSize.height]
         }
 
-        if let targetBounds,
+        if titlesCompatible,
+           let targetBounds,
            let position = copyAXValue(window, kAXPositionAttribute),
            let size = copyAXValue(window, kAXSizeAttribute),
            let point = axPoint(position),
@@ -2321,7 +2684,7 @@ private func matchingAXWindowResult(
     scoredCandidates.sort {
         (($0["score"] as? Double) ?? 0) > (($1["score"] as? Double) ?? 0)
     }
-    let matched = (best?.score ?? 0) > 0
+    let matched = (best?.score ?? 0) >= 50
     let hasAXWindowRoles = (roleCounts["AXWindow"] ?? 0) > 0
     let suspectedSelfReferentialAXWindows = !hasAXWindowRoles
         && candidates.count > 0
@@ -2338,8 +2701,8 @@ private func matchingAXWindowResult(
         "bestCandidate": best?.diagnostics ?? [:],
         "topCandidates": Array(scoredCandidates.prefix(8)),
         "targetTitle": targetTitle,
-        "focusedWindowResult": String(describing: focusedWindowResult),
-        "mainWindowResult": String(describing: mainWindowResult),
+        "focusedWindowResult": String(describing: discovery.focusedWindowResult),
+        "mainWindowResult": String(describing: discovery.mainWindowResult),
         "recoverySteps": matched ? [] : [
             "Activate the target app/window and retry capture so macOS Accessibility exposes AXWindow candidates.",
             "For Electron apps such as VS Code, enable screen reader accessibility support in the target app when available.",
@@ -2952,6 +3315,7 @@ public func maybeCaptureScreenshot(
     include: Bool,
     requestedPath: String?,
     windowID: UInt32?,
+    windowBounds: JSONObject? = nil,
     timeoutSeconds: TimeInterval = 3.0
 ) throws -> JSONObject? {
     guard include else {
@@ -2962,8 +3326,15 @@ public func maybeCaptureScreenshot(
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
 
+    var captureMode = "screen"
+    var captureBounds: JSONObject?
     if let windowID, windowID != 0 {
         process.arguments = ["-x", "-l", String(windowID), path]
+        captureMode = "windowID"
+    } else if let rect = screenshotRectArgument(from: windowBounds) {
+        process.arguments = ["-x", "-R", rect.argument, path]
+        captureMode = "bounds"
+        captureBounds = rect.payload
     } else {
         process.arguments = ["-x", path]
     }
@@ -2980,14 +3351,44 @@ public func maybeCaptureScreenshot(
     }
     process.waitUntilExit()
 
-    return [
+    var payload: JSONObject = [
         "path": path,
         "windowID": windowID as Any,
+        "captureMode": captureMode,
         "exitStatus": process.terminationStatus,
         "timedOut": timedOut,
         "timeoutSeconds": timeoutSeconds,
         "captured": !timedOut && process.terminationStatus == 0 && FileManager.default.fileExists(atPath: path)
     ]
+    if let captureBounds {
+        payload["captureBounds"] = captureBounds
+    }
+    return payload
+}
+
+private func screenshotRectArgument(from bounds: JSONObject?) -> (argument: String, payload: JSONObject)? {
+    guard let bounds,
+          let x = numberValue(bounds["x"]),
+          let y = numberValue(bounds["y"]),
+          let width = numberValue(bounds["width"]),
+          let height = numberValue(bounds["height"]),
+          width > 0,
+          height > 0 else {
+        return nil
+    }
+
+    let rectX = Int(x.rounded(.down))
+    let rectY = Int(y.rounded(.down))
+    let rectWidth = max(1, Int(width.rounded(.up)))
+    let rectHeight = max(1, Int(height.rounded(.up)))
+    let payload: JSONObject = [
+        "x": rectX,
+        "y": rectY,
+        "width": rectWidth,
+        "height": rectHeight,
+        "source": "windowBounds"
+    ]
+    return ("\(rectX),\(rectY),\(rectWidth),\(rectHeight)", payload)
 }
 
 // @sm:node appshot.ocr.snapshot

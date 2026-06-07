@@ -23,11 +23,14 @@ def find_window(appshot, bundle_id, window_title):
     for app in payload.get("applications", []):
         if bundle_id and app.get("bundleIdentifier") != bundle_id:
             continue
-        for window in app.get("windows", []):
-            title = window.get("title", "")
-            if window_title and window_title not in title:
-                continue
-            matches.append((app, window))
+        for collection, source in (("windows", "cgWindow"), ("accessibilityWindows", "accessibilityWindow")):
+            for window in app.get(collection, []):
+                title = window.get("title", "")
+                if window_title and window_title not in title:
+                    continue
+                target = dict(window)
+                target.setdefault("source", source)
+                matches.append((app, target))
 
     if not matches:
         raise SystemExit(f"No window matched bundle={bundle_id!r} title={window_title!r}")
@@ -135,10 +138,9 @@ def main():
     appshot = str(pathlib.Path(args.appshot_bin))
     app, window = find_window(appshot, args.bundle_id, args.window_title)
     window_id = window.get("windowID")
-    if not window_id:
-        raise SystemExit("Matched window has no windowID")
+    target_title = window.get("title") or args.window_title
 
-    label = args.label or f"{app.get('localizedName', 'app')}-{window_id}"
+    label = args.label or f"{app.get('localizedName', 'app')}-{window_id or target_title}"
     safe_label = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in label)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output_dir = pathlib.Path(args.output_dir)
@@ -147,11 +149,9 @@ def main():
     screenshot_path = output_dir / f"{safe_label}-{stamp}.png"
     report_path = output_dir / f"{safe_label}-{stamp}.report.json"
 
-    subprocess.run([
+    capture_command = [
         appshot,
         "capture",
-        "--window-id",
-        str(window_id),
         "--max-depth",
         args.max_depth,
         "--max-children",
@@ -167,7 +167,13 @@ def main():
         "--output",
         str(json_path),
         "--pretty",
-    ], check=True, text=True, capture_output=True)
+    ]
+    if window_id:
+        capture_command[2:2] = ["--window-id", str(window_id)]
+    else:
+        capture_command[2:2] = ["--bundle-id", args.bundle_id, "--window-title", target_title]
+
+    subprocess.run(capture_command, check=True, text=True, capture_output=True)
     capture = json.loads(json_path.read_text())
 
     checks = []
@@ -180,11 +186,15 @@ def main():
     )
 
     primary_window = capture.get("primaryWindow", {})
+    primary_title = primary_window.get("title", "")
+    target_window_matches = args.window_title in primary_title
+    if window_id:
+        target_window_matches = target_window_matches and primary_window.get("windowID") == window_id
     add_check(
         checks,
         "target window",
-        primary_window.get("windowID") == window_id and args.window_title in primary_window.get("title", ""),
-        f"{primary_window.get('title')} #{primary_window.get('windowID')}",
+        target_window_matches,
+        f"{primary_title} #{primary_window.get('windowID')} source={primary_window.get('source', 'cgWindow')}",
     )
 
     screenshot = capture.get("screenshot", {})
@@ -195,11 +205,16 @@ def main():
         screenshot.get("captured") is True and screenshot_path.exists() and size is not None and size[0] > 0 and size[1] > 0,
         f"{screenshot_path} {size}",
     )
+    screenshot_matches_target = pathlib.Path(screenshot.get("path", "")) == screenshot_path
+    if window_id:
+        screenshot_matches_target = screenshot_matches_target and screenshot.get("windowID") == window_id
+    else:
+        screenshot_matches_target = screenshot_matches_target and screenshot.get("captureMode") == "bounds"
     add_check(
         checks,
         "screenshot matches target window",
-        screenshot.get("windowID") == window_id and pathlib.Path(screenshot.get("path", "")) == screenshot_path,
-        f"jsonPath={screenshot.get('path')} windowID={screenshot.get('windowID')}",
+        screenshot_matches_target,
+        f"jsonPath={screenshot.get('path')} windowID={screenshot.get('windowID')} mode={screenshot.get('captureMode')}",
     )
     image_bounds_ok, image_bounds_detail = image_matches_window_bounds(size, primary_window, args.image_border_tolerance)
     add_check(
@@ -222,6 +237,10 @@ def main():
     ax_text = ax.get("text") or ""
     visible_text = ax.get("visibleText") or ""
     target_window = ax.get("targetWindow") or {}
+    target_ax_title = target_window.get("title", "")
+    target_ax_matches = args.window_title in target_ax_title
+    if window_id:
+        target_ax_matches = target_ax_matches and target_window.get("windowID") == window_id
     add_check(
         checks,
         "ax text available",
@@ -243,8 +262,8 @@ def main():
     add_check(
         checks,
         "accessibility target window metadata",
-        target_window.get("windowID") == window_id and args.window_title in target_window.get("title", ""),
-        f"{target_window.get('title')} #{target_window.get('windowID')}",
+        target_ax_matches,
+        f"{target_ax_title} #{target_window.get('windowID')} source={target_window.get('source', 'cgWindow')}",
     )
 
     hierarchy = hierarchy_blob(ax)
@@ -262,6 +281,7 @@ def main():
         "bundleIdentifier": args.bundle_id,
         "windowTitle": primary_window.get("title"),
         "windowID": window_id,
+        "windowSource": window.get("source", "cgWindow"),
         "jsonPath": str(json_path),
         "screenshotPath": str(screenshot_path),
         "reportPath": str(report_path),

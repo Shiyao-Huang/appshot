@@ -43,6 +43,7 @@ struct CLIOptions {
     var windowID: UInt32?
     var pid: pid_t?
     var bundleID: String?
+    var windowTitle: String?
 }
 
 // @sm:node appshot.cli
@@ -95,7 +96,8 @@ struct AppShotCLI {
                     cacheTrigger: options.cacheTrigger,
                     targetWindowID: options.windowID,
                     targetProcessIdentifier: options.pid,
-                    targetBundleIdentifier: options.bundleID
+                    targetBundleIdentifier: options.bundleID,
+                    targetWindowTitle: options.windowTitle
                 ))
             case "permissions":
                 payload = AppShotCore.permissions(prompt: options.promptPermissions)
@@ -234,6 +236,8 @@ func parseArguments(_ args: [String]) throws -> CLIOptions {
             options.cacheTrigger = try nextValue()
         case "--window-id":
             options.windowID = UInt32(try nextValue())
+        case "--window-title":
+            options.windowTitle = try nextValue()
         case "--pid":
             options.pid = pid_t(Int32(try nextValue()) ?? 0)
         case "--bundle-id":
@@ -298,7 +302,7 @@ func printHelp() {
       appshot status [--prompt] [--pretty]
       appshot codex-apps-status [--prompt] [--pretty]
       appshot codex-computer-use-status [--pretty]
-      appshot capture [--window-id id] [--pid pid] [--bundle-id id] [--activate-target|--no-activate-target] [--request-app-capture] [--app-capture-timeout seconds] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-electron-debugging] [--electron-debugging-timeout seconds] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
+      appshot capture [--window-id id] [--window-title title] [--pid pid] [--bundle-id id] [--activate-target|--no-activate-target] [--request-app-capture] [--app-capture-timeout seconds] [--include-screenshot] [--browser-annotation-screenshots-mode always|necessary] [--browser-interaction-mode mode] [--browser-annotation-editor-mode comment|design] [--browser-original-view-enabled] [--browser-design-modifier-pressed] [--browser-tweaks-editor-open] [--browser-active-design-change-json json] [--include-browser-dom] [--browser-dom-timeout seconds] [--browser-dom-fixture-json json] [--browser-dom-install-bridge] [--browser-dom-clear-bridge-log] [--include-electron-debugging] [--electron-debugging-timeout seconds] [--include-ocr] [--screenshot path.png] [--output path] [--format json|codex] [--max-depth n] [--max-children n] [--accessibility-timeout seconds] [--screenshot-timeout seconds] [--ignore-cache|--no-cache|--fresh] [--cache-max-age seconds] [--write-cache] [--cache-trigger label] [--pretty]
       appshot permissions [--prompt]
       appshot list-windows [--pretty]
 
@@ -308,7 +312,8 @@ func printHelp() {
       codex-computer-use-status reports Codex Computer Use service, app approval, and host-bridge parity diagnostics.
       Use --ignore-cache, --no-cache, or --fresh to force a fresh frontmost-window capture.
       AppShot.app writes the shortcut cache when both left and right Option keys are pressed together.
-      Use list-windows first. Then pass the chosen windowID, pid, or bundleID to capture.
+      Use list-windows first. Then pass the chosen windowID, window title, pid, or bundleID to capture.
+      --window-title can target Accessibility-only Electron windows that are visible to macOS AX but absent from CGWindow.
       Target activation is enabled by default so explicit captures more closely match Codex's front-window AppShot behavior.
       --request-app-capture asks the running GUI AppShot.app to perform the capture and waits for its shared cache before falling back to direct CLI capture.
       Accessibility permission is required for rich text/UI trees.

@@ -70,11 +70,11 @@ Primary goal: make AppShot fully usable for Codex and Claude Code through Access
    ```sh
    "$APPSHOT_BIN" capture --pretty --max-depth 60 --accessibility-timeout 30
    ```
-12. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`. Explicit target captures activate the target by default to match Codex's front-window behavior; add `--no-activate-target` only when focus must not change. If CLI/MCP frontmost state is unreliable or reports `loginwindow`, prefer the GUI App path while AppShot.app is running:
+12. If the user refers to a non-frontmost or described window, call `"$APPSHOT_BIN" list-windows --pretty` first. Pick the right `windowID`, `windowTitle`, `pid`, or `bundleID` yourself from the structured window list, then pass it to capture, e.g. `"$APPSHOT_BIN" capture --window-id 123 --pretty --max-depth 60 --accessibility-timeout 20`. `list-windows` includes both CG `windows` and AX `accessibilityWindows`; if an Electron/VS Code target appears only in `accessibilityWindows`, capture it by title, e.g. `"$APPSHOT_BIN" capture --bundle-id com.microsoft.VSCode --window-title 'image.png — 自媒体' --pretty --max-depth 60 --accessibility-timeout 20`. When an AX-only target has no CG `windowID`, screenshots use its AX bounds rectangle and report `screenshot.captureMode: bounds`. Explicit target captures activate the target by default to match Codex's front-window behavior; add `--no-activate-target` only when focus must not change. If CLI/MCP frontmost state is unreliable or reports `loginwindow`, prefer the GUI App path while AppShot.app is running:
    ```sh
    "$APPSHOT_BIN" capture --request-app-capture --app-capture-timeout 3 --pretty --max-depth 60 --accessibility-timeout 20
    ```
-13. For Claude Code or Codex Computer Use-compatible consumers, the MCP server also exposes `list_apps` and `get_app_state`. `get_app_state` accepts `app` as an app name, full `.app` path, or bundle identifier and returns Codex-style appshot text plus PNG image content.
+13. For Claude Code or Codex Computer Use-compatible consumers, the MCP server also exposes `list_apps` and `get_app_state`. `get_app_state` accepts `app` as an app name, full `.app` path, or bundle identifier, accepts optional `windowTitle`, and returns Codex-style appshot text plus PNG image content.
 14. Read `captureCache`, then `codex.text` first for Codex-compatible context. For debugging, read `codexAppsStatus.codexAppsReady`, `codexComputerUseStatus`, `accessibility.root`, `accessibility.focusedElement`, `accessibility.text`, `accessibility.electronAccessibility`, and `accessibility.documentReferences[].textPreview`.
     If `accessibility.rootSource` starts with `targetWindowUnmatched`, do not treat the app-level tree as a successful capture of the requested window. Read `appCaptureRequest`, `targetActivation`, and `accessibility.targetWindowMatch`, especially `axWindowExposure.roleCounts` and `axWindowExposure.suspectedSelfReferentialAXWindows`, then retry through `--request-app-capture`, with the target app/window active, enable Electron/VS Code screen reader accessibility support when appropriate, or use screenshot/OCR as fallback evidence. For Electron helper/renderer investigation, explicit `--pid` can probe non-`NSRunningApplication` PIDs and will report `auxiliaryProcessCapture`.
     When a Codex/Claude consumer needs browser-comment-shaped context, read `codexBrowserPayload.localBrowserContext`, `codexBrowserPayload.localBrowserCommentMetadata`, `codexBrowserPayload.localBrowserAttachedImages`, `codexBrowserPayload.localBrowserDesignChange`, and `codexBrowserPayload.localBrowserScreenshot`. For browser DOM captures, inspect exact Codex-shaped values such as `localBrowserContext.pageUrl`, `frameUrl`, `targetSelector`, `targetImmediateText`, `targetPath`, `localBrowserCommentMetadata.markerViewportPoint`, and `localBrowserDesignChange.group`.
@@ -135,6 +135,11 @@ The CLI returns JSON with:
 - `frontmostWindow`
 - `currentWindow`
 - `windows`
+- `accessibilityWindows`
+- `windowDiscovery`
+- `windowDiscovery.preferredAccessibilityWindow`
+- `windowDiscovery.hasAccessibilityOnlyWindows`
+- `screenshot.captureMode`
 - `targetActivation`
 - `targetActivation.frontmostMatchedTarget`
 - `appCaptureRequest`

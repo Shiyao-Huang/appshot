@@ -105,6 +105,7 @@ function tools() {
           includeOCR: { type: "boolean", default: false },
           screenshotPath: { type: "string" },
           windowID: { type: "number" },
+          windowTitle: { type: "string" },
           pid: { type: "number" },
           bundleID: { type: "string" },
           activateTarget: { type: "boolean", default: true },
@@ -161,7 +162,7 @@ function tools() {
     },
     {
       name: "appshot_list_windows",
-      description: "List regular running apps and visible windows, including exact capture parameters for follow-up appshot_capture calls.",
+      description: "List regular running apps, CG windows, and macOS Accessibility windows, including exact capture parameters and AX-only windowTitle targets for follow-up appshot_capture calls.",
       inputSchema: { type: "object", properties: {} }
     },
     {
@@ -181,7 +182,8 @@ function tools() {
       inputSchema: {
         type: "object",
         properties: {
-          app: { type: "string", description: "App name, full app path, or unambiguous bundle identifier" }
+          app: { type: "string", description: "App name, full app path, or unambiguous bundle identifier" },
+          windowTitle: { type: "string", description: "Optional macOS Accessibility window title to target inside the app" }
         },
         required: ["app"],
         additionalProperties: false
@@ -228,6 +230,7 @@ function callTool(params = {}) {
     if (args.includeOCR) cliArgs.push("--include-ocr");
     if (args.screenshotPath) cliArgs.push("--screenshot", String(args.screenshotPath));
     if (args.windowID != null) cliArgs.push("--window-id", String(args.windowID));
+    if (args.windowTitle) cliArgs.push("--window-title", String(args.windowTitle));
     if (args.pid != null) cliArgs.push("--pid", String(args.pid));
     if (args.bundleID) cliArgs.push("--bundle-id", String(args.bundleID));
     if (args.activateTarget === false) cliArgs.push("--no-activate-target");
@@ -290,7 +293,8 @@ function callComputerUseListApps() {
     const path = app.bundleURL || app.bundlePath || "";
     const bundleID = app.bundleIdentifier || "";
     const windows = Array.isArray(app.windows) ? app.windows.length : 0;
-    return `${name} — ${path} — ${bundleID} [running, windows=${windows}]`;
+    const axWindows = Array.isArray(app.accessibilityWindows) ? app.accessibilityWindows.length : 0;
+    return `${name} — ${path} — ${bundleID} [running, windows=${windows}, accessibilityWindows=${axWindows}]`;
   });
   return {
     content: [{ type: "text", text: lines.join("\n") }]
@@ -334,6 +338,7 @@ function callComputerUseGetAppState(args) {
   ];
   if (target.bundleID) cliArgs.push("--bundle-id", target.bundleID);
   else if (target.pid != null) cliArgs.push("--pid", String(target.pid));
+  if (args.windowTitle) cliArgs.push("--window-title", String(args.windowTitle));
 
   const payload = runAppShotJSON(cliArgs);
   const codex = payload.codex || {};
@@ -350,6 +355,7 @@ function callComputerUseGetAppState(args) {
     _meta: {
       source: "appshot-get-app-state",
       app,
+      windowTitle: args.windowTitle || "",
       target,
       screenshotPath,
       codexComputerUseStatus: payload.codexComputerUseStatus || null
