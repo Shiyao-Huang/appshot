@@ -46,6 +46,6 @@ Expected AppShot fields when the matching preload is active:
 - `codexBrowserDOMIntegration.browserRuntimeBridge.hostOwner == "codex-electron-host"`
 - `codexBrowserDOMIntegration.browserRuntimeBridge.hostTransport == "codex-electron-ipc+appshot-electron-ipc"`
 
-Run `scripts/analyze_codex_electron_host_injection.mjs` to verify the Codex 522 packaged insertion points without mutating Codex.app. To materialize a patched evidence copy or an explicit in-place experiment, use `scripts/patch_codex_electron_host_for_appshot.mjs`; its default dry-run mode reports the exact main-bundle and `comment-preload.js` anchors it would patch.
+Run `scripts/analyze_codex_electron_host_injection.mjs` from a source checkout to verify the Codex 522 packaged insertion points without mutating Codex.app. Installed releases also carry this analyzer and `scripts/patch_codex_electron_host_for_appshot.mjs` inside the Codex integration directory, for example `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge/scripts/patch_codex_electron_host_for_appshot.mjs`. The patcher's default dry-run mode reports the exact main-bundle and `comment-preload.js` anchors it would patch; pass `--codex-evidence-root` or `--in-place` explicitly for installed runs.
 
 The standalone AppShot CLI/MCP status reports this artifact as installed, but `codexComputerUseStatus.hostBridge.codexHostIntegration.privateCodexWebviewHostAttached` remains `false` until an actual Codex-side Electron host loads the adapter before handler registration or wraps the existing Codex runtime handler.
