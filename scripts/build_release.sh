@@ -122,12 +122,13 @@ if [[ "$PUBLIC_RELEASE" == "1" ]]; then
 fi
 
 rm -rf "$DIST_DIR"
-mkdir -p "$PACKAGE_DIR/bin" "$PACKAGE_DIR/mcp" "$PACKAGE_DIR/browser-extension"
+mkdir -p "$PACKAGE_DIR/bin" "$PACKAGE_DIR/mcp" "$PACKAGE_DIR/browser-extension" "$PACKAGE_DIR/electron-preload"
 ditto "$APP_PATH" "$PACKAGE_DIR/$APP_NAME.app"
 ditto "$CLI_PATH" "$PACKAGE_DIR/bin/appshot"
 ditto "$ROOT/mcp/server.js" "$PACKAGE_DIR/mcp/server.js"
 ditto "$ROOT/mcp/package.json" "$PACKAGE_DIR/mcp/package.json"
 ditto "$ROOT/browser-extension/appshot-bridge" "$PACKAGE_DIR/browser-extension/appshot-bridge"
+ditto "$ROOT/electron-preload/appshot-host-bridge" "$PACKAGE_DIR/electron-preload/appshot-host-bridge"
 chmod +x "$PACKAGE_DIR/bin/appshot" "$PACKAGE_DIR/mcp/server.js"
 
 codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$PACKAGE_DIR/bin/appshot"

@@ -14,6 +14,7 @@ BIN_DIR="${APPSHOT_BIN_DIR:-$HOME/.local/bin}"
 BIN_PATH="$BIN_DIR/appshot"
 MCP_DIR="${APPSHOT_MCP_DIR:-$HOME/.local/share/appshot/mcp}"
 BROWSER_EXTENSION_DIR="${APPSHOT_BROWSER_EXTENSION_DIR:-$HOME/.local/share/appshot/browser-extension}"
+ELECTRON_PRELOAD_DIR="${APPSHOT_ELECTRON_PRELOAD_DIR:-$HOME/.local/share/appshot/electron-preload}"
 BUNDLE_ID="${APPSHOT_BUNDLE_ID:-com.qppshot.AppShot}"
 INSTALL_CLAUDE_CODE="${APPSHOT_INSTALL_CLAUDE_CODE:-${APPSHOT_INSTALL_CLAUDE_MCP:-0}}"
 TMP_DIR="$(mktemp -d)"
@@ -86,6 +87,7 @@ FOUND_APP="$(find "$UNPACK_DIR" -maxdepth 2 -name 'AppShot.app' -type d | head -
 FOUND_CLI="$(find "$UNPACK_DIR" -maxdepth 4 -type f -name 'appshot' -perm -111 | head -n 1)"
 FOUND_MCP="$(find "$UNPACK_DIR" -maxdepth 4 -type f -path '*/mcp/server.js' | head -n 1)"
 FOUND_BROWSER_EXTENSION="$(find "$UNPACK_DIR" -maxdepth 6 -type f -path '*/browser-extension/appshot-bridge/manifest.json' | head -n 1)"
+FOUND_ELECTRON_PRELOAD="$(find "$UNPACK_DIR" -maxdepth 6 -type f -path '*/electron-preload/appshot-host-bridge/preload.cjs' | head -n 1)"
 
 if [[ "${APPSHOT_RESET_PERMISSIONS:-0}" == "1" ]]; then
   log "resetting macOS privacy permissions for $BUNDLE_ID"
@@ -140,6 +142,13 @@ if [[ -n "$FOUND_BROWSER_EXTENSION" ]]; then
   log "installed AppShot browser bridge extension to $BROWSER_EXTENSION_DIR/appshot-bridge"
 fi
 
+if [[ -n "$FOUND_ELECTRON_PRELOAD" ]]; then
+  rm -rf "$ELECTRON_PRELOAD_DIR"
+  mkdir -p "$ELECTRON_PRELOAD_DIR"
+  ditto "$(dirname "$(dirname "$FOUND_ELECTRON_PRELOAD")")/" "$ELECTRON_PRELOAD_DIR/"
+  log "installed AppShot Electron host bridge to $ELECTRON_PRELOAD_DIR/appshot-host-bridge"
+fi
+
 if [[ "${APPSHOT_NO_OPEN:-0}" == "1" ]]; then
   log "skipping app launch because APPSHOT_NO_OPEN=1"
 else
@@ -155,5 +164,6 @@ fi
 log "cli: add $BIN_DIR to PATH if appshot is not found"
 log "mcp: set APPSHOT_BIN=$BIN_PATH when running $MCP_DIR/server.js"
 log "browser extension: load unpacked $BROWSER_EXTENSION_DIR/appshot-bridge when you want a browser-owned AppShot bridge"
+log "electron preload: use $ELECTRON_PRELOAD_DIR/appshot-host-bridge/preload.cjs and host.cjs for Electron-owned AppShot bridge experiments"
 log "claude: rerun with APPSHOT_INSTALL_CLAUDE_CODE=1 to give Claude Code the Codex App Shot ability"
 log "permissions: grant Accessibility and Screen Recording to AppShot when prompted"

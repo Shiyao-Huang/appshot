@@ -4248,8 +4248,18 @@ private func codexBrowserDOMIntegrationPayload(
             extensionHelperAvailable = existingHostOwner == "browser-extension"
                 || existingHostTransport.contains("extension-runtime")
         }
+        let electronHostBridgeAvailable: Bool
+        if let value = runtimeBridge["electronHostBridgeAvailable"] as? Bool {
+            electronHostBridgeAvailable = value
+        } else {
+            electronHostBridgeAvailable = existingHostOwner == "electron-preload"
+                || existingHostTransport.contains("electron-ipc")
+        }
         if runtimeBridge["extensionHelperAvailable"] == nil {
             runtimeBridge["extensionHelperAvailable"] = extensionHelperAvailable
+        }
+        if runtimeBridge["electronHostBridgeAvailable"] == nil {
+            runtimeBridge["electronHostBridgeAvailable"] = electronHostBridgeAvailable
         }
         if runtimeBridge["codexDesktopShimAvailable"] == nil {
             runtimeBridge["codexDesktopShimAvailable"] = runtimeBridge["installed"] as? Bool ?? false
@@ -4263,11 +4273,23 @@ private func codexBrowserDOMIntegrationPayload(
         if runtimeBridge["hostChannel"] == nil {
             runtimeBridge["hostChannel"] = "codex_desktop:browser-sidebar-runtime-message"
         }
+        let defaultHostOwner: String
+        let defaultHostTransport: String
+        if electronHostBridgeAvailable {
+            defaultHostOwner = "electron-preload"
+            defaultHostTransport = "electron-ipc"
+        } else if extensionHelperAvailable {
+            defaultHostOwner = "browser-extension"
+            defaultHostTransport = "window.postMessage+extension-runtime"
+        } else {
+            defaultHostOwner = "apple-events-page-bridge"
+            defaultHostTransport = "page-local"
+        }
         if runtimeBridge["hostOwner"] == nil {
-            runtimeBridge["hostOwner"] = extensionHelperAvailable ? "browser-extension" : "apple-events-page-bridge"
+            runtimeBridge["hostOwner"] = defaultHostOwner
         }
         if runtimeBridge["hostTransport"] == nil {
-            runtimeBridge["hostTransport"] = extensionHelperAvailable ? "window.postMessage+extension-runtime" : "page-local"
+            runtimeBridge["hostTransport"] = defaultHostTransport
         }
         if runtimeBridge["hostShim"] == nil {
             runtimeBridge["hostShim"] = runtimeBridge["codexDesktopShimAvailable"] as? Bool ?? false
@@ -4899,8 +4921,9 @@ private func browserDOMPageProbeJavaScript(
       const bridgeHost = window.__appshotBrowserBridgeHost || {};
       const codexDesktopShimAvailable = Boolean(window.__appshotCodexDesktopShimInstalled && window.codex_desktop && typeof window.codex_desktop.sendMessageToHost === "function" && typeof window.codex_desktop.subscribeToHostMessages === "function");
       const extensionHelperAvailable = Boolean(bridgeHost.extensionHelperAvailable || bridgeHost.owner === "browser-extension" || (window.codex_desktop && window.codex_desktop.__appshotHostOwner === "browser-extension"));
-      const hostOwner = bridgeHost.owner || (extensionHelperAvailable ? "browser-extension" : (codexDesktopShimAvailable ? "apple-events-page-bridge" : ""));
-      const hostTransport = bridgeHost.transport || (extensionHelperAvailable ? "window.postMessage+extension-runtime" : (codexDesktopShimAvailable ? "page-local" : ""));
+      const electronHostBridgeAvailable = Boolean(bridgeHost.electronHostBridgeAvailable || bridgeHost.owner === "electron-preload" || (window.codex_desktop && window.codex_desktop.__appshotHostOwner === "electron-preload"));
+      const hostOwner = bridgeHost.owner || (electronHostBridgeAvailable ? "electron-preload" : (extensionHelperAvailable ? "browser-extension" : (codexDesktopShimAvailable ? "apple-events-page-bridge" : "")));
+      const hostTransport = bridgeHost.transport || (electronHostBridgeAvailable ? "electron-ipc" : (extensionHelperAvailable ? "window.postMessage+extension-runtime" : (codexDesktopShimAvailable ? "page-local" : "")));
       const runtimeBridge = {
         installed: Boolean(window.__appshotRuntimeBridgeInstalled),
         installRequested: appshotInstallBridge,
@@ -4909,6 +4932,7 @@ private func browserDOMPageProbeJavaScript(
         version: window.__appshotRuntimeBridgeVersion || appshotBridgeVersion,
         source: appshotBridgeSource,
         extensionHelperAvailable: extensionHelperAvailable,
+        electronHostBridgeAvailable: electronHostBridgeAvailable,
         codexDesktopShimAvailable: codexDesktopShimAvailable,
         hostAPI: ["sendMessageToHost", "subscribeToHostMessages"],
         hostChannel: "codex_desktop:browser-sidebar-runtime-message",
@@ -5082,6 +5106,7 @@ public func codexBrowserPayload(
             "browserRuntimeCandidateEventCount": browserDOMIntegration["browserRuntimeCandidateEventCount"] ?? 0,
             "liveEventStreamAvailable": browserDOMIntegration["liveEventStreamAvailable"] ?? false,
             "extensionHelperAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["extensionHelperAvailable"] ?? false,
+            "electronHostBridgeAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["electronHostBridgeAvailable"] ?? false,
             "codexDesktopShimAvailable": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["codexDesktopShimAvailable"] ?? false,
             "hostAPI": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostAPI"] ?? [],
             "hostChannel": (browserDOMIntegration["browserRuntimeBridge"] as? JSONObject)?["hostChannel"] ?? NSNull(),
