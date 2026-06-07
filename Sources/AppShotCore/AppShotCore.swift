@@ -771,6 +771,16 @@ public enum AppShotCore {
                         "subscribeToHostMessages"
                     ],
                     "hostChannel": "codex_desktop:browser-sidebar-runtime-message",
+                    "hostInboundChannel": "codex_desktop:browser-sidebar-runtime-message",
+                    "hostOutboundChannel": "codex_desktop:message-for-view",
+                    "hostToViewChannel": "codex_desktop:message-for-view",
+                    "ipcPattern": "ipcRenderer.invoke/ipcMain.handle + webContents.send/ipcRenderer.on",
+                    "preloadLifecycle": [
+                        "primaryWindowPreload": "preload.js",
+                        "browserSidebarGuestPreload": "comment-preload.js",
+                        "browserSidebarWebviewAttach": "will-attach-webview",
+                        "browserSidebarWebContentsAttach": "did-attach-webview"
+                    ],
                     "expectedHostOwners": [
                         "apple-events-page-bridge",
                         "browser-extension",
@@ -781,9 +791,11 @@ public enum AppShotCore {
                         "page-local",
                         "window.postMessage+extension-runtime",
                         "electron-ipc",
+                        "codex-electron-ipc",
                         "codex-electron-ipc+appshot-electron-ipc"
                     ],
                     "verifiedBy": [
+                        "scripts/analyze_codex_electron_host_injection.mjs",
                         "scripts/verify_codex_host_integration.mjs",
                         "scripts/verify_codex_parity.sh"
                     ],
@@ -4393,6 +4405,30 @@ private func codexBrowserDOMIntegrationPayload(
         if runtimeBridge["hostChannel"] == nil {
             runtimeBridge["hostChannel"] = "codex_desktop:browser-sidebar-runtime-message"
         }
+        let defaultHostInboundChannel = "codex_desktop:browser-sidebar-runtime-message"
+        let defaultHostOutboundChannel = codexHostBridgeAvailable
+            ? "codex_desktop:message-for-view"
+            : defaultHostInboundChannel
+        if runtimeBridge["hostInboundChannel"] == nil {
+            runtimeBridge["hostInboundChannel"] = defaultHostInboundChannel
+        }
+        if runtimeBridge["hostOutboundChannel"] == nil {
+            runtimeBridge["hostOutboundChannel"] = defaultHostOutboundChannel
+        }
+        if runtimeBridge["hostToViewChannel"] == nil {
+            runtimeBridge["hostToViewChannel"] = defaultHostOutboundChannel
+        }
+        if runtimeBridge["ipcPattern"] == nil {
+            if codexHostBridgeAvailable {
+                runtimeBridge["ipcPattern"] = "ipcRenderer.invoke/ipcMain.handle + webContents.send/ipcRenderer.on"
+            } else if electronHostBridgeAvailable {
+                runtimeBridge["ipcPattern"] = "ipcRenderer.send/ipcMain.on"
+            } else if extensionHelperAvailable {
+                runtimeBridge["ipcPattern"] = "window.postMessage+extension-runtime"
+            } else {
+                runtimeBridge["ipcPattern"] = "page-local"
+            }
+        }
         let defaultHostOwner: String
         let defaultHostTransport: String
         if codexHostBridgeAvailable {
@@ -5048,6 +5084,8 @@ private func browserDOMPageProbeJavaScript(
       const codexDesktopAPIAvailable = Boolean(window.codex_desktop && typeof window.codex_desktop.sendMessageToHost === "function" && typeof window.codex_desktop.subscribeToHostMessages === "function");
       const codexDesktopHostOwner = window.codex_desktop && window.codex_desktop.__appshotHostOwner;
       const codexDesktopHostTransport = window.codex_desktop && window.codex_desktop.__appshotHostTransport;
+      const hostInboundChannel = "codex_desktop:browser-sidebar-runtime-message";
+      const codexHostOutboundChannel = "codex_desktop:message-for-view";
       const codexDesktopShimAvailable = Boolean(window.__appshotCodexDesktopShimInstalled && codexDesktopAPIAvailable);
       const nativeCodexDesktopAvailable = Boolean(codexDesktopAPIAvailable && !window.__appshotCodexDesktopShimInstalled && !bridgeHost.owner && !codexDesktopHostOwner);
       const codexHostBridgeAvailable = Boolean(nativeCodexDesktopAvailable || bridgeHost.codexHostBridgeAvailable || bridgeHost.owner === "codex-electron-host" || codexDesktopHostOwner === "codex-electron-host");
@@ -5056,6 +5094,8 @@ private func browserDOMPageProbeJavaScript(
       const codexDefaultTransport = nativeCodexDesktopAvailable && !bridgeHost.owner && !codexDesktopHostOwner ? "codex-electron-ipc" : "codex-electron-ipc+appshot-electron-ipc";
       const hostOwner = bridgeHost.owner || codexDesktopHostOwner || (codexHostBridgeAvailable ? "codex-electron-host" : (electronHostBridgeAvailable ? "electron-preload" : (extensionHelperAvailable ? "browser-extension" : (codexDesktopShimAvailable ? "apple-events-page-bridge" : ""))));
       const hostTransport = bridgeHost.transport || codexDesktopHostTransport || (codexHostBridgeAvailable ? codexDefaultTransport : (electronHostBridgeAvailable ? "electron-ipc" : (extensionHelperAvailable ? "window.postMessage+extension-runtime" : (codexDesktopShimAvailable ? "page-local" : ""))));
+      const hostOutboundChannel = bridgeHost.outboundChannel || bridgeHost.hostOutboundChannel || (codexHostBridgeAvailable ? codexHostOutboundChannel : hostInboundChannel);
+      const ipcPattern = bridgeHost.ipcPattern || (codexHostBridgeAvailable ? "ipcRenderer.invoke/ipcMain.handle + webContents.send/ipcRenderer.on" : (electronHostBridgeAvailable ? "ipcRenderer.send/ipcMain.on" : (extensionHelperAvailable ? "window.postMessage+extension-runtime" : "page-local")));
       const runtimeBridge = {
         installed: Boolean(window.__appshotRuntimeBridgeInstalled),
         installRequested: appshotInstallBridge,
@@ -5069,9 +5109,13 @@ private func browserDOMPageProbeJavaScript(
         codexHostBridgeAvailable: codexHostBridgeAvailable,
         codexDesktopShimAvailable: codexDesktopShimAvailable,
         hostAPI: ["sendMessageToHost", "subscribeToHostMessages"],
-        hostChannel: "codex_desktop:browser-sidebar-runtime-message",
+        hostChannel: hostInboundChannel,
+        hostInboundChannel: hostInboundChannel,
+        hostOutboundChannel: hostOutboundChannel,
+        hostToViewChannel: hostOutboundChannel,
         hostOwner: hostOwner,
         hostTransport: hostTransport,
+        ipcPattern: ipcPattern,
         hostShim: codexDesktopShimAvailable,
         hostSubscriberCount: ensureHostSubscribers().length,
         eventCount: runtimeBridgeLog.length,

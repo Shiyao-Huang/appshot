@@ -245,6 +245,7 @@ electron_host_readme = (root / "electron-preload/appshot-host-bridge/README.md")
 codex_host_adapter = (root / "codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs").read_text()
 codex_host_readme = (root / "codex-integration/appshot-codex-host-bridge/README.md").read_text()
 codex_host_verifier = (root / "scripts/verify_codex_host_integration.mjs").read_text()
+codex_host_analyzer = (root / "scripts/analyze_codex_electron_host_injection.mjs").read_text()
 server = (root / "mcp/server.js").read_text()
 installer = (root / "install.sh").read_text()
 release = (root / "scripts/build_release.sh").read_text()
@@ -318,7 +319,7 @@ for name, text, needles in [
     ("Native Codex comment preload evidence", comment_preload + core + parity + skill, ["sendMessageToHost(e){d.ipcRenderer.invoke(ke,e)}", "subscribeToHostMessages(e){Hf=!0", "d.ipcRenderer.on(Oe", "codex_desktop:browser-sidebar-runtime-message", "nativeCodexDesktopAvailable", "codexHostBridgeAvailable", "codex-electron-ipc"]),
     ("Browser bridge extension helper", json.dumps(extension_manifest) + extension_page + extension_content + extension_background + installer + release + parity + skill, ["manifest_version", "service_worker", "content_scripts", "page-bridge.js", "content.js", "background.js", "window.codex_desktop", "sendMessageToHost", "subscribeToHostMessages", "codex_desktop:browser-sidebar-runtime-message", "window.postMessage+extension-runtime", "browser-extension", "extensionHelperAvailable", "hostOwner", "hostTransport"]),
     ("Electron host preload helper", electron_preload + electron_host + electron_host_readme + installer + release + parity + skill, ["preload.cjs", "host.cjs", "window.codex_desktop", "sendMessageToHost", "subscribeToHostMessages", "installAppShotElectronHostBridge", "codex_desktop:browser-sidebar-runtime-message", "electron-preload", "electron-ipc", "electronHostBridgeAvailable", "hostOwner", "hostTransport"]),
-    ("Codex host integration adapter", codex_host_adapter + codex_host_readme + codex_host_verifier + core + installer + release + parity + skill, ["codex-host-adapter.cjs", "installAppShotCodexHostBridge", "codex_desktop:browser-sidebar-runtime-message", "sendMessageToHost", "subscribeToHostMessages", "codex-electron-host", "codex-electron-ipc+appshot-electron-ipc", "host-managed-browser-state", "codexHostIntegration", "privateCodexWebviewHostAttached", "scripts/verify_codex_host_integration.mjs"]),
+    ("Codex host integration adapter", codex_host_adapter + codex_host_readme + codex_host_verifier + codex_host_analyzer + core + installer + release + parity + skill, ["codex-host-adapter.cjs", "installAppShotCodexHostBridge", "wrapCodexRuntimeMessageHandler", "analyze_codex_electron_host_injection.mjs", "codex_desktop:browser-sidebar-runtime-message", "codex_desktop:message-for-view", "hostInboundChannel", "hostOutboundChannel", "ipcRenderer.invoke/ipcMain.handle", "webContents.send/ipcRenderer.on", "sendMessageToHost", "subscribeToHostMessages", "codex-electron-host", "codex-electron-ipc+appshot-electron-ipc", "host-managed-browser-state", "codexHostIntegration", "privateCodexWebviewHostAttached", "scripts/verify_codex_host_integration.mjs"]),
     ("Codex browser remote debugging target", core + app_session + parity + skill, ["remoteDebuggingTarget", "codexBrowserRemoteDebuggingTarget", "content shell remote debugging", "inspectable webcontents", "9222", "9229"]),
     ("Electron CDP remote debugging probe", core + cli + server + parity + skill, ["codexElectronRemoteDebugging", "codexElectronRemoteDebuggingPayload", "codex-electron-remote-debugging", "electron-cdp-probe", "scannedPorts", "selectedTarget", "webSocketDebuggerUrl", "Chrome DevTools Protocol", "Accessibility.getFullAXTree", "Runtime.evaluate", "domSnapshot", "includeElectronDebugging", "--include-electron-debugging"]),
     ("Codex apps readiness surface", core + cli + server + parity + skill, ["codexAppsStatus", "codex-apps-status", "appshot_codex_apps_status", "codex-accessible-connectors-status", "codexAppsReady", "forceRefetchSupported", "retryWhenNotReady", "AccessibleConnectorsStatus", "force_refetch"]),
@@ -343,6 +344,8 @@ log "checking Electron host bridge helper"
 (cd "$ROOT" && node scripts/verify_electron_host_bridge.mjs >/dev/null)
 log "checking Codex host integration adapter"
 (cd "$ROOT" && node scripts/verify_codex_host_integration.mjs >/dev/null)
+log "checking Codex host injection analyzer"
+(cd "$ROOT" && node scripts/analyze_codex_electron_host_injection.mjs >/dev/null)
 
 STATUS_JSON="$(mktemp)"
 CODEX_APPS_JSON="$(mktemp)"
@@ -425,6 +428,11 @@ def check_codex_host_integration(name, payload):
             "integrationArtifacts",
             "hostAPI",
             "hostChannel",
+            "hostInboundChannel",
+            "hostOutboundChannel",
+            "hostToViewChannel",
+            "ipcPattern",
+            "preloadLifecycle",
             "expectedHostOwners",
             "expectedHostTransports",
             "verifiedBy",
@@ -440,12 +448,24 @@ def check_codex_host_integration(name, payload):
         raise SystemExit(f"{name} must not claim Codex private host attachment from standalone CLI/MCP")
     if integration.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
         raise SystemExit(f"{name} codexHostIntegration hostChannel drifted")
+    if integration.get("hostInboundChannel") != "codex_desktop:browser-sidebar-runtime-message":
+        raise SystemExit(f"{name} codexHostIntegration hostInboundChannel drifted")
+    if integration.get("hostOutboundChannel") != "codex_desktop:message-for-view":
+        raise SystemExit(f"{name} codexHostIntegration hostOutboundChannel drifted")
+    if integration.get("hostToViewChannel") != "codex_desktop:message-for-view":
+        raise SystemExit(f"{name} codexHostIntegration hostToViewChannel drifted")
+    if integration.get("ipcPattern") != "ipcRenderer.invoke/ipcMain.handle + webContents.send/ipcRenderer.on":
+        raise SystemExit(f"{name} codexHostIntegration IPC pattern drifted")
     if sorted(integration.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
         raise SystemExit(f"{name} codexHostIntegration host API drifted")
     if "codex-electron-host" not in integration.get("expectedHostOwners", []):
         raise SystemExit(f"{name} codexHostIntegration missing Codex host owner")
     if "codex-electron-ipc+appshot-electron-ipc" not in integration.get("expectedHostTransports", []):
         raise SystemExit(f"{name} codexHostIntegration missing Codex host transport")
+    if "codex-electron-ipc" not in integration.get("expectedHostTransports", []):
+        raise SystemExit(f"{name} codexHostIntegration missing native Codex host transport")
+    if "scripts/analyze_codex_electron_host_injection.mjs" not in integration.get("verifiedBy", []):
+        raise SystemExit(f"{name} codexHostIntegration missing injection analyzer verifier")
     artifacts = integration.get("integrationArtifacts", {})
     require_keys(
         f"{name} codexHostIntegration.integrationArtifacts",
@@ -1129,12 +1149,24 @@ for name, payload in [
         raise SystemExit(f"{name} must not claim Codex private host attachment from standalone MCP")
     if integration.get("hostChannel") != "codex_desktop:browser-sidebar-runtime-message":
         raise SystemExit(f"{name} codexHostIntegration hostChannel drifted")
+    if integration.get("hostInboundChannel") != "codex_desktop:browser-sidebar-runtime-message":
+        raise SystemExit(f"{name} codexHostIntegration hostInboundChannel drifted")
+    if integration.get("hostOutboundChannel") != "codex_desktop:message-for-view":
+        raise SystemExit(f"{name} codexHostIntegration hostOutboundChannel drifted")
+    if integration.get("hostToViewChannel") != "codex_desktop:message-for-view":
+        raise SystemExit(f"{name} codexHostIntegration hostToViewChannel drifted")
+    if integration.get("ipcPattern") != "ipcRenderer.invoke/ipcMain.handle + webContents.send/ipcRenderer.on":
+        raise SystemExit(f"{name} codexHostIntegration IPC pattern drifted")
     if sorted(integration.get("hostAPI", [])) != ["sendMessageToHost", "subscribeToHostMessages"]:
         raise SystemExit(f"{name} codexHostIntegration host API drifted")
     if "codex-electron-host" not in integration.get("expectedHostOwners", []):
         raise SystemExit(f"{name} codexHostIntegration missing Codex host owner")
     if "codex-electron-ipc+appshot-electron-ipc" not in integration.get("expectedHostTransports", []):
         raise SystemExit(f"{name} codexHostIntegration missing Codex host transport")
+    if "codex-electron-ipc" not in integration.get("expectedHostTransports", []):
+        raise SystemExit(f"{name} codexHostIntegration missing native Codex host transport")
+    if "scripts/analyze_codex_electron_host_injection.mjs" not in integration.get("verifiedBy", []):
+        raise SystemExit(f"{name} codexHostIntegration missing injection analyzer verifier")
     artifacts = integration.get("integrationArtifacts", {})
     for artifact_name in ["codexHostAdapter", "electronPreloadHelper", "browserExtensionHelper"]:
         artifact = artifacts.get(artifact_name, {})
