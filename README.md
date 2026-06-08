@@ -120,7 +120,7 @@ Latest local all-app rule gate, captured on 2026-06-08 from the visible app set:
 | Rule output contract | `ruleOutputKind: upsertable-json-rule`, `ruleArtifactFormat: json` |
 | Governance and parity gates | `scripts/verify_rule_governance.py` ok, `scripts/verify_codex_parity.sh` ok |
 
-The lowest live selected score was Safari at 0.9338; Codex and Feishu selected rules scored 0.9410 and 0.9416. VS Code windows scored 0.9697 or higher, and the AI WeChat Desktop capture that previously crashed now completed with score 1.0000. The rule trainer still treats OCR as teacher/evaluator signal only; effectiveness improvements are encoded in JSON rules such as anchor rejection, weighted boosts, line caps, and `transport.maxLineChars`.
+The lowest live selected score was Safari at 0.9338; Codex and Feishu selected rules scored 0.9410 and 0.9416. VS Code windows scored 0.9697 or higher, and the AI WeChat Desktop capture that previously crashed now completed with score 1.0000. The rule trainer still treats OCR as teacher/evaluator signal only; effectiveness improvements are encoded in JSON rules such as anchor rejection, weighted boosts, line caps, and `transport.maxLineChars`. See [docs/rule-training-evolution.md](docs/rule-training-evolution.md) for the evolution process.
 
 App/window QA example:
 
@@ -300,7 +300,7 @@ scripts/verify_codex_parity.sh
 | Rule 输出契约 | `ruleOutputKind: upsertable-json-rule`，`ruleArtifactFormat: json` |
 | Governance 和 parity gate | `scripts/verify_rule_governance.py` 通过，`scripts/verify_codex_parity.sh` 通过 |
 
-最终 live selected 最低分是 Safari 的 0.9338；Codex 和飞书分别为 0.9410、0.9416。VS Code 窗口均为 0.9697 以上；此前会触发 SIGTRAP 的 AI WeChat Desktop 现在能完成捕捉，得分 1.0000。训练仍保持 OCR 只作为 teacher/evaluator 信号，提效内容都在 JSON rule 中表达，例如 anchor reject、weighted boost、line cap 和 `transport.maxLineChars`。
+最终 live selected 最低分是 Safari 的 0.9338；Codex 和飞书分别为 0.9410、0.9416。VS Code 窗口均为 0.9697 以上；此前会触发 SIGTRAP 的 AI WeChat Desktop 现在能完成捕捉，得分 1.0000。训练仍保持 OCR 只作为 teacher/evaluator 信号，提效内容都在 JSON rule 中表达，例如 anchor reject、weighted boost、line cap 和 `transport.maxLineChars`。完整演进过程见 [docs/rule-training-evolution.md](docs/rule-training-evolution.md)。
 
 App/window QA 示例：
 
