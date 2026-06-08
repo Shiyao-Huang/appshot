@@ -107,6 +107,21 @@ scripts/verify_codex_parity.sh
 
 This builds the Swift CLI and native `AppShot.app`, checks bundle identity/version, verifies Codex-style JSON aliases, and runs MCP smoke tests. See `docs/codex-parity.md` for the evidence-backed parity matrix.
 
+### Effect Measurement
+
+Latest local all-app rule gate, captured on 2026-06-08 from the visible app set:
+
+| Check | Result |
+| --- | --- |
+| Live all-app training | 17 samples, 0 failures |
+| Selected-rule score | minimum 0.9338, average 0.9804 |
+| Replay of same live raw captures | 17 samples, minimum 0.9410, average 0.9827 |
+| Replay of previous raw capture set | 22 samples, minimum 0.8559, average 0.9850 |
+| Rule output contract | `ruleOutputKind: upsertable-json-rule`, `ruleArtifactFormat: json` |
+| Governance and parity gates | `scripts/verify_rule_governance.py` ok, `scripts/verify_codex_parity.sh` ok |
+
+The lowest live selected score was Safari at 0.9338; Codex and Feishu selected rules scored 0.9410 and 0.9416. VS Code windows scored 0.9697 or higher, and the AI WeChat Desktop capture that previously crashed now completed with score 1.0000. The rule trainer still treats OCR as teacher/evaluator signal only; effectiveness improvements are encoded in JSON rules such as anchor rejection, weighted boosts, line caps, and `transport.maxLineChars`.
+
 App/window QA example:
 
 ```sh
@@ -271,6 +286,21 @@ scripts/verify_codex_parity.sh
 ```
 
 这个脚本会构建 Swift CLI 和原生 `AppShot.app`，检查 bundle 身份和版本，验证 Codex 风格 JSON 别名，并运行 MCP smoke test。证据化的一致性矩阵见 `docs/codex-parity.md`。
+
+### 效果衡量
+
+最近一次本地全 App rule gate 于 2026-06-08 基于当前可见 App 集合完成：
+
+| 检查项 | 结果 |
+| --- | --- |
+| Live all-app training | 17 个样本，0 个失败 |
+| Selected rule 分数 | 最低 0.9338，平均 0.9804 |
+| 同批 live raw replay | 17 个样本，最低 0.9410，平均 0.9827 |
+| 上一批 raw capture replay | 22 个样本，最低 0.8559，平均 0.9850 |
+| Rule 输出契约 | `ruleOutputKind: upsertable-json-rule`，`ruleArtifactFormat: json` |
+| Governance 和 parity gate | `scripts/verify_rule_governance.py` 通过，`scripts/verify_codex_parity.sh` 通过 |
+
+最终 live selected 最低分是 Safari 的 0.9338；Codex 和飞书分别为 0.9410、0.9416。VS Code 窗口均为 0.9697 以上；此前会触发 SIGTRAP 的 AI WeChat Desktop 现在能完成捕捉，得分 1.0000。训练仍保持 OCR 只作为 teacher/evaluator 信号，提效内容都在 JSON rule 中表达，例如 anchor reject、weighted boost、line cap 和 `transport.maxLineChars`。
 
 App/window QA 示例：
 
