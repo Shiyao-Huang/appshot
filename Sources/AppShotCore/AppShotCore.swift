@@ -1632,11 +1632,11 @@ private func accessibilityWindowDedupeKey(_ window: JSONObject) -> String {
     let title = window["title"] as? String ?? ""
     let role = window["role"] as? String ?? ""
     let bounds = window["bounds"] as? JSONObject ?? [:]
-    let x = numberValue(bounds["x"]) ?? 0
-    let y = numberValue(bounds["y"]) ?? 0
-    let width = numberValue(bounds["width"]) ?? 0
-    let height = numberValue(bounds["height"]) ?? 0
-    return "\(role)|\(title)|\(Int(x.rounded()))|\(Int(y.rounded()))|\(Int(width.rounded()))|\(Int(height.rounded()))"
+    let x = stableAXGeometryInt(CGFloat(numberValue(bounds["x"]) ?? 0)) ?? 0
+    let y = stableAXGeometryInt(CGFloat(numberValue(bounds["y"]) ?? 0)) ?? 0
+    let width = stableAXGeometryInt(CGFloat(numberValue(bounds["width"]) ?? 0)) ?? 0
+    let height = stableAXGeometryInt(CGFloat(numberValue(bounds["height"]) ?? 0)) ?? 0
+    return "\(role)|\(title)|\(x)|\(y)|\(width)|\(height)"
 }
 
 private func accessibilityWindowPayload(
@@ -2876,14 +2876,29 @@ public func axElementID(_ element: AXUIElement) -> String {
         }
     }
     if let position = copyAXValue(element, kAXPositionAttribute),
-       let point = axPoint(position) {
-        parts.append("position=\(Int(point.x)),\(Int(point.y))")
+       let point = axPoint(position),
+       let x = stableAXGeometryInt(point.x),
+       let y = stableAXGeometryInt(point.y) {
+        parts.append("position=\(x),\(y)")
     }
     if let size = copyAXValue(element, kAXSizeAttribute),
-       let cgSize = axSize(size) {
-        parts.append("size=\(Int(cgSize.width))x\(Int(cgSize.height))")
+       let cgSize = axSize(size),
+       let width = stableAXGeometryInt(cgSize.width),
+       let height = stableAXGeometryInt(cgSize.height) {
+        parts.append("size=\(width)x\(height)")
     }
     return parts.joined(separator: "|")
+}
+
+private func stableAXGeometryInt(_ value: CGFloat) -> Int? {
+    guard value.isFinite else {
+        return nil
+    }
+    let rounded = Double(value.rounded())
+    guard rounded >= Double(Int.min), rounded <= Double(Int.max) else {
+        return nil
+    }
+    return Int(rounded)
 }
 
 public func sameAXElement(_ lhs: AXUIElement, _ rhs: AXUIElement) -> Bool {

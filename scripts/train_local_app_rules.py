@@ -508,6 +508,7 @@ def apply_rule(capture, rule):
     transport = action.get("transport") or {}
     max_important = int(transport["maxImportantLines"]) if transport.get("maxImportantLines") is not None else 180
     max_rich = int(transport["maxRichLines"]) if transport.get("maxRichLines") is not None else 220
+    max_line_chars = int(transport.get("maxLineChars") or 0)
 
     ocr_weights = ocr_visual_weights(capture)
     sources = text_sources(capture)
@@ -521,16 +522,18 @@ def apply_rule(capture, rule):
                 continue
             if keepers and not any(regex and regex.search(line) for regex in keepers):
                 continue
-            key = line.casefold()
+            source_key = line.casefold()
+            output_line = truncate_rule_line(line, max_line_chars)
+            key = output_line.casefold()
             if key in seen:
                 continue
             seen.add(key)
-            importance = visual_importance(line, source_name, ocr_weights.get(key))
+            importance = visual_importance(line, source_name, ocr_weights.get(source_key))
             importance += regex_weight(line, boosters)
             importance -= regex_weight(line, penalties)
             lines.append({
                 "source": source_name,
-                "text": line,
+                "text": output_line,
                 "importance": round(importance, 4),
             })
 
@@ -563,6 +566,14 @@ def apply_rule(capture, rule):
         "importantLines": important,
         "richLines": rich,
     }
+
+
+def truncate_rule_line(line, max_line_chars):
+    if max_line_chars <= 0 or len(line) <= max_line_chars:
+        return line
+    if max_line_chars <= 3:
+        return line[:max_line_chars]
+    return line[:max_line_chars - 3].rstrip() + "..."
 
 
 def regex_contains(pattern, text):

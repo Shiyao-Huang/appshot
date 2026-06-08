@@ -99,6 +99,18 @@ def main():
     assert_true(capped_output["fullLineCount"] == 3, "density cap smoke did not see all source lines")
     assert_true(capped_output["selectedLineCount"] == 1, "density cap smoke did not cap selected output lines")
     assert_true(len(capped_output["text"].splitlines()) == 1, "plain text output must honor rule line caps")
+    truncated_rule = json.loads(json.dumps(capped_rule))
+    truncated_rule["action"]["transport"]["maxLineChars"] = 16
+    truncated_rule["action"]["transport"]["maxImportantLines"] = 2
+    truncated_output = trainer.apply_rule({
+        "accessibility": {
+            "visibleText": "alpha visible line with additional context\nbeta visible\n",
+            "text": "",
+            "documentReferences": [],
+        },
+        "ocr": {"text": ""},
+    }, truncated_rule)
+    assert_true("alpha visible..." in truncated_output["text"], "maxLineChars must be controlled by JSON rules")
     boosted_rule = json.loads(json.dumps(capped_rule))
     boosted_rule["action"]["transport"]["maxImportantLines"] = 1
     boosted_rule["action"]["importanceBoostRegex"] = [{"regex": "beta visible", "weight": 20}]

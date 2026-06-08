@@ -1435,6 +1435,16 @@ private func usefulLine(_ line: String) -> Bool {
     return line.range(of: "[A-Za-z0-9\\u4e00-\\u9fff]", options: .regularExpression) != nil
 }
 
+private func truncateRuleLine(_ line: String, maxLineChars: Int) -> String {
+    guard maxLineChars > 0, line.count > maxLineChars else {
+        return line
+    }
+    guard maxLineChars > 3 else {
+        return String(line.prefix(maxLineChars))
+    }
+    return String(line.prefix(maxLineChars - 3)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+}
+
 /// Map normalized OCR text -> visual weight from box height * confidence.
 /// Taller, higher-confidence on-screen text is more likely load-bearing.
 private func ocrVisualWeights(_ capture: JSONObject) -> [String: Double] {
@@ -1548,6 +1558,7 @@ func applyRuleToCapture(rule: JSONObject, capture: JSONObject) -> JSONObject {
     let transport = action["transport"] as? JSONObject ?? [:]
     let maxImportant = (transport["maxImportantLines"] as? Int) ?? 180
     let maxRich = (transport["maxRichLines"] as? Int) ?? 220
+    let maxLineChars = (transport["maxLineChars"] as? Int) ?? 0
     let ocrWeights = ocrVisualWeights(capture)
     let sources = captureTextSources(capture)
 
@@ -1560,13 +1571,15 @@ func applyRuleToCapture(rule: JSONObject, capture: JSONObject) -> JSONObject {
             if !usefulLine(line) { continue }
             if droppers.contains(where: { regexMatches($0, line) }) { continue }
             if !keepers.isEmpty && !keepers.contains(where: { regexMatches($0, line) }) { continue }
-            let key = line.lowercased()
+            let sourceKey = line.lowercased()
+            let outputLine = truncateRuleLine(line, maxLineChars: maxLineChars)
+            let key = outputLine.lowercased()
             if seen.contains(key) { continue }
             seen.insert(key)
-            var importance = visualImportance(line, source: sourceName, ocrWeight: ocrWeights[key])
+            var importance = visualImportance(line, source: sourceName, ocrWeight: ocrWeights[sourceKey])
             importance += regexWeight(boosters, line)
             importance -= regexWeight(penalties, line)
-            lines.append(RuleLine(source: sourceName, text: line, importance: (importance * 10000).rounded() / 10000))
+            lines.append(RuleLine(source: sourceName, text: outputLine, importance: (importance * 10000).rounded() / 10000))
         }
     }
 

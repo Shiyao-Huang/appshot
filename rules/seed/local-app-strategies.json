@@ -26,7 +26,23 @@
       "^\\d+\\s*字节$",
       "^在iCloud中$",
       "^选择了\\d+项（共\\d+项），.*可用$",
-      "^_NS:\\d+$"
+      "^_NS:\\d+$",
+      "^，?已持续\\s+(?:\\d+m\\s+)?\\d+s$",
+      "^/image\\?resource_type=image",
+      "^\"value\":\\s+\"[A-Za-z0-9+/=]{40,}",
+      "^command:workbench\\.",
+      "^主体内容$",
+      "^Add file:.* to context$",
+      "^Send \\[.*\\] Send to New Chat",
+      "^Hide (?:Secondary Side Bar|Panel)",
+      "^Maximize (?:Secondary Side Bar|Panel)$",
+      "^Open Customizations$",
+      "^Add Context\\.\\.\\.",
+      "^Split Editor",
+      "^Claude Code: Open$",
+      "^(Configure Tools\\.\\.\\.|New Chat \\(⌘N\\)|Previous tip|Disable tips|Dismiss tip|Next tip)$",
+      "^(scroll area|form)$",
+      "^[─━—\\-]{12,}.*$"
     ],
     "densityFloor": 0.02,
     "captureArgs": [
@@ -125,18 +141,72 @@
         {
           "id": "vscode-workbench-text",
           "strategy": "ax-document-balanced",
-          "sources": ["visible", "accessibility", "document"],
+          "sources": ["visible", "document", "accessibility"],
           "priority": 90,
-          "maxImportantLines": 180,
-          "maxRichLines": 260
+          "maxImportantLines": 50,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "dropRegex": [
+                "^\\s*$",
+                "^\"value\":\\s+\"[A-Za-z0-9+/=]{40,}",
+                "^command:workbench\\.",
+                "^主体内容$",
+                "^Add file:.* to context$",
+                "^Send \\[.*\\] Send to New Chat",
+                "^Hide (?:Secondary Side Bar|Panel)",
+                "^Maximize (?:Secondary Side Bar|Panel)$",
+                "^Open Customizations$",
+                "^Add Context\\.\\.\\.",
+                "^Split Editor",
+                "^Claude Code: Open$",
+                "^(Configure Tools\\.\\.\\.|New Chat \\(⌘N\\)|Previous tip|Disable tips|Dismiss tip|Next tip)$"
+              ],
+              "importanceBoostRegex": [
+                {"regex": "^(\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\]|\\\"(?:shortContent|content)\\\":|import\\s|let\\s|it\\(|describe\\(|expect\\(|file:///|※ recap:|✔|◻|│)", "weight": 20},
+                {"regex": "(ERROR|Failed|TransportError|permissionRoutes|runtimeTools|adapter|autoRespond|版本|回填|目标|daemon|envelope|dataEncryptionKey|Supervisor|巡检)", "weight": 12}
+              ],
+              "transport": {
+                "maxLineChars": 260,
+                "preserveRaw": false
+              }
+            }
+          }
         },
         {
           "id": "vscode-workbench-text",
           "strategy": "ax-document-dense",
           "sources": ["visible", "document", "accessibility"],
           "priority": 91,
-          "maxImportantLines": 120,
-          "maxRichLines": 140
+          "maxImportantLines": 50,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "dropRegex": [
+                "^\\s*$",
+                "^\"value\":\\s+\"[A-Za-z0-9+/=]{40,}",
+                "^command:workbench\\.",
+                "^主体内容$",
+                "^Add file:.* to context$",
+                "^Send \\[.*\\] Send to New Chat",
+                "^Hide (?:Secondary Side Bar|Panel)",
+                "^Maximize (?:Secondary Side Bar|Panel)$",
+                "^Open Customizations$",
+                "^Add Context\\.\\.\\.",
+                "^Split Editor",
+                "^Claude Code: Open$",
+                "^(Configure Tools\\.\\.\\.|New Chat \\(⌘N\\)|Previous tip|Disable tips|Dismiss tip|Next tip)$"
+              ],
+              "importanceBoostRegex": [
+                {"regex": "^(\\[\\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\]|\\\"(?:shortContent|content)\\\":|import\\s|let\\s|it\\(|describe\\(|expect\\(|file:///|※ recap:|✔|◻|│)", "weight": 20},
+                {"regex": "(ERROR|Failed|TransportError|permissionRoutes|runtimeTools|adapter|autoRespond|版本|回填|目标|daemon|envelope|dataEncryptionKey|Supervisor|巡检)", "weight": 12}
+              ],
+              "transport": {
+                "maxLineChars": 260,
+                "preserveRaw": false
+              }
+            }
+          }
         }
       ]
     },
@@ -150,18 +220,54 @@
         {
           "id": "electron-chat-text",
           "strategy": "ax-webarea-balanced",
-          "sources": ["visible", "accessibility", "document"],
+          "sources": ["visible", "accessibility"],
           "priority": 86,
-          "maxImportantLines": 160,
-          "maxRichLines": 180
+          "maxImportantLines": 60,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "dropRegex": [
+                "^\\s*$",
+                "^，?已持续\\s+(?:\\d+m\\s+)?\\d+s$",
+                "^/image\\?resource_type=image",
+                "^\\d+\\s+node\\s+server\\.mjs\\s+.*(?:RUST_LOG|OSLogRateLimit|INIT_CWD|__CFBundleIdentifier|MallocNanoZone|COMMAND_MODE|PATH=)"
+              ],
+              "importanceBoostRegex": [
+                {"regex": "(正在运行|^\\$\\s|WEBAPP_|http://127\\.0\\.0\\.1|webapp comms|hub \\(|open the URL)", "weight": 18},
+                {"regex": "(打开|审查|删除|确认|排队|添加文件|更改的文件|AgentDocker|README|Chat|Coffee Chat|Shift \\+ Enter|群|文档|深圳|VC|agent|deep ?agent|typedConfig|middleware|积分|免费领课|Vibe Island|SDK connected)", "weight": 12}
+              ],
+              "transport": {
+                "maxLineChars": 220,
+                "preserveRaw": false
+              }
+            }
+          }
         },
         {
           "id": "electron-chat-text",
           "strategy": "ax-webarea-dense",
           "sources": ["visible", "accessibility"],
           "priority": 87,
-          "maxImportantLines": 40,
-          "maxRichLines": 20
+          "maxImportantLines": 60,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "dropRegex": [
+                "^\\s*$",
+                "^，?已持续\\s+(?:\\d+m\\s+)?\\d+s$",
+                "^/image\\?resource_type=image",
+                "^\\d+\\s+node\\s+server\\.mjs\\s+.*(?:RUST_LOG|OSLogRateLimit|INIT_CWD|__CFBundleIdentifier|MallocNanoZone|COMMAND_MODE|PATH=)"
+              ],
+              "importanceBoostRegex": [
+                {"regex": "(正在运行|^\\$\\s|WEBAPP_|http://127\\.0\\.0\\.1|webapp comms|hub \\(|open the URL)", "weight": 18},
+                {"regex": "(打开|审查|删除|确认|排队|添加文件|更改的文件|AgentDocker|README|Chat|Coffee Chat|Shift \\+ Enter|群|文档|深圳|VC|agent|deep ?agent|typedConfig|middleware|积分|免费领课|Vibe Island|SDK connected)", "weight": 12}
+              ],
+              "transport": {
+                "maxLineChars": 220,
+                "preserveRaw": false
+              }
+            }
+          }
         }
       ]
     },
@@ -177,16 +283,32 @@
           "strategy": "dom-ax-balanced",
           "sources": ["visible", "accessibility", "document"],
           "priority": 84,
-          "maxImportantLines": 180,
-          "maxRichLines": 220
+          "maxImportantLines": 80,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "transport": {
+                "maxLineChars": 260,
+                "preserveRaw": false
+              }
+            }
+          }
         },
         {
           "id": "browser-webpage-text",
           "strategy": "dom-ax-dense",
           "sources": ["visible", "document", "accessibility"],
           "priority": 85,
-          "maxImportantLines": 110,
-          "maxRichLines": 100
+          "maxImportantLines": 80,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "transport": {
+                "maxLineChars": 260,
+                "preserveRaw": false
+              }
+            }
+          }
         }
       ]
     },
@@ -201,16 +323,32 @@
           "strategy": "ax-window-balanced",
           "sources": ["visible", "accessibility", "document"],
           "priority": 88,
-          "maxImportantLines": 140,
-          "maxRichLines": 160
+          "maxImportantLines": 50,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "transport": {
+                "maxLineChars": 220,
+                "preserveRaw": false
+              }
+            }
+          }
         },
         {
           "id": "wechat-visible-text",
           "strategy": "ax-window-dense",
           "sources": ["visible", "accessibility"],
           "priority": 89,
-          "maxImportantLines": 90,
-          "maxRichLines": 70
+          "maxImportantLines": 50,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "transport": {
+                "maxLineChars": 220,
+                "preserveRaw": false
+              }
+            }
+          }
         }
       ]
     },
@@ -377,15 +515,29 @@
         "strategy": "ax-first-balanced",
         "sources": ["visible", "accessibility", "document"],
         "priority": 50,
-        "maxImportantLines": 120,
-        "maxRichLines": 160
+        "maxImportantLines": 50,
+        "maxRichLines": 0,
+        "rulePatch": {
+          "action": {
+            "importanceBoostRegex": [
+              {"regex": "(隐藏API Key|路由 Codex|OpenAI Response|服务端点|供应商|模型|计费|测试参数|在访达中显示|强制退出|退出登录|系统设置|最近使用|重新启动|锁定屏幕)", "weight": 8}
+            ]
+          }
+        }
       },
       {
         "strategy": "ax-first-dense",
         "sources": ["visible", "accessibility"],
         "priority": 51,
-        "maxImportantLines": 80,
-        "maxRichLines": 60
+        "maxImportantLines": 15,
+        "maxRichLines": 0,
+        "rulePatch": {
+          "action": {
+            "importanceBoostRegex": [
+              {"regex": "(隐藏API Key|路由 Codex|OpenAI Response|服务端点|供应商|模型|计费|测试参数|在访达中显示|强制退出|退出登录|系统设置|最近使用|重新启动|锁定屏幕)", "weight": 8}
+            ]
+          }
+        }
       }
     ]
   },
