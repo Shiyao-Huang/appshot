@@ -137,6 +137,10 @@ The rule library is SQLite at `~/Library/Application Support/AppShot/rules.sqlit
    `anchors.json` is an array of `{regex, source, required, weight}`, e.g.
    `[{"regex":"Crunched for","source":"ocr","weight":2.0}, {"regex":"scheduleScroll","source":"accessibility","weight":1.0}]`.
    (Plain repeatable `--anchor` still works; those default to `source=expected`.)
+   When using the local trainer, anchor selection is source-balanced by the JSON catalog:
+   `trainingDefaults.anchorSourceCaps` keeps OCR teacher anchors from crowding out
+   visible/accessibility/document evidence, and `ocrAnchorQuality` filters obvious OCR
+   fragments before they become training targets.
 4. **Apply each candidate rule to the capture → AX student output.** This is a pure
    transform; OCR is stripped from the output no matter what the rule lists in `sources`:
    ```sh
@@ -157,6 +161,9 @@ The rule library is SQLite at `~/Library/Application Support/AppShot/rules.sqlit
    the catalog JSON or `rules patch` — broaden `treeRegex`, add `promoteTextKeys`, enable
    `includeChildren`, raise the AX timeout, or tighten `keepRegex`/line caps for density.
    **Never** close an AX gap by turning on OCR output; OCR stays teacher-only.
+   If live capture is blocked by TCC but you already have real raw captures, continue with
+   `scripts/train_local_app_rules.py --replay-raw-dir artifacts/rule-training/<run>/raw`
+   so the same JSON rules can be replayed, evaluated, and selected without new screenshots.
 7. **Benchmark before rollout.** Before `rules select` for a production bucket or before
    shipping a release, run the fixed benchmark protocol in `docs/rule-benchmark.md`.
    Benchmark suites live under `rules/benchmarks/`; they freeze capture/anchor evidence

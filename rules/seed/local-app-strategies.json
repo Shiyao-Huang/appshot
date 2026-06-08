@@ -5,6 +5,19 @@
     "ocrPolicy": "teacher-only",
     "selectionMode": "accessibility-first",
     "teacherSources": ["ocr", "visible", "accessibility", "document"],
+    "anchorSourceOrder": ["visible", "accessibility", "document", "ocr"],
+    "anchorSourceCaps": {
+      "visible": 8,
+      "accessibility": 8,
+      "document": 8,
+      "ocr": 6
+    },
+    "ocrAnchorQuality": {
+      "minLength": 6,
+      "minContentRatio": 0.45,
+      "minLetterOrCJKCount": 4,
+      "maxSingleCharacterTokens": 3
+    },
     "densityFloor": 0.02,
     "captureArgs": [
       "--max-depth",

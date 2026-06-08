@@ -26,6 +26,22 @@ def run_json(command):
     return json.loads(result.stdout)
 
 
+def run_json_tail(command):
+    result = subprocess.run(command, check=True, text=True, capture_output=True)
+    decoder = json.JSONDecoder()
+    text = result.stdout
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            payload, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if text[index + end:].strip() == "":
+            return payload
+    raise ValueError(f"command did not end with a JSON object: {command}\n{text}")
+
+
 def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -58,6 +74,8 @@ def main():
         "rendered rules must not enable OCR fallback as output",
     )
     assert_true(catalog.get("captureProfiles"), "catalog must declare named captureProfiles")
+    anchor_caps = (catalog.get("trainingDefaults") or {}).get("anchorSourceCaps") or {}
+    assert_true(anchor_caps.get("ocr", 99) < 24, "catalog must cap OCR teacher anchors below the full anchor budget")
     capped_rule = json.loads(json.dumps(rules[0]))
     capped_rule.setdefault("action", {})
     capped_rule["action"]["sources"] = ["visible"]
@@ -80,6 +98,26 @@ def main():
     assert_true(capped_output["fullLineCount"] == 3, "density cap smoke did not see all source lines")
     assert_true(capped_output["selectedLineCount"] == 1, "density cap smoke did not cap selected output lines")
     assert_true(len(capped_output["text"].splitlines()) == 1, "plain text output must honor rule line caps")
+    anchor_capture = {
+        "codex": {"text": ""},
+        "accessibility": {
+            "visibleText": "\n".join(f"visible useful line {index}" for index in range(12)),
+            "text": "\n".join(f"accessibility useful line {index}" for index in range(12)),
+            "documentReferences": [{"textPreview": "\n".join(f"document useful line {index}" for index in range(12))}],
+        },
+        "ocr": {
+            "text": "\n".join([f"ocr useful teacher line {index}" for index in range(12)] + ["N2 361 31 31Az42", "*HIPPT"]),
+            "observations": [],
+        },
+    }
+    _, anchor_labels = trainer.make_anchors(anchor_capture, 24)
+    label_counts = {}
+    for label in anchor_labels:
+        label_counts[label["source"]] = label_counts.get(label["source"], 0) + 1
+    assert_true(label_counts.get("ocr", 0) <= anchor_caps["ocr"], "OCR anchors must respect catalog cap")
+    assert_true(label_counts.get("visible", 0) > 0, "visible anchors should survive source balancing")
+    assert_true(label_counts.get("accessibility", 0) > 0, "accessibility anchors should survive source balancing")
+    assert_true(label_counts.get("document", 0) > 0, "document anchors should survive source balancing")
 
     appshot = str(pathlib.Path(args.appshot_bin))
     with tempfile.TemporaryDirectory(prefix="appshot-rule-governance.") as tmp_raw:
@@ -115,6 +153,8 @@ def main():
         assert_true(activate["enabled"] is True, "activate did not enable rule")
 
         capture = {
+            "targetApplication": {"bundleIdentifier": rule["match"]["appBundleIds"][0], "localizedName": "Rule Smoke"},
+            "currentWindow": {"title": "Rule governance smoke"},
             "codex": {"text": "alpha visible\n"},
             "accessibility": {
                 "visibleText": "alpha visible\nbeta visible\n",
@@ -195,6 +235,34 @@ def main():
         history = run_json([appshot, "rules", "history", "--db", str(db_path), "--id", rule["id"], "--limit", "10"])
         assert_true(len(history.get("versions", [])) >= 2, "history should include rule versions")
         assert_true(any(event.get("action") == "patch" for event in history.get("events", [])), "history missing patch event")
+
+        replay_raw_dir = tmp / "replay-raw"
+        replay_raw_dir.mkdir()
+        write_json(replay_raw_dir / "sample.json", capture)
+        replay_payload = run_json_tail([
+            sys.executable,
+            str(TRAINER_PATH),
+            "--appshot-bin",
+            appshot,
+            "--catalog",
+            str(args.catalog),
+            "--db",
+            str(tmp / "replay.sqlite"),
+            "--output-dir",
+            str(tmp / "replay-out"),
+            "--replay-raw-dir",
+            str(replay_raw_dir),
+            "--privacy-mode",
+            "include-sensitive",
+            "--max-windows",
+            "1",
+            "--command-timeout",
+            "20",
+        ])
+        assert_true(replay_payload["trainingMode"] == "replay-raw-dir", "trainer replay smoke did not use replay mode")
+        assert_true(replay_payload["sampleCount"] == 1, f"trainer replay smoke expected one sample: {replay_payload}")
+        assert_true(replay_payload["failureCount"] == 0, f"trainer replay smoke reported failures: {replay_payload}")
+        assert_true(replay_payload["ruleOutputKind"] == "upsertable-json-rule", "trainer replay output must stay JSON-rule based")
 
         print(json.dumps({
             "status": "ok",

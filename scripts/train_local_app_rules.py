@@ -3,6 +3,7 @@ import argparse
 import json
 import pathlib
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -34,6 +35,8 @@ def load_catalog(path):
         raise ValueError("catalog must include ruleTemplate as a JSON object")
     if not isinstance((catalog.get("trainingDefaults") or {}).get("captureArgs"), list):
         raise ValueError("catalog must include trainingDefaults.captureArgs as a JSON array")
+    if "anchorSourceCaps" in (catalog.get("trainingDefaults") or {}) and not isinstance(catalog["trainingDefaults"]["anchorSourceCaps"], dict):
+        raise ValueError("trainingDefaults.anchorSourceCaps must be a JSON object when present")
 
     global FOCUS_BUNDLES, SENSITIVE_BUNDLES, SENSITIVE_TITLE_RE
     global BUCKETS, GENERIC_TREE_REGEX, GENERIC_CAPTURE_PROFILES, GENERIC_VARIANTS
@@ -175,24 +178,81 @@ def teacher_sources():
     return TRAINING_DEFAULTS.get("teacherSources") or ["ocr", "visible", "accessibility", "document"]
 
 
+def anchor_source_order():
+    configured = TRAINING_DEFAULTS.get("anchorSourceOrder") or []
+    ordered = [source for source in configured if source in teacher_sources()]
+    return ordered + [source for source in teacher_sources() if source not in ordered]
+
+
+def anchor_source_caps():
+    return TRAINING_DEFAULTS.get("anchorSourceCaps") or {}
+
+
+def ocr_anchor_allowed(line):
+    quality = TRAINING_DEFAULTS.get("ocrAnchorQuality") or {}
+    min_length = int(quality.get("minLength") or 0)
+    min_content_ratio = float(quality.get("minContentRatio") or 0.0)
+    min_letter_or_cjk = int(quality.get("minLetterOrCJKCount") or 0)
+    max_single_tokens = int(quality.get("maxSingleCharacterTokens") or 999999)
+    if len(line) < min_length:
+        return False
+    content_count = len(re.findall(r"[A-Za-z0-9\u4e00-\u9fff]", line))
+    if len(line) and content_count / len(line) < min_content_ratio:
+        return False
+    letter_or_cjk_count = len(re.findall(r"[A-Za-z\u4e00-\u9fff]", line))
+    if letter_or_cjk_count < min_letter_or_cjk:
+        return False
+    single_tokens = re.findall(r"(?<![A-Za-z0-9])[A-Za-z0-9](?![A-Za-z0-9])", line)
+    if len(single_tokens) > max_single_tokens:
+        return False
+    return True
+
+
 def make_anchors(capture, max_anchors):
     sources = text_sources(capture)
     codex_lower = sources["codex"].casefold()
     ocr_weights = ocr_visual_weights(capture)
-    candidates = []
+    candidates_by_source = {}
     for source_name in teacher_sources():
         for raw in sources.get(source_name, "").splitlines():
             line = norm_line(raw)
             if not useful(line):
                 continue
+            if source_name == "ocr" and not ocr_anchor_allowed(line):
+                continue
             in_codex = line.casefold() in codex_lower
             score = (80 if not in_codex else 20) + min(len(line), 120) / 10
             if source_name == "ocr":
-                score += 12
+                score += 8
             if re.search(r"[\u4e00-\u9fff]", line):
                 score += 5
-            candidates.append((score, source_name, line, in_codex))
-    candidates.sort(reverse=True)
+            candidates_by_source.setdefault(source_name, []).append((score, source_name, line, in_codex))
+
+    caps = anchor_source_caps()
+    candidates = []
+    if caps:
+        seen_candidate_keys = set()
+        for source_name in anchor_source_order():
+            source_candidates = sorted(candidates_by_source.get(source_name, []), reverse=True)
+            cap = int(caps.get(source_name, max_anchors))
+            if cap <= 0:
+                continue
+            added = 0
+            for item in source_candidates:
+                key = item[2].casefold()
+                if key in seen_candidate_keys:
+                    continue
+                candidates.append(item)
+                seen_candidate_keys.add(key)
+                added += 1
+                if added >= cap:
+                    break
+        candidates.sort(reverse=True)
+    else:
+        candidates = sorted(
+            [item for items in candidates_by_source.values() for item in items],
+            reverse=True,
+        )
 
     anchors, labels, seen = [], [], set()
     for _, source_name, line, in_codex in candidates:
@@ -678,6 +738,38 @@ def capture_sample(appshot, target, bucket, paths, args):
     return json.loads(paths["raw"].read_text(encoding="utf-8"))
 
 
+def target_from_capture(path, capture):
+    app = capture.get("targetApplication") or capture.get("currentApplication") or capture.get("frontmostApplication") or {}
+    window = capture.get("currentWindow") or capture.get("frontmostWindow") or capture.get("primaryWindow") or {}
+    bundle_id = app.get("bundleIdentifier") or ""
+    app_name = app.get("localizedName") or app.get("name") or bundle_id or "Unknown app"
+    title = window.get("title") or capture.get("windowTitle") or pathlib.Path(path).stem
+    return {
+        "appName": app_name,
+        "bundleID": bundle_id,
+        "pid": app.get("processIdentifier"),
+        "window": window,
+        "title": title,
+        "source": "replay-raw-dir",
+        "sensitive": is_sensitive(bundle_id, title),
+        "replayCapturePath": pathlib.Path(path),
+    }
+
+
+def replay_targets(args):
+    raw_dir = pathlib.Path(args.replay_raw_dir).expanduser()
+    captures = []
+    for path in sorted(raw_dir.glob("*.json")):
+        capture = json.loads(path.read_text(encoding="utf-8"))
+        target = target_from_capture(path, capture)
+        if args.target_bundle and target["bundleID"] not in set(args.target_bundle):
+            continue
+        if target["sensitive"] and args.privacy_mode == "skip-sensitive":
+            continue
+        captures.append(target)
+    return captures[: args.max_windows] if args.max_windows else captures
+
+
 def record_sample(appshot, db_path, sample, anchors, notes):
     command = [
         appshot, "rules", "record-sample",
@@ -738,6 +830,7 @@ def main():
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG_PATH), help="Path to the JSON rule strategy catalog.")
     parser.add_argument("--db", default=str(pathlib.Path.home() / "Library/Application Support/AppShot/rules.sqlite"))
     parser.add_argument("--output-dir", default="artifacts/rule-training")
+    parser.add_argument("--replay-raw-dir", help="Replay existing capture JSON files instead of live window capture.")
     parser.add_argument("--privacy-mode", choices=["skip-sensitive", "include-sensitive"], default="skip-sensitive")
     parser.add_argument("--all-visible", action="store_true")
     parser.add_argument("--all-apps", action="store_true", help="Train every visible app, synthesizing generic per-app buckets from JSON.")
@@ -774,9 +867,18 @@ def main():
         for variant in bucket.get("variants") or []:
             rule_artifacts.append(upsert_rule(appshot, db_path, rule_json(bucket, variant), rule_dir))
 
-    windows = run_json([appshot, "list-windows", "--pretty"], timeout=args.command_timeout)
+    if args.replay_raw_dir:
+        targets = replay_targets(args)
+        windows = {
+            "schemaVersion": 1,
+            "source": "replay-raw-dir",
+            "rawDir": str(pathlib.Path(args.replay_raw_dir).expanduser()),
+            "captureCount": len(targets),
+        }
+    else:
+        windows = run_json([appshot, "list-windows", "--pretty"], timeout=args.command_timeout)
+        targets = collect_windows(windows, args)
     (out_dir / "windows.json").write_text(json.dumps(windows, ensure_ascii=False, indent=2), encoding="utf-8")
-    targets = collect_windows(windows, args)
     samples, failures = [], []
     seeded_buckets = {bucket["bucketID"] for bucket in BUCKETS}
 
@@ -796,7 +898,15 @@ def main():
             "screenshot": raw_dir / f"{label}.png",
         }
         try:
-            capture = capture_sample(appshot, target, bucket, paths, args)
+            if target.get("replayCapturePath"):
+                source_raw_path = pathlib.Path(target["replayCapturePath"])
+                capture = json.loads(source_raw_path.read_text(encoding="utf-8"))
+                paths["raw"].write_text(json.dumps(capture, ensure_ascii=False, indent=2), encoding="utf-8")
+                source_screenshot = source_raw_path.with_suffix(".png")
+                if source_screenshot.exists():
+                    shutil.copyfile(source_screenshot, paths["screenshot"])
+            else:
+                capture = capture_sample(appshot, target, bucket, paths, args)
             codex_text = text_sources(capture)["codex"]
             paths["codex"].write_text(codex_text, encoding="utf-8")
             anchors, anchor_labels = make_anchors(capture, args.max_anchors)
@@ -818,6 +928,8 @@ def main():
                 "privacyMode": args.privacy_mode,
                 "sensitive": target["sensitive"],
                 "catalogPath": str(pathlib.Path(args.catalog).expanduser()),
+                "trainingMode": "replay-raw-dir" if args.replay_raw_dir else "live-capture",
+                "replayRawPath": str(target.get("replayCapturePath") or ""),
                 "ocrPolicy": TRAINING_DEFAULTS.get("ocrPolicy"),
                 "anchorLabels": anchor_labels,
             })
@@ -885,6 +997,8 @@ def main():
         "renderedRuleCount": len(rule_artifacts),
         "ruleArtifacts": rule_artifacts,
         "outputDir": str(out_dir),
+        "trainingMode": "replay-raw-dir" if args.replay_raw_dir else "live-capture",
+        "replayRawDir": str(pathlib.Path(args.replay_raw_dir).expanduser()) if args.replay_raw_dir else None,
         "privacyMode": args.privacy_mode,
         "targetCount": len(targets),
         "sampleCount": len(samples),
@@ -903,6 +1017,8 @@ def main():
         "ruleArtifactFormat": report["ruleArtifactFormat"],
         "ruleDirectory": report["ruleDirectory"],
         "renderedRuleCount": report["renderedRuleCount"],
+        "trainingMode": report["trainingMode"],
+        "replayRawDir": report["replayRawDir"],
         "sampleCount": len(samples),
         "failureCount": len(failures),
         "selectedStrategyCount": len(selected),
