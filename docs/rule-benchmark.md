@@ -12,17 +12,22 @@ smaller output with comparable visual recall.
 
 Primary metrics:
 
-- `accessibilityRecall`: fraction of benchmark anchors matched by the AX student output.
+- `accessibilityRecall`: fraction of student-eligible benchmark anchors (visible,
+  accessibility, document, expected) matched by the AX student output.
+- `teacherRecall`: fraction of all benchmark anchors matched, including OCR teacher
+  anchors. Use it to diagnose blind spots, not to select OCR as an output source.
 - `informationDensity`: useful anchor payload per output character, adjusted for entropy
   and duplicate lines.
-- `axGap`: OCR/visible teacher anchors missed by the AX student output.
-- `ocrOracleRecall`: teacher-anchor recall, used only to diagnose AX blind spots.
+- `axGap`: OCR teacher anchors missed by the AX student output.
+- `ocrOracleRecall`: OCR-anchor recall, used only to diagnose AX blind spots.
 - `score`: the recall and density blend returned by `appshot rules evaluate`.
 
 Secondary metrics:
 
 - `charCount`, `lineCount`, `transportLineCount`: token-cost proxies.
 - `sources`: must not contain `ocr`.
+- low-value training anchors rejected by suite/catalog policy, such as pure file sizes,
+  pure timestamps, and AX implementation identifiers.
 - capture/apply/evaluate latency, when the agent records timings.
 - privacy leak count for suite-defined forbidden patterns.
 
@@ -104,6 +109,7 @@ A candidate passes a case only when all are true:
 
 - `sources` from `rules apply` excludes `ocr`.
 - `accessibilityRecall >= minAccessibilityRecall`.
+- `teacherRecall`/`axGapCount` are reviewed for AX blind spots without enabling OCR output.
 - `informationDensity >= minInformationDensity`.
 - `axGapCount <= maxAxGapCount`.
 - `charCount <= maxCharCount`.
@@ -121,4 +127,6 @@ should reject training output that turns strategy into hard-coded implementation
 The benchmark freezes the raw evidence while letting agents mutate only JSON rules. That
 makes rule changes comparable across versions, apps, and privacy tiers. OCR remains a
 teacher signal, TOON remains the model-facing transport, and the richer non-visual
-capture stays local for diagnosis rather than being thrown away.
+capture stays local for diagnosis rather than being thrown away. Anchor quality gates and
+weighted line-ranking hints live in JSON so effectiveness improves through rules, not
+through hidden app-specific code paths.

@@ -148,14 +148,15 @@ The rule library is SQLite at `~/Library/Application Support/AppShot/rules.sqlit
      --capture-json cap.json --output student.txt --pretty
    ```
    (Use `--rule-json-file rule.json` to try a draft rule before upserting it.)
-5. **Evaluate the student output** against the teacher anchors → recall + density + axGap:
+5. **Evaluate the student output** against the teacher anchors → student recall + teacher gap + density:
    ```sh
    "$APPSHOT_BIN" rules evaluate --sample-id vscode-20260607 --output-text student.txt --pretty
    ```
-   Read `accessibilityRecall` (core objective), `informationDensity` (effective info per
-   token), `axGap` (teacher anchors the AX output missed — the blind spots to fix), and
-   `score` (a recall×density blend, so a token dump cannot win). Without `--output-text`,
-   pass `--rule-id`/`--rule-json` and the tool applies the rule for you.
+   Read `accessibilityRecall` (core objective over student-eligible visible/AX/document
+   anchors), `teacherRecall` (all anchors including OCR), `informationDensity` (effective
+   info per token), `axGap` (OCR teacher anchors the AX output missed — the blind spots
+   to fix), and `score` (a recall×density blend, so a token dump cannot win). Without
+   `--output-text`, pass `--rule-id`/`--rule-json` and the tool applies the rule for you.
 6. **Compare, select, iterate.** `rules measure` to compare versions, `rules select` the
    best per bucket, `rules improvements` to list open AX/density gaps. Improve by editing
    the catalog JSON or `rules patch` — broaden `treeRegex`, add `promoteTextKeys`, enable
@@ -208,6 +209,9 @@ Rule grammar:
   ignored if present (teacher-only).
 - `action.includeChildren` / `promoteTextKeys`: how much AX subtree/fields to lift.
 - `action.keepRegex` / `dropRegex`: keep/noise filters (tune these for density).
+- `action.importanceBoostRegex` / `importancePenaltyRegex`: JSON-declared weighted
+  sorting hints for line selection; use them to rank useful AX lines above scrollback or
+  metadata noise without hard-coding app logic in the trainer.
 - `action.transport`: TOON transport + line caps (`maxImportantLines`/`maxRichLines`)
   — the main density lever.
 - `priority`, `confidence`, `enabled`: ranking and rollout.

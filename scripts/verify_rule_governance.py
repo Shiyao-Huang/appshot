@@ -76,6 +76,7 @@ def main():
     assert_true(catalog.get("captureProfiles"), "catalog must declare named captureProfiles")
     anchor_caps = (catalog.get("trainingDefaults") or {}).get("anchorSourceCaps") or {}
     assert_true(anchor_caps.get("ocr", 99) < 24, "catalog must cap OCR teacher anchors below the full anchor budget")
+    assert_true((catalog.get("trainingDefaults") or {}).get("anchorRejectRegex"), "catalog must declare low-value anchor rejection regex")
     capped_rule = json.loads(json.dumps(rules[0]))
     capped_rule.setdefault("action", {})
     capped_rule["action"]["sources"] = ["visible"]
@@ -98,6 +99,18 @@ def main():
     assert_true(capped_output["fullLineCount"] == 3, "density cap smoke did not see all source lines")
     assert_true(capped_output["selectedLineCount"] == 1, "density cap smoke did not cap selected output lines")
     assert_true(len(capped_output["text"].splitlines()) == 1, "plain text output must honor rule line caps")
+    boosted_rule = json.loads(json.dumps(capped_rule))
+    boosted_rule["action"]["transport"]["maxImportantLines"] = 1
+    boosted_rule["action"]["importanceBoostRegex"] = [{"regex": "beta visible", "weight": 20}]
+    boosted_output = trainer.apply_rule({
+        "accessibility": {
+            "visibleText": "alpha visible\nbeta visible\n",
+            "text": "",
+            "documentReferences": [],
+        },
+        "ocr": {"text": ""},
+    }, boosted_rule)
+    assert_true(boosted_output["text"].strip() == "beta visible", "importanceBoostRegex must affect rule output ranking")
     anchor_capture = {
         "codex": {"text": ""},
         "accessibility": {
@@ -118,6 +131,32 @@ def main():
     assert_true(label_counts.get("visible", 0) > 0, "visible anchors should survive source balancing")
     assert_true(label_counts.get("accessibility", 0) > 0, "accessibility anchors should survive source balancing")
     assert_true(label_counts.get("document", 0) > 0, "document anchors should survive source balancing")
+    reject_capture = {
+        "codex": {"text": ""},
+        "accessibility": {
+            "visibleText": "962.9 MB\n2026年5月16日 18:38\nsemantic project row\n",
+            "text": "",
+            "documentReferences": [],
+        },
+        "ocr": {"text": ""},
+    }
+    reject_anchors, _ = trainer.make_anchors(reject_capture, 8)
+    assert_true(not any("962" in anchor for anchor in reject_anchors), "pure size metadata must not become a training anchor")
+    assert_true(not any("2026" in anchor for anchor in reject_anchors), "pure date metadata must not become a training anchor")
+    assert_true(any("semantic" in anchor for anchor in reject_anchors), "semantic replacement anchor should survive rejection")
+    teacher_gap_metric = trainer.evaluate_output(
+        "alpha visible\n",
+        "",
+        ["alpha visible", "delta ocr only"],
+        [
+            {"source": "visible", "weight": 1.0},
+            {"source": "ocr", "weight": 2.0},
+        ],
+    )
+    assert_true(teacher_gap_metric["anchorRecall"] == 1.0, "student recall must exclude OCR-only teacher anchors")
+    assert_true(teacher_gap_metric["teacherRecall"] == 0.5, "teacher recall must include OCR-only teacher anchors")
+    assert_true(teacher_gap_metric["axGapCount"] == 1, "OCR-only teacher miss must remain visible as AX gap")
+    assert_true(not teacher_gap_metric["missingAnchors"], "student missingAnchors must exclude OCR-only teacher anchors")
 
     appshot = str(pathlib.Path(args.appshot_bin))
     with tempfile.TemporaryDirectory(prefix="appshot-rule-governance.") as tmp_raw:
@@ -125,13 +164,21 @@ def main():
         db_path = tmp / "rules.sqlite"
         rule_path = tmp / "rule.json"
         patch_path = tmp / "patch.json"
+        boost_rule_path = tmp / "boost-rule.json"
         capture_path = tmp / "capture.json"
         codex_path = tmp / "codex.txt"
         anchors_path = tmp / "anchors.json"
         student_path = tmp / "student.txt"
+        boost_student_path = tmp / "boost-student.txt"
+        teacher_gap_anchors_path = tmp / "teacher-gap-anchors.json"
+        teacher_gap_student_path = tmp / "teacher-gap-student.txt"
 
         rule = rules[0]
         write_json(rule_path, rule)
+        cli_boost_rule = json.loads(json.dumps(capped_rule))
+        cli_boost_rule["action"]["transport"]["maxImportantLines"] = 1
+        cli_boost_rule["action"]["importanceBoostRegex"] = [{"regex": "beta visible", "weight": 20}]
+        write_json(boost_rule_path, cli_boost_rule)
         write_json(patch_path, {"confidence": 0.73, "action": {"transport": {"maxImportantLines": 2}}})
 
         init_payload = run_json([appshot, "rules", "init", "--db", str(db_path)])
@@ -200,6 +247,34 @@ def main():
             "Synthetic local-only smoke sample.",
         ])
         assert_true(record["anchorCount"] == 3, "record-sample did not persist typed anchors")
+        write_json(teacher_gap_anchors_path, [
+            {"regex": "alpha visible", "source": "visible", "weight": 1.0},
+            {"regex": "delta ocr only", "source": "ocr", "weight": 2.0},
+        ])
+        teacher_gap_student_path.write_text("alpha visible\n", encoding="utf-8")
+        teacher_gap_sample_id = "rule-governance-teacher-gap"
+        teacher_gap_record = run_json([
+            appshot,
+            "rules",
+            "record-sample",
+            "--db",
+            str(db_path),
+            "--sample-id",
+            teacher_gap_sample_id,
+            "--capture-json",
+            str(capture_path),
+            "--codex-text",
+            str(codex_path),
+            "--anchor-json-file",
+            str(teacher_gap_anchors_path),
+            "--app-bundle-id",
+            rule["match"]["appBundleIds"][0],
+            "--window-title",
+            "Rule governance OCR teacher gap",
+            "--notes",
+            "Synthetic local-only OCR teacher gap smoke sample.",
+        ])
+        assert_true(teacher_gap_record["anchorCount"] == 2, "teacher-gap sample did not persist typed anchors")
 
         apply_payload = run_json([
             appshot,
@@ -215,6 +290,20 @@ def main():
             str(student_path),
         ])
         assert_true(apply_payload.get("lineCount", 0) >= 3, "rule apply did not extract expected lines")
+        run_json([
+            appshot,
+            "rules",
+            "apply",
+            "--db",
+            str(db_path),
+            "--rule-json-file",
+            str(boost_rule_path),
+            "--capture-json",
+            str(capture_path),
+            "--output",
+            str(boost_student_path),
+        ])
+        assert_true(boost_student_path.read_text(encoding="utf-8").strip() == "beta visible", "CLI importanceBoostRegex must affect rule output ranking")
 
         evaluate = run_json([
             appshot,
@@ -229,8 +318,25 @@ def main():
             "--metric-weights-json",
             json.dumps(catalog["trainingDefaults"]["metricWeights"], sort_keys=True),
         ])
-        assert_true(evaluate["anchorRecall"] == 1.0, "student output should recover all anchors")
+        assert_true(evaluate["anchorRecall"] == 1.0, "student output should recover all student anchors")
         assert_true(evaluate["baselineRecall"] < evaluate["anchorRecall"], "rule output should improve baseline recall")
+        teacher_gap_evaluate = run_json([
+            appshot,
+            "rules",
+            "evaluate",
+            "--db",
+            str(db_path),
+            "--sample-id",
+            teacher_gap_sample_id,
+            "--output-text",
+            str(teacher_gap_student_path),
+            "--metric-weights-json",
+            json.dumps(catalog["trainingDefaults"]["metricWeights"], sort_keys=True),
+        ])
+        assert_true(teacher_gap_evaluate["anchorRecall"] == 1.0, "CLI student recall must exclude OCR-only teacher anchors")
+        assert_true(teacher_gap_evaluate["teacherRecall"] == 0.5, "CLI teacher recall must include OCR-only teacher anchors")
+        assert_true(teacher_gap_evaluate["axGapCount"] == 1, "CLI OCR-only miss must remain an AX gap")
+        assert_true(not teacher_gap_evaluate["missingAnchors"], "CLI student missingAnchors must exclude OCR-only teacher anchors")
 
         history = run_json([appshot, "rules", "history", "--db", str(db_path), "--id", rule["id"], "--limit", "10"])
         assert_true(len(history.get("versions", [])) >= 2, "history should include rule versions")
@@ -272,6 +378,7 @@ def main():
             "smokeRuleID": rule["id"],
             "anchorRecall": evaluate["anchorRecall"],
             "baselineRecall": evaluate["baselineRecall"],
+            "teacherGapRecall": teacher_gap_evaluate["teacherRecall"],
             "outputSource": evaluate.get("outputSource"),
             "databasePath": str(db_path),
         }, ensure_ascii=False, indent=2, sort_keys=True))

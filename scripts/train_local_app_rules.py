@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
+from math import log2
 
 
 DEFAULT_CATALOG_PATH = pathlib.Path(__file__).resolve().parent.parent / "rules" / "seed" / "local-app-strategies.json"
@@ -188,6 +189,10 @@ def anchor_source_caps():
     return TRAINING_DEFAULTS.get("anchorSourceCaps") or {}
 
 
+def anchor_rejecters():
+    return [compile_regex(pattern) for pattern in TRAINING_DEFAULTS.get("anchorRejectRegex") or []]
+
+
 def ocr_anchor_allowed(line):
     quality = TRAINING_DEFAULTS.get("ocrAnchorQuality") or {}
     min_length = int(quality.get("minLength") or 0)
@@ -212,11 +217,14 @@ def make_anchors(capture, max_anchors):
     sources = text_sources(capture)
     codex_lower = sources["codex"].casefold()
     ocr_weights = ocr_visual_weights(capture)
+    rejecters = anchor_rejecters()
     candidates_by_source = {}
     for source_name in teacher_sources():
         for raw in sources.get(source_name, "").splitlines():
             line = norm_line(raw)
             if not useful(line):
+                continue
+            if any(regex and regex.search(line) for regex in rejecters):
                 continue
             if source_name == "ocr" and not ocr_anchor_allowed(line):
                 continue
@@ -279,6 +287,25 @@ def compile_regex(pattern):
         return re.compile(pattern, re.I)
     except re.error:
         return re.compile(re.escape(pattern), re.I)
+
+
+def compile_weighted_regexes(items):
+    weighted = []
+    for item in items or []:
+        if isinstance(item, str):
+            pattern, weight = item, 1.0
+        elif isinstance(item, dict):
+            pattern, weight = item.get("regex") or "", float(item.get("weight", 1.0))
+        else:
+            continue
+        regex = compile_regex(pattern)
+        if regex:
+            weighted.append((regex, weight))
+    return weighted
+
+
+def regex_weight(line, weighted_regexes):
+    return sum(weight for regex, weight in weighted_regexes if regex.search(line))
 
 
 def deep_merge(base, patch):
@@ -476,6 +503,8 @@ def apply_rule(capture, rule):
 
     keepers = [compile_regex(x) for x in action.get("keepRegex") or []]
     droppers = [compile_regex(x) for x in action.get("dropRegex") or []]
+    boosters = compile_weighted_regexes(action.get("importanceBoostRegex"))
+    penalties = compile_weighted_regexes(action.get("importancePenaltyRegex"))
     transport = action.get("transport") or {}
     max_important = int(transport["maxImportantLines"]) if transport.get("maxImportantLines") is not None else 180
     max_rich = int(transport["maxRichLines"]) if transport.get("maxRichLines") is not None else 220
@@ -496,10 +525,13 @@ def apply_rule(capture, rule):
             if key in seen:
                 continue
             seen.add(key)
+            importance = visual_importance(line, source_name, ocr_weights.get(key))
+            importance += regex_weight(line, boosters)
+            importance -= regex_weight(line, penalties)
             lines.append({
                 "source": source_name,
                 "text": line,
-                "importance": visual_importance(line, source_name, ocr_weights.get(key)),
+                "importance": round(importance, 4),
             })
 
     ranked = sorted(lines, key=lambda item: item["importance"], reverse=True)
@@ -540,6 +572,20 @@ def regex_contains(pattern, text):
         return pattern.casefold() in text.casefold()
 
 
+def unescaped_length(pattern):
+    return len(pattern.replace("\\", ""))
+
+
+def char_entropy(text):
+    if not text:
+        return 0.0
+    counts = {}
+    for char in text:
+        counts[char] = counts.get(char, 0) + 1
+    total = len(text)
+    return sum(-(count / total) * log2(count / total) for count in counts.values())
+
+
 def evaluate_output(output_text, codex_text, anchors, anchor_labels=None):
     anchor_labels = anchor_labels or []
     weights, sources = [], []
@@ -550,15 +596,24 @@ def evaluate_output(output_text, codex_text, anchors, anchor_labels=None):
 
     hit = [regex_contains(anchor, output_text) for anchor in anchors]
     base_hit = [regex_contains(anchor, codex_text) for anchor in anchors]
-    matched = [anchor for anchor, ok in zip(anchors, hit) if ok]
-    baseline = [anchor for anchor, ok in zip(anchors, base_hit) if ok]
+    student_mask = [source != "ocr" for source in sources]
+    matched = [anchor for anchor, ok, student in zip(anchors, hit, student_mask) if ok and student]
+    baseline = [anchor for anchor, ok, student in zip(anchors, base_hit, student_mask) if ok and student]
+    teacher_matched = [anchor for anchor, ok in zip(anchors, hit) if ok]
+    teacher_baseline = [anchor for anchor, ok in zip(anchors, base_hit) if ok]
 
     total = len(anchors)
     weighted_total = sum(weights) or 1.0
-    weighted_recall = sum(weight for weight, ok in zip(weights, hit) if ok) / weighted_total
-    weighted_baseline = sum(weight for weight, ok in zip(weights, base_hit) if ok) / weighted_total
-    recall = 1.0 if total == 0 else len(matched) / total
-    baseline_recall = 1.0 if total == 0 else len(baseline) / total
+    student_total = sum(1 for student in student_mask if student)
+    student_weighted_total = sum(weight for weight, student in zip(weights, student_mask) if student) or 1.0
+    weighted_recall = sum(weight for weight, ok, student in zip(weights, hit, student_mask) if ok and student) / student_weighted_total
+    weighted_baseline = sum(weight for weight, ok, student in zip(weights, base_hit, student_mask) if ok and student) / student_weighted_total
+    teacher_weighted_recall = sum(weight for weight, ok in zip(weights, hit) if ok) / weighted_total
+    teacher_weighted_baseline = sum(weight for weight, ok in zip(weights, base_hit) if ok) / weighted_total
+    recall = 1.0 if student_total == 0 else len(matched) / student_total
+    baseline_recall = 1.0 if student_total == 0 else len(baseline) / student_total
+    teacher_recall = 1.0 if total == 0 else len(teacher_matched) / total
+    teacher_baseline_recall = 1.0 if total == 0 else len(teacher_baseline) / total
 
     ocr_total = sum(1 for source in sources if source == "ocr")
     ocr_matched = sum(1 for source, ok in zip(sources, hit) if source == "ocr" and ok)
@@ -567,41 +622,65 @@ def evaluate_output(output_text, codex_text, anchors, anchor_labels=None):
 
     char_count = len(output_text)
     matched_payload = sum(
-        len(re.sub(r"\\(.)", r"\1", anchor)) * weight
+        unescaped_length(anchor) * weight
         for anchor, weight, ok in zip(anchors, weights, hit)
         if ok
     )
     density = 0.0 if char_count == 0 else min(1.0, matched_payload / char_count)
+    output_lines = [line.strip() for line in output_text.splitlines() if line.strip()]
+    unique_line_ratio = 1.0 if not output_lines else len({line.casefold() for line in output_lines}) / len(output_lines)
+    entropy = char_entropy(output_text)
+    information_density = max(
+        0.0,
+        min(
+            1.0,
+            min(1.0, density * 2.0) *
+            min(1.0, max(entropy, 0.1) / 4.0) *
+            max(0.25, unique_line_ratio),
+        ),
+    )
 
     metric_weights = TRAINING_DEFAULTS.get("metricWeights") or {}
     w_recall = float(metric_weights.get("weightedVisualRecall", 0.55))
     w_anchor = float(metric_weights.get("anchorRecall", 0.25))
     w_density = float(metric_weights.get("informationDensity", 0.20))
     denom = (w_recall + w_anchor + w_density) or 1.0
-    recall_component = (weighted_recall * w_recall + recall * w_anchor) / denom
-    if recall_component + density <= 0:
+    recall_denom = (w_recall + w_anchor) or 1.0
+    recall_component = (weighted_recall * w_recall + recall * w_anchor) / recall_denom
+    weighted_objective = (weighted_recall * w_recall + recall * w_anchor + information_density * w_density) / denom
+    if recall_component + information_density <= 0:
         score = 0.0
     else:
         beta2 = 4.0
-        blended = (1 + beta2) * recall_component * density / (beta2 * density + recall_component)
-        score = max(0.0, min(1.0, 0.7 * recall_component + 0.3 * blended))
+        blended = (1 + beta2) * recall_component * information_density / (beta2 * information_density + recall_component)
+        score = max(0.0, min(1.0, 0.5 * weighted_objective + 0.5 * blended))
 
     return {
         "score": score,
         "anchorRecall": recall,
         "accessibilityRecall": recall,
+        "teacherRecall": teacher_recall,
         "baselineRecall": baseline_recall,
+        "teacherBaselineRecall": teacher_baseline_recall,
         "weightedVisualRecall": weighted_recall,
         "weightedBaselineRecall": weighted_baseline,
+        "weightedTeacherRecall": teacher_weighted_recall,
+        "weightedTeacherBaselineRecall": teacher_weighted_baseline,
         "density": density,
+        "informationDensity": information_density,
+        "uniqueLineRatio": unique_line_ratio,
+        "charEntropy": entropy,
         "ocrOracleRecall": ocr_oracle_recall,
         "axGap": ax_gap,
         "axGapCount": len(ax_gap),
         "improvement": recall - baseline_recall,
         "weightedImprovement": weighted_recall - weighted_baseline,
         "matchedAnchors": matched,
-        "missingAnchors": [anchor for anchor, ok in zip(anchors, hit) if not ok],
+        "missingAnchors": [anchor for anchor, ok, student in zip(anchors, hit, student_mask) if not ok and student],
+        "teacherMatchedAnchors": teacher_matched,
+        "teacherMissingAnchors": [anchor for anchor, ok in zip(anchors, hit) if not ok],
         "totalAnchors": total,
+        "studentAnchorTotal": student_total,
         "ocrAnchorTotal": ocr_total,
         "lineCount": len([line for line in output_text.splitlines() if line.strip()]),
         "charCount": char_count,
@@ -950,10 +1029,11 @@ def main():
                     "score": metric["score"],
                     "anchorRecall": metric["anchorRecall"],
                     "density": metric["density"],
+                    "informationDensity": metric["informationDensity"],
                     "baselineRecall": metric["baselineRecall"],
                     "improvement": metric["improvement"],
                 })
-            best = max(sample_runs, key=lambda item: (item["score"], item["anchorRecall"], item["density"])) if sample_runs else None
+            best = max(sample_runs, key=lambda item: (item["score"], item["anchorRecall"], item["informationDensity"], item["density"])) if sample_runs else None
             samples.append({
                 "sampleID": sample_id,
                 "bundleID": target["bundleID"],
@@ -966,7 +1046,7 @@ def main():
                 "rawPath": str(paths["raw"]),
                 "screenshotPath": str(paths["screenshot"]),
             })
-            best_text = "none" if not best else f"{best['score']:.2f}/{best['anchorRecall']:.2f}/d{best['density']:.2f}"
+            best_text = "none" if not best else f"{best['score']:.2f}/{best['anchorRecall']:.2f}/d{best['density']:.2f}/id{best['informationDensity']:.2f}"
             print(
                 f"[train] {index:02d} {target['bundleID']} bucket={bucket['bucketID']} "
                 f"anchors={len(anchors)} best={best_text} sensitive={target['sensitive']}",

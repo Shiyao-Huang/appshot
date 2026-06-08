@@ -1420,6 +1420,11 @@ private struct RuleLine {
     let importance: Double
 }
 
+private struct WeightedRegex {
+    let regex: NSRegularExpression
+    let weight: Double
+}
+
 private func normalizeLine(_ line: String) -> String {
     let collapsed = line.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1494,15 +1499,49 @@ private func compiledRegexes(_ patterns: [Any]?) -> [NSRegularExpression] {
     }
 }
 
+private func weightedRegexes(_ values: [Any]?) -> [WeightedRegex] {
+    (values ?? []).compactMap { value in
+        let pattern: String
+        let weight: Double
+        if let string = value as? String {
+            pattern = string
+            weight = 1.0
+        } else if let object = value as? JSONObject,
+                  let regex = object["regex"] as? String {
+            pattern = regex
+            weight = doubleValue(object["weight"], defaultValue: 1.0)
+        } else {
+            return nil
+        }
+        guard !pattern.isEmpty else { return nil }
+        if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+            return WeightedRegex(regex: regex, weight: weight)
+        }
+        let escaped = NSRegularExpression.escapedPattern(for: pattern)
+        guard let regex = try? NSRegularExpression(pattern: escaped, options: [.caseInsensitive]) else {
+            return nil
+        }
+        return WeightedRegex(regex: regex, weight: weight)
+    }
+}
+
 private func regexMatches(_ regex: NSRegularExpression, _ text: String) -> Bool {
     let range = NSRange(text.startIndex..<text.endIndex, in: text)
     return regex.firstMatch(in: text, range: range) != nil
+}
+
+private func regexWeight(_ rules: [WeightedRegex], _ text: String) -> Double {
+    rules.reduce(0.0) { total, rule in
+        regexMatches(rule.regex, text) ? total + rule.weight : total
+    }
 }
 
 func applyRuleToCapture(rule: JSONObject, capture: JSONObject) -> JSONObject {
     let action = rule["action"] as? JSONObject ?? [:]
     let keepers = compiledRegexes(action["keepRegex"] as? [Any])
     let droppers = compiledRegexes(action["dropRegex"] as? [Any])
+    let boosters = weightedRegexes(action["importanceBoostRegex"] as? [Any])
+    let penalties = weightedRegexes(action["importancePenaltyRegex"] as? [Any])
     // OCR is a teacher, never a student source. Strip it no matter what the rule asks.
     let requested = (action["sources"] as? [Any])?.compactMap { $0 as? String } ?? ["visible", "accessibility"]
     let wantedSources = requested.filter { $0 != "ocr" }
@@ -1524,7 +1563,10 @@ func applyRuleToCapture(rule: JSONObject, capture: JSONObject) -> JSONObject {
             let key = line.lowercased()
             if seen.contains(key) { continue }
             seen.insert(key)
-            lines.append(RuleLine(source: sourceName, text: line, importance: visualImportance(line, source: sourceName, ocrWeight: ocrWeights[key])))
+            var importance = visualImportance(line, source: sourceName, ocrWeight: ocrWeights[key])
+            importance += regexWeight(boosters, line)
+            importance -= regexWeight(penalties, line)
+            lines.append(RuleLine(source: sourceName, text: line, importance: (importance * 10000).rounded() / 10000))
         }
     }
 
@@ -1653,6 +1695,8 @@ public struct AnchorInput {
 /// Score an AX (student) output against the on-screen teacher truth set.
 /// Core objective = accessibilityRecall, kept honest by information density so a
 /// whole-tree dump (high recall, low density) cannot win.
+/// OCR anchors are teacher-only: they remain in teacherRecall/axGap but are excluded
+/// from student accessibilityRecall because rules must not emit OCR output.
 func evaluateRuleOutput(
     outputText: String,
     baselineText: String,
@@ -1664,11 +1708,19 @@ func evaluateRuleOutput(
     let baseHit = anchors.map { regexContains($0.regex, in: baselineText) }
 
     let weightedTotal = max(anchors.reduce(0.0) { $0 + $1.weight }, 1.0)
+    let studentAnchors = anchors.filter { $0.source.lowercased() != "ocr" }
+    let studentTotal = studentAnchors.count
+    let studentWeightedTotal = max(studentAnchors.reduce(0.0) { $0 + $1.weight }, 1.0)
     var weightedMatched = 0.0
     var weightedBaseline = 0.0
+    var weightedTeacherMatched = 0.0
+    var weightedTeacherBaseline = 0.0
     var matched: [String] = []
     var missing: [String] = []
     var baseline: [String] = []
+    var teacherMatched: [String] = []
+    var teacherMissing: [String] = []
+    var teacherBaseline: [String] = []
     var axGap: [String] = []
     var ocrTotal = 0
     var ocrMatched = 0
@@ -1678,24 +1730,39 @@ func evaluateRuleOutput(
         let isOCR = anchor.source.lowercased() == "ocr"
         if isOCR { ocrTotal += 1 }
         if hit[index] {
-            matched.append(anchor.regex)
-            weightedMatched += anchor.weight
+            teacherMatched.append(anchor.regex)
+            weightedTeacherMatched += anchor.weight
+            if !isOCR {
+                matched.append(anchor.regex)
+                weightedMatched += anchor.weight
+            }
             matchedPayload += Double(unescapedLength(anchor.regex)) * anchor.weight
             if isOCR { ocrMatched += 1 }
         } else {
-            missing.append(anchor.regex)
+            teacherMissing.append(anchor.regex)
+            if !isOCR {
+                missing.append(anchor.regex)
+            }
             if isOCR { axGap.append(anchor.regex) }
         }
         if baseHit[index] {
-            baseline.append(anchor.regex)
-            weightedBaseline += anchor.weight
+            teacherBaseline.append(anchor.regex)
+            weightedTeacherBaseline += anchor.weight
+            if !isOCR {
+                baseline.append(anchor.regex)
+                weightedBaseline += anchor.weight
+            }
         }
     }
 
-    let recall = total == 0 ? 1.0 : Double(matched.count) / Double(total)
-    let baselineRecall = total == 0 ? 1.0 : Double(baseline.count) / Double(total)
-    let weightedRecall = weightedMatched / weightedTotal
-    let weightedBaselineRecall = weightedBaseline / weightedTotal
+    let recall = studentTotal == 0 ? 1.0 : Double(matched.count) / Double(studentTotal)
+    let baselineRecall = studentTotal == 0 ? 1.0 : Double(baseline.count) / Double(studentTotal)
+    let teacherRecall = total == 0 ? 1.0 : Double(teacherMatched.count) / Double(total)
+    let teacherBaselineRecall = total == 0 ? 1.0 : Double(teacherBaseline.count) / Double(total)
+    let weightedRecall = weightedMatched / studentWeightedTotal
+    let weightedBaselineRecall = weightedBaseline / studentWeightedTotal
+    let weightedTeacherRecall = weightedTeacherMatched / weightedTotal
+    let weightedTeacherBaselineRecall = weightedTeacherBaseline / weightedTotal
     let accessibilityRecall = recall
     let charCount = outputText.count
     let anchorPayloadRatio = charCount == 0 ? 0.0 : min(1.0, matchedPayload / Double(charCount))
@@ -1726,9 +1793,13 @@ func evaluateRuleOutput(
         "score": score,
         "anchorRecall": recall,
         "accessibilityRecall": accessibilityRecall,
+        "teacherRecall": teacherRecall,
         "baselineRecall": baselineRecall,
+        "teacherBaselineRecall": teacherBaselineRecall,
         "weightedVisualRecall": weightedRecall,
         "weightedBaselineRecall": weightedBaselineRecall,
+        "weightedTeacherRecall": weightedTeacherRecall,
+        "weightedTeacherBaselineRecall": weightedTeacherBaselineRecall,
         "density": anchorPayloadRatio,
         "informationDensity": informationDensity,
         "uniqueLineRatio": uniqueLineRatio,
@@ -1739,7 +1810,10 @@ func evaluateRuleOutput(
         "improvement": recall - baselineRecall,
         "matchedAnchors": matched,
         "missingAnchors": missing,
+        "teacherMatchedAnchors": teacherMatched,
+        "teacherMissingAnchors": teacherMissing,
         "totalAnchors": total,
+        "studentAnchorTotal": studentTotal,
         "ocrAnchorTotal": ocrTotal,
         "lineCount": lineCount,
         "charCount": charCount

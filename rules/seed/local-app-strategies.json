@@ -18,6 +18,16 @@
       "minLetterOrCJKCount": 4,
       "maxSingleCharacterTokens": 3
     },
+    "anchorRejectRegex": [
+      "^\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)$",
+      "^\\d{4}年\\d{1,2}月\\d{1,2}日\\s+\\d{1,2}:\\d{2}$",
+      "^(昨天|前天)\\s+\\d{1,2}:\\d{2}$",
+      "^今天\\s+\\d{1,2}:\\d{2}$",
+      "^\\d+\\s*字节$",
+      "^在iCloud中$",
+      "^选择了\\d+项（共\\d+项），.*可用$",
+      "^_NS:\\d+$"
+    ],
     "densityFloor": 0.02,
     "captureArgs": [
       "--max-depth",
@@ -150,8 +160,8 @@
           "strategy": "ax-webarea-dense",
           "sources": ["visible", "accessibility"],
           "priority": 87,
-          "maxImportantLines": 100,
-          "maxRichLines": 80
+          "maxImportantLines": 40,
+          "maxRichLines": 20
         }
       ]
     },
@@ -239,16 +249,44 @@
           "strategy": "ax-buffer-balanced",
           "sources": ["visible", "accessibility"],
           "priority": 80,
-          "maxImportantLines": 120,
-          "maxRichLines": 160
+          "maxImportantLines": 80,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "importanceBoostRegex": [
+                {"regex": "^⎿", "weight": 10},
+                {"regex": "^\\d+\\s+[+\\-]", "weight": 10},
+                {"regex": "^(error|fatal|warning|Traceback|Exception|FAIL|Failed|失败|报错|panic)", "weight": 10},
+                {"regex": "(Operation not permitted|max file descriptors|Codex\\.app|Codex 进程|不可逆|高风险|现状总结|已完成|工作树|验证|validate|daemon|PID|Goal set)", "weight": 10}
+              ],
+              "importancePenaltyRegex": [
+                {"regex": "^[▐▛▜▌▝▘█ ]+$", "weight": 10},
+                {"regex": "^(Faster|Smarter|Current Limit:|To fix this, try running:|If that still).*$", "weight": 5}
+              ]
+            }
+          }
         },
         {
           "id": "terminal-buffer-text",
           "strategy": "ax-buffer-dense",
           "sources": ["visible", "accessibility"],
           "priority": 81,
-          "maxImportantLines": 80,
-          "maxRichLines": 50
+          "maxImportantLines": 60,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "importanceBoostRegex": [
+                {"regex": "^⎿", "weight": 10},
+                {"regex": "^\\d+\\s+[+\\-]", "weight": 10},
+                {"regex": "^(error|fatal|warning|Traceback|Exception|FAIL|Failed|失败|报错|panic)", "weight": 10},
+                {"regex": "(Operation not permitted|max file descriptors|Codex\\.app|Codex 进程|不可逆|高风险|现状总结|已完成|工作树|验证|validate|daemon|PID|Goal set)", "weight": 10}
+              ],
+              "importancePenaltyRegex": [
+                {"regex": "^[▐▛▜▌▝▘█ ]+$", "weight": 10},
+                {"regex": "^(Faster|Smarter|Current Limit:|To fix this, try running:|If that still).*$", "weight": 5}
+              ]
+            }
+          }
         }
       ]
     },
@@ -263,16 +301,70 @@
           "strategy": "ax-items-balanced",
           "sources": ["visible", "accessibility", "document"],
           "priority": 76,
-          "maxImportantLines": 120,
-          "maxRichLines": 140
+          "maxImportantLines": 70,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "dropRegex": [
+                "^\\s*$",
+                "^\\d{4}年\\d{1,2}月\\d{1,2}日\\s+\\d{1,2}:\\d{2}$",
+                "^(昨天|前天|今天)\\s+\\d{1,2}:\\d{2}$",
+                "^\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)$",
+                "^\\d+\\s*字节$",
+                "^在iCloud中$",
+                "^选择了\\d+项（共\\d+项），.*可用$",
+                "^_NS:\\d+$"
+              ],
+              "importanceBoostRegex": [
+                {"regex": "(个项目|按钮|显示|更改|共享|标签|快速查看|修改日期|排序|所选项|项目)", "weight": 15},
+                {"regex": "(“.*”|拷贝|复制|新建文件夹|幻灯片放映|压缩|路径名称|显示简介|打开方式|移到废纸篓|删除|重命名|共享)", "weight": 18},
+                {"regex": "^[A-Za-z][A-Za-z0-9 ._+\\-\\u4e00-\\u9fff]{2,}$", "weight": 8},
+                {"regex": "^[\\u4e00-\\u9fff][\\u4e00-\\u9fffA-Za-z0-9 ._+\\-]{2,}$", "weight": 8}
+              ],
+              "importancePenaltyRegex": [
+                {"regex": "^\\d{4}年\\d{1,2}月\\d{1,2}日\\s+\\d{1,2}:\\d{2}$", "weight": 20},
+                {"regex": "^(昨天|前天|今天)\\s+\\d{1,2}:\\d{2}$", "weight": 20},
+                {"regex": "^\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)$", "weight": 12},
+                {"regex": "^\\d+\\s*字节$", "weight": 12},
+                {"regex": "^应用程序$", "weight": 5}
+              ]
+            }
+          }
         },
         {
           "id": "finder-desktop-text",
           "strategy": "ax-items-dense",
           "sources": ["visible", "accessibility"],
           "priority": 77,
-          "maxImportantLines": 80,
-          "maxRichLines": 60
+          "maxImportantLines": 70,
+          "maxRichLines": 0,
+          "rulePatch": {
+            "action": {
+              "dropRegex": [
+                "^\\s*$",
+                "^\\d{4}年\\d{1,2}月\\d{1,2}日\\s+\\d{1,2}:\\d{2}$",
+                "^(昨天|前天|今天)\\s+\\d{1,2}:\\d{2}$",
+                "^\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)$",
+                "^\\d+\\s*字节$",
+                "^在iCloud中$",
+                "^选择了\\d+项（共\\d+项），.*可用$",
+                "^_NS:\\d+$"
+              ],
+              "importanceBoostRegex": [
+                {"regex": "(个项目|按钮|显示|更改|共享|标签|快速查看|修改日期|排序|所选项|项目)", "weight": 15},
+                {"regex": "(“.*”|拷贝|复制|新建文件夹|幻灯片放映|压缩|路径名称|显示简介|打开方式|移到废纸篓|删除|重命名|共享)", "weight": 18},
+                {"regex": "^[A-Za-z][A-Za-z0-9 ._+\\-\\u4e00-\\u9fff]{2,}$", "weight": 8},
+                {"regex": "^[\\u4e00-\\u9fff][\\u4e00-\\u9fffA-Za-z0-9 ._+\\-]{2,}$", "weight": 8}
+              ],
+              "importancePenaltyRegex": [
+                {"regex": "^\\d{4}年\\d{1,2}月\\d{1,2}日\\s+\\d{1,2}:\\d{2}$", "weight": 20},
+                {"regex": "^(昨天|前天|今天)\\s+\\d{1,2}:\\d{2}$", "weight": 20},
+                {"regex": "^\\d+(?:\\.\\d+)?\\s*(?:KB|MB|GB|TB)$", "weight": 12},
+                {"regex": "^\\d+\\s*字节$", "weight": 12},
+                {"regex": "^应用程序$", "weight": 5}
+              ]
+            }
+          }
         }
       ]
     }
