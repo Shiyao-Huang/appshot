@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -11,7 +12,19 @@ from datetime import datetime, timezone
 from math import log2
 
 
-DEFAULT_CATALOG_PATH = pathlib.Path(__file__).resolve().parent.parent / "rules" / "seed" / "local-app-strategies.json"
+def default_catalog_path():
+    env_path = os.environ.get("APPSHOT_RULE_CATALOG")
+    if env_path:
+        return pathlib.Path(env_path).expanduser()
+    repo_path = pathlib.Path(__file__).resolve().parent.parent / "rules" / "seed" / "local-app-strategies.json"
+    installed_path = pathlib.Path.home() / "Library/Application Support/AppShot/rules/seed/local-app-strategies.json"
+    for path in (repo_path, installed_path):
+        if path.exists():
+            return path
+    return repo_path
+
+
+DEFAULT_CATALOG_PATH = default_catalog_path()
 
 # Runtime state loaded from the JSON catalog. This script is intentionally a
 # rule interpreter/trainer; app strategies, capture profiles, output templates,

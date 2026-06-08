@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_OWNER="${APPSHOT_REPO_OWNER:-Shiyao-Huang}"
 REPO_NAME="${APPSHOT_REPO_NAME:-appshot}"
-VERSION="${APPSHOT_VERSION:-0.1.14}"
+VERSION="${APPSHOT_VERSION:-0.1.15}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 SKILL_DIR="$CODEX_HOME/skills/appshot"
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
@@ -16,6 +16,8 @@ MCP_DIR="${APPSHOT_MCP_DIR:-$HOME/.local/share/appshot/mcp}"
 BROWSER_EXTENSION_DIR="${APPSHOT_BROWSER_EXTENSION_DIR:-$HOME/.local/share/appshot/browser-extension}"
 ELECTRON_PRELOAD_DIR="${APPSHOT_ELECTRON_PRELOAD_DIR:-$HOME/.local/share/appshot/electron-preload}"
 CODEX_INTEGRATION_DIR="${APPSHOT_CODEX_INTEGRATION_DIR:-$HOME/.local/share/appshot/codex-integration}"
+RULES_DIR="${APPSHOT_RULES_DIR:-$HOME/Library/Application Support/AppShot/rules}"
+RULE_CATALOG_PATH="$RULES_DIR/seed/local-app-strategies.json"
 BUNDLE_ID="${APPSHOT_BUNDLE_ID:-com.qppshot.AppShot}"
 INSTALL_CLAUDE_CODE="${APPSHOT_INSTALL_CLAUDE_CODE:-${APPSHOT_INSTALL_CLAUDE_MCP:-0}}"
 TMP_DIR="$(mktemp -d)"
@@ -90,6 +92,7 @@ FOUND_MCP="$(find "$UNPACK_DIR" -maxdepth 4 -type f -path '*/mcp/server.js' | he
 FOUND_BROWSER_EXTENSION="$(find "$UNPACK_DIR" -maxdepth 6 -type f -path '*/browser-extension/appshot-bridge/manifest.json' | head -n 1)"
 FOUND_ELECTRON_PRELOAD="$(find "$UNPACK_DIR" -maxdepth 6 -type f -path '*/electron-preload/appshot-host-bridge/preload.cjs' | head -n 1)"
 FOUND_CODEX_INTEGRATION="$(find "$UNPACK_DIR" -maxdepth 6 -type f -path '*/codex-integration/appshot-codex-host-bridge/codex-host-adapter.cjs' | head -n 1)"
+FOUND_RULE_CATALOG="$(find "$UNPACK_DIR" -maxdepth 6 -type f -path '*/rules/seed/local-app-strategies.json' | head -n 1)"
 
 if [[ "${APPSHOT_RESET_PERMISSIONS:-0}" == "1" ]]; then
   log "resetting macOS privacy permissions for $BUNDLE_ID"
@@ -158,6 +161,14 @@ if [[ -n "$FOUND_CODEX_INTEGRATION" ]]; then
   log "installed AppShot Codex host integration adapter to $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge"
 fi
 
+if [[ -n "$FOUND_RULE_CATALOG" ]]; then
+  mkdir -p "$(dirname "$RULE_CATALOG_PATH")"
+  ditto "$FOUND_RULE_CATALOG" "$RULE_CATALOG_PATH"
+  log "installed AppShot trained rule catalog to $RULE_CATALOG_PATH"
+else
+  log "release did not include trained rule catalog; rules can still be updated manually"
+fi
+
 if [[ "${APPSHOT_NO_OPEN:-0}" == "1" ]]; then
   log "skipping app launch because APPSHOT_NO_OPEN=1"
 else
@@ -175,6 +186,7 @@ log "mcp: set APPSHOT_BIN=$BIN_PATH when running $MCP_DIR/server.js"
 log "browser extension: load unpacked $BROWSER_EXTENSION_DIR/appshot-bridge when you want a browser-owned AppShot bridge"
 log "electron preload: use $ELECTRON_PRELOAD_DIR/appshot-host-bridge/preload.cjs and host.cjs for Electron-owned AppShot bridge experiments"
 log "codex host integration: inspect $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge/codex-host-adapter.cjs when wiring an actual Codex-side Electron host"
+log "rules: trained JSON catalog installed at $RULE_CATALOG_PATH"
 log "codex host patcher: run node $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge/scripts/patch_codex_electron_host_for_appshot.mjs --help for explicit Codex host patch experiments"
 log "codex host materializer: run node $CODEX_INTEGRATION_DIR/appshot-codex-host-bridge/scripts/materialize_codex_host_patch_for_appshot.mjs --help to extract packed app.asar into a patched copy"
 log "claude: rerun with APPSHOT_INSTALL_CLAUDE_CODE=1 to give Claude Code the Codex App Shot ability"

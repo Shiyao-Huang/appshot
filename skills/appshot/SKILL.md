@@ -105,8 +105,10 @@ as rule output, because the consuming agent is already multimodal and reads the 
 itself. Your goal when training: make the AX-only output recover as much of the on-screen
 content as possible (recall) **at high information density** (useful info per token —
 don't dump the whole tree). Rules are JSON, versioned, app-scoped, and agent-editable; the
-strategy catalog lives at `rules/seed/local-app-strategies.json`. Nothing about a strategy
-is hard-coded — edit that JSON or call `rules upsert`/`rules patch`.
+strategy catalog lives at `rules/seed/local-app-strategies.json` in the repo, and release
+installs the trained catalog to `~/Library/Application Support/AppShot/rules/seed/local-app-strategies.json`
+for agents without a source checkout. Set `APPSHOT_RULE_CATALOG` to override it. Nothing
+about a strategy is hard-coded — edit that JSON or call `rules upsert`/`rules patch`.
 
 The rule library is SQLite at `~/Library/Application Support/AppShot/rules.sqlite`.
 

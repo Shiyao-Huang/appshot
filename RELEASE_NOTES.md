@@ -1,3 +1,25 @@
+# AppShot v0.1.15
+
+## English
+
+AppShot v0.1.15 ships the trained all-app rule catalog with the macOS release package:
+
+- Release zip/DMG packages now include `rules/seed/local-app-strategies.json`.
+- The installer copies the trained JSON rule catalog to `~/Library/Application Support/AppShot/rules/seed/local-app-strategies.json`.
+- The local rule trainer can resolve the catalog from `APPSHOT_RULE_CATALOG`, the repo seed path, or the installed Application Support path.
+- Parity verification now gates release/installer packaging on the trained rule catalog so future releases cannot silently drop it.
+- Rule effectiveness remains JSON-governed: strategy changes stay in catalog/rule JSON and are not hard-coded into runtime capture logic.
+
+## 中文
+
+AppShot v0.1.15 会把已经训练好的 all-app rule catalog 一起带进 macOS release 包：
+
+- release zip/DMG 现在包含 `rules/seed/local-app-strategies.json`。
+- 安装器会把训练好的 JSON rule catalog 复制到 `~/Library/Application Support/AppShot/rules/seed/local-app-strategies.json`。
+- 本地 rule trainer 会按 `APPSHOT_RULE_CATALOG`、repo seed 路径、已安装 Application Support 路径的顺序解析 catalog。
+- parity 验证会检查 release/installer 是否携带训练 catalog，避免未来发版遗漏。
+- 有效性提升仍然由 JSON 治理：策略变化保留在 catalog/rule JSON 中，不 hard-code 到 runtime capture 逻辑。
+
 # AppShot v0.1.14
 
 ## English

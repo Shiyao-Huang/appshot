@@ -12,7 +12,7 @@ It captures the frontmost Mac application as structured context: app metadata, v
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | bash
 ```
 
-By default this installs `AppShot.app` to `~/Applications/AppShot.app`, the `appshot` CLI to `~/.local/bin/appshot`, the MCP server to `~/.local/share/appshot/mcp`, the optional browser bridge extension to `~/.local/share/appshot/browser-extension/appshot-bridge`, the optional Electron host bridge to `~/.local/share/appshot/electron-preload/appshot-host-bridge`, the optional Codex host integration adapter to `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge`, and the Codex skill to `~/.codex/skills/appshot`.
+By default this installs `AppShot.app` to `~/Applications/AppShot.app`, the `appshot` CLI to `~/.local/bin/appshot`, the MCP server to `~/.local/share/appshot/mcp`, the optional browser bridge extension to `~/.local/share/appshot/browser-extension/appshot-bridge`, the optional Electron host bridge to `~/.local/share/appshot/electron-preload/appshot-host-bridge`, the optional Codex host integration adapter to `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge`, the trained JSON rule catalog to `~/Library/Application Support/AppShot/rules/seed/local-app-strategies.json`, and the Codex skill to `~/.codex/skills/appshot`.
 
 To let Claude Code use Codex-style App Shot, install the Claude Code skill and MCP registration too:
 
@@ -38,6 +38,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Codex skill: `skills/appshot/SKILL.md`.
 - Codex plugin manifest: `.codex-plugin/plugin.json`.
 - Release packaging for Mac users: `.app`, `.zip`, and `.dmg`.
+- Trained JSON rule catalog: `rules/seed/local-app-strategies.json`, installed to Application Support for agent-editable rule evolution without hard-coded app strategies.
 - Claude Code App Shot support via `APPSHOT_INSTALL_CLAUDE_CODE=1`, which installs the AppShot skill and MCP server registration.
 - Global shortcut setting, enabled by default with both left and right Option keys.
 - Shared shortcut cache: left+right Option writes the latest capture so CLI/MCP can return it immediately; use `--ignore-cache`, `--no-cache`, or `--fresh` for a direct capture.
@@ -73,8 +74,8 @@ For a complete local release package:
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.14
-open dist/AppShot-macOS-0.1.14/AppShot.app
+scripts/build_release.sh 0.1.15
+open dist/AppShot-macOS-0.1.15/AppShot.app
 ```
 
 For a public macOS release, sign with a `Developer ID Application` identity and notarize the DMG:
@@ -83,7 +84,7 @@ For a public macOS release, sign with a `Developer ID Application` identity and 
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.14
+scripts/build_release.sh 0.1.15
 ```
 
 The public release path refuses Apple Development or ad-hoc signatures, submits the DMG to Apple notarization, staples the ticket, and runs Gatekeeper assessment.
@@ -192,7 +193,7 @@ AppShot 让任何 AI 都拥有 Codex 样式的 App Shot 能力，并让 Claude C
 curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh | bash
 ```
 
-默认会把 `AppShot.app` 安装到 `~/Applications/AppShot.app`，把 `appshot` CLI 安装到 `~/.local/bin/appshot`，把 MCP server 安装到 `~/.local/share/appshot/mcp`，把可选 browser bridge extension 安装到 `~/.local/share/appshot/browser-extension/appshot-bridge`，把可选 Electron host bridge 安装到 `~/.local/share/appshot/electron-preload/appshot-host-bridge`，把可选 Codex host integration adapter 安装到 `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge`，并把 Codex skill 安装到 `~/.codex/skills/appshot`。
+默认会把 `AppShot.app` 安装到 `~/Applications/AppShot.app`，把 `appshot` CLI 安装到 `~/.local/bin/appshot`，把 MCP server 安装到 `~/.local/share/appshot/mcp`，把可选 browser bridge extension 安装到 `~/.local/share/appshot/browser-extension/appshot-bridge`，把可选 Electron host bridge 安装到 `~/.local/share/appshot/electron-preload/appshot-host-bridge`，把可选 Codex host integration adapter 安装到 `~/.local/share/appshot/codex-integration/appshot-codex-host-bridge`，把训练好的 JSON rule catalog 安装到 `~/Library/Application Support/AppShot/rules/seed/local-app-strategies.json`，并把 Codex skill 安装到 `~/.codex/skills/appshot`。
 
 如果要让 Claude Code 使用 Codex 样式的 App Shot，同时安装 Claude Code skill 和 MCP 注册：
 
@@ -218,6 +219,7 @@ curl -sfL https://raw.githubusercontent.com/Shiyao-Huang/appshot/main/install.sh
 - Codex skill：`skills/appshot/SKILL.md`。
 - Codex plugin manifest：`.codex-plugin/plugin.json`。
 - 面向 Mac 用户的 release 包：`.app`、`.zip`、`.dmg`。
+- 训练好的 JSON rule catalog：`rules/seed/local-app-strategies.json`，安装到 Application Support，后续由 agent 继续编辑和演进，不把 app 策略 hard-code 进运行时代码。
 - 通过 `APPSHOT_INSTALL_CLAUDE_CODE=1` 给 Claude Code 安装 AppShot skill 和 MCP 注册，让 Claude Code 拥有 Codex 风格的 App Shot 能力。
 - 全局快捷键设置，默认使用左 Option + 右 Option。
 - 共享快捷键缓存：左 Option + 右 Option 会写入最近一次捕捉，CLI/MCP 可以立即读取；需要直接重新捕捉时使用 `--ignore-cache`、`--no-cache` 或 `--fresh`。
@@ -253,8 +255,8 @@ xcodebuild -project AppShot.xcodeproj -scheme AppShot -configuration Release bui
 
 ```sh
 chmod +x scripts/build_release.sh
-scripts/build_release.sh 0.1.14
-open dist/AppShot-macOS-0.1.14/AppShot.app
+scripts/build_release.sh 0.1.15
+open dist/AppShot-macOS-0.1.15/AppShot.app
 ```
 
 公开 macOS 发布包需要 `Developer ID Application` 证书并完成 DMG 公证：
@@ -263,7 +265,7 @@ open dist/AppShot-macOS-0.1.14/AppShot.app
 APPSHOT_PUBLIC_RELEASE=1 \
 APPSHOT_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 APPSHOT_NOTARY_PROFILE="appshot-notary" \
-scripts/build_release.sh 0.1.14
+scripts/build_release.sh 0.1.15
 ```
 
 公开发布路径会拒绝 Apple Development 或 ad-hoc 签名，提交 Apple notarization，staple 公证票据，并运行 Gatekeeper 校验。

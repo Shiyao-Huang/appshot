@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-0.1.14}"
+VERSION="${1:-0.1.15}"
 BUILD_DIR="$ROOT/.xcode-build"
 DERIVED_DATA_DIR="$BUILD_DIR/DerivedData"
 PRODUCTS_DIR="$BUILD_DIR/Products"
@@ -122,7 +122,7 @@ if [[ "$PUBLIC_RELEASE" == "1" ]]; then
 fi
 
 rm -rf "$DIST_DIR"
-mkdir -p "$PACKAGE_DIR/bin" "$PACKAGE_DIR/mcp" "$PACKAGE_DIR/browser-extension" "$PACKAGE_DIR/electron-preload" "$PACKAGE_DIR/codex-integration"
+mkdir -p "$PACKAGE_DIR/bin" "$PACKAGE_DIR/mcp" "$PACKAGE_DIR/browser-extension" "$PACKAGE_DIR/electron-preload" "$PACKAGE_DIR/codex-integration" "$PACKAGE_DIR/rules"
 ditto "$APP_PATH" "$PACKAGE_DIR/$APP_NAME.app"
 ditto "$CLI_PATH" "$PACKAGE_DIR/bin/appshot"
 ditto "$ROOT/mcp/server.js" "$PACKAGE_DIR/mcp/server.js"
@@ -130,6 +130,7 @@ ditto "$ROOT/mcp/package.json" "$PACKAGE_DIR/mcp/package.json"
 ditto "$ROOT/browser-extension/appshot-bridge" "$PACKAGE_DIR/browser-extension/appshot-bridge"
 ditto "$ROOT/electron-preload/appshot-host-bridge" "$PACKAGE_DIR/electron-preload/appshot-host-bridge"
 ditto "$ROOT/codex-integration/appshot-codex-host-bridge" "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge"
+ditto "$ROOT/rules/seed" "$PACKAGE_DIR/rules/seed"
 mkdir -p "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts"
 ditto "$ROOT/scripts/analyze_codex_electron_host_injection.mjs" "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts/analyze_codex_electron_host_injection.mjs"
 ditto "$ROOT/scripts/patch_codex_electron_host_for_appshot.mjs" "$PACKAGE_DIR/codex-integration/appshot-codex-host-bridge/scripts/patch_codex_electron_host_for_appshot.mjs"
